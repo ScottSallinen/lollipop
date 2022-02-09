@@ -11,62 +11,26 @@ import (
 	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 type QueueElem struct {
-	src uint32
-	dst uint32
+	SrcRaw uint32
+	DstRaw uint32
 }
 
-/*
-func (g *Graph) EdgeConsumeLocking(src uint32, dst uint32) {
-	srcIdx := uint32(0)
-	dstIdx := uint32(0)
-
-	g.GraphLock.RLock()
-	srcIdx, srcOk := g.VertexMap[uint32(src)]
-	dstIdx, dstOk := g.VertexMap[uint32(dst)]
-	g.GraphLock.RUnlock()
-
-	if !srcOk || !dstOk {
-		g.GraphLock.Lock()
-		srcIdx, srcOk = g.VertexMap[uint32(src)]
-		if !srcOk {
-			srcIdx = uint32(len(g.VertexMap))
-			g.VertexMap[uint32(src)] = srcIdx
-			g.Vertices = append(g.Vertices, Vertex{Id: uint32(src)})
-		}
-		dstIdx, dstOk = g.VertexMap[uint32(dst)]
-		if !dstOk {
-			dstIdx = uint32(len(g.VertexMap))
-			g.VertexMap[uint32(dst)] = dstIdx
-			g.Vertices = append(g.Vertices, Vertex{Id: uint32(dst)})
-		}
-		g.GraphLock.Unlock()
-	}
-
-	g.GraphLock.RLock()
-	//g.Vertices[srcIdx].Mu.Lock()
-	g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, Edge{Target: uint32(dstIdx), Prop: 0.0})
-	//g.Vertices[srcIdx].Mu.Unlock()
-	g.GraphLock.RUnlock()
-}
-*/
-
-func (g *Graph) EdgeConsume(src uint32, dst uint32) {
-	srcIdx, _ := g.VertexMap[uint32(src)]
-	dstIdx, _ := g.VertexMap[uint32(dst)]
-
-	g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, Edge{Target: uint32(dstIdx)}) //, Prop: 0.0
-}
-
-func (g *Graph) EdgeDequeuer(queuechan chan QueueElem) {
+func (g *Graph) EdgeDequeuer(queuechan chan QueueElem, deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
-		g.EdgeConsume(qElem.src, qElem.dst)
+		srcIdx, _ := g.VertexMap[uint32(qElem.SrcRaw)]
+		dstIdx, _ := g.VertexMap[uint32(qElem.DstRaw)]
+
+		g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, Edge{Target: uint32(dstIdx)}) //, Prop: 0.0
 	}
+	deqWg.Done()
+	return
 }
 
-func (g *Graph) EdgeEnqueuer(queuechans []chan QueueElem, graphName string, wg *sync.WaitGroup, idx uint32, eqCount uint32, dqCount uint32, result chan uint32) {
+func (g *Graph) EdgeEnqueuer(queuechans []chan QueueElem, graphName string, wg *sync.WaitGroup, idx uint32, enqCount uint32, deqCount uint32, result chan uint32) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -76,7 +40,7 @@ func (g *Graph) EdgeEnqueuer(queuechans []chan QueueElem, graphName string, wg *
 	mLines := uint32(0)
 	for scanner.Scan() {
 		lines++
-		if lines%eqCount != idx {
+		if lines%enqCount != idx {
 			continue
 		}
 		mLines++
@@ -89,7 +53,11 @@ func (g *Graph) EdgeEnqueuer(queuechans []chan QueueElem, graphName string, wg *
 		src, _ := strconv.Atoi(s[0])
 		dst, _ := strconv.Atoi(s[1])
 
-		queuechans[uint32(src)%dqCount] <- QueueElem{uint32(src), uint32(dst)}
+		//if src == dst {
+		//	continue
+		//}
+
+		queuechans[uint32(src)%deqCount] <- QueueElem{uint32(src), uint32(dst)}
 	}
 	result <- mLines
 	wg.Done()
@@ -128,17 +96,17 @@ func (g *Graph) BuildMap(graphName string) {
 	work := make(chan QueueElem, 256)
 	go func(mWork chan QueueElem) {
 		for elem := range mWork {
-			src := elem.src
-			dst := elem.dst
-			if srcIdx, ok := g.VertexMap[uint32(src)]; !ok {
-				srcIdx = uint32(len(g.VertexMap))
-				g.VertexMap[uint32(src)] = srcIdx
-				g.Vertices = append(g.Vertices, Vertex{Id: uint32(src)})
+			srcRaw := elem.SrcRaw
+			dstRaw := elem.DstRaw
+			if sidx, ok := g.VertexMap[uint32(srcRaw)]; !ok {
+				sidx = uint32(len(g.VertexMap))
+				g.VertexMap[uint32(srcRaw)] = sidx
+				g.Vertices = append(g.Vertices, Vertex{Id: uint32(srcRaw)})
 			}
-			if dstIdx, ok := g.VertexMap[uint32(dst)]; !ok {
-				dstIdx = uint32(len(g.VertexMap))
-				g.VertexMap[uint32(dst)] = dstIdx
-				g.Vertices = append(g.Vertices, Vertex{Id: uint32(dst)})
+			if didx, ok := g.VertexMap[uint32(dstRaw)]; !ok {
+				didx = uint32(len(g.VertexMap))
+				g.VertexMap[uint32(dstRaw)] = didx
+				g.Vertices = append(g.Vertices, Vertex{Id: uint32(dstRaw)})
 			}
 		}
 	}(work)
@@ -162,9 +130,11 @@ func (g *Graph) BuildMap(graphName string) {
 	return
 }
 
-func LoadGraph(graphName string) *Graph {
+func (g *Graph) LoadGraphStatic(graphName string) {
+	deqCount := mathutils.MaxUint32(uint32(THREADS), 1)
+	enqCount := mathutils.MaxUint32(uint32(THREADS/2), 1)
+
 	m0 := time.Now()
-	g := &Graph{}
 	g.VertexMap = make(map[uint32]uint32)
 
 	g.LoadVertexMap(graphName)
@@ -172,23 +142,22 @@ func LoadGraph(graphName string) *Graph {
 	info("Built map in ", t0)
 	m1 := time.Now()
 
-	dqCount := uint32(32)
-
-	queuechans := make([]chan QueueElem, dqCount)
-	for i := uint32(0); i < dqCount; i++ {
+	queuechans := make([]chan QueueElem, deqCount)
+	var deqWg sync.WaitGroup
+	deqWg.Add(int(deqCount))
+	for i := uint32(0); i < deqCount; i++ {
 		queuechans[i] = make(chan QueueElem, 256)
-		go g.EdgeDequeuer(queuechans[i])
+		go g.EdgeDequeuer(queuechans[i], &deqWg)
 	}
 
-	eqCount := uint32(16)
-	resultchan := make(chan uint32, eqCount)
-	var eqWg sync.WaitGroup
-	eqWg.Add(int(eqCount))
-	for i := uint32(0); i < eqCount; i++ {
-		go g.EdgeEnqueuer(queuechans, graphName, &eqWg, i, eqCount, dqCount, resultchan)
+	resultchan := make(chan uint32, enqCount)
+	var enqWg sync.WaitGroup
+	enqWg.Add(int(enqCount))
+	for i := uint32(0); i < enqCount; i++ {
+		go g.EdgeEnqueuer(queuechans, graphName, &enqWg, i, enqCount, deqCount, resultchan)
 	}
-	eqWg.Wait()
-	for i := uint32(0); i < dqCount; i++ {
+	enqWg.Wait()
+	for i := uint32(0); i < deqCount; i++ {
 		close(queuechans[i])
 	}
 	close(resultchan)
@@ -196,10 +165,10 @@ func LoadGraph(graphName string) *Graph {
 	for e := range resultchan {
 		lines += e
 	}
+	deqWg.Wait()
 
 	t1 := time.Since(m1)
 	info("Read ", lines, " edges in ", t1)
-	return g
 }
 
 func (g *Graph) WriteVertexProps(fname string) {
@@ -207,7 +176,7 @@ func (g *Graph) WriteVertexProps(fname string) {
 	enforce.ENFORCE(err)
 	defer f.Close()
 	for vidx := range g.Vertices {
-		_, err := f.WriteString(fmt.Sprintf("%d %.3f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Properties.Value))
+		_, err := f.WriteString(fmt.Sprintf("%d %.4f %.4f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Properties.Value, g.Vertices[vidx].Properties.Residual))
 		enforce.ENFORCE(err)
 	}
 }

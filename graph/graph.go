@@ -4,31 +4,61 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"sort"
 	"sync"
+
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 func info(args ...interface{}) {
 	log.Println("[Graph]\t", fmt.Sprint(args...))
 }
 
+var THREADS = 32
+
 // Graph t
 type Graph struct {
-	GraphLock    sync.RWMutex
-	VertexMap    map[uint32]uint32
-	Vertices     []Vertex `json:"vertices"`
-	OnQueueVisit OnQueueVisitFunc
-	MessageQ     []chan Message
-	MsgCounters  []int
+	Mutex             sync.RWMutex
+	VertexMap         map[uint32]uint32 // Raw to internal
+	Vertices          []Vertex          `json:"vertices"`
+	OnInitVertex      OnInitVertexFunc
+	OnQueueVisit      OnQueueVisitFunc
+	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc
+	AlgConverge       ConvergeFunc
+	MessageQ          []chan Message
+	ThreadStructureQ  []chan StructureChange
+	MsgSend           []uint32
+	MsgRecv           []uint32
+	TerminateVote     []int
+	TerminateData     []int64
 }
+
+type VisitType int
+
+const (
+	VISIT VisitType = iota
+	ADD
+	ADDREV
+	DEL
+	DELREV
+)
 
 type Message struct {
-	Src uint32
-	Dst uint32
-	Val float64
+	Type VisitType
+	Sidx uint32
+	Didx uint32
+	Val  float64
 }
 
-type OnQueueVisitFunc func(g *Graph, Src uint32, Dst uint32, VisitData interface{})
+type StructureChange struct {
+	Type   VisitType // add or del
+	SrcRaw uint32
+	DstRaw uint32
+}
+
+type OnInitVertexFunc func(g *Graph, vidx uint32, data interface{})
+type OnQueueVisitFunc func(g *Graph, sidx uint32, didx uint32, VisitData interface{})
+type OnQueueEdgeAddRevFunc func(g *Graph, sidx uint32, didx uint32, VisitData interface{})
+type ConvergeFunc func(g *Graph, wg *sync.WaitGroup)
 
 // Edge t
 type Edge struct {
@@ -45,11 +75,11 @@ type InEdge struct {
 }
 
 func (e *Edge) Reset() {
-	//e.Prop = 0.0
+	e = &Edge{}
 }
 
 func (e *InEdge) Reset() {
-	e.Prop = 0.0
+	e = &InEdge{}
 }
 
 // Vertex t
@@ -61,7 +91,7 @@ type Vertex struct {
 	InEdges    []InEdge   `json:"inedges"`
 	Scratch    float64
 	Active     bool
-	Mu         sync.Mutex
+	Mutex      sync.Mutex
 }
 
 type VertexProp struct {
@@ -79,6 +109,14 @@ func (v *Vertex) Reset() {
 	for uidx := range v.InEdges {
 		v.InEdges[uidx].Reset()
 	}
+}
+
+func (v *Vertex) ToThreadIdx() uint32 {
+	return v.Id % uint32(THREADS)
+}
+
+func (g *Graph) RawIdToThreadIdx(RawId uint32) uint32 {
+	return RawId % uint32(THREADS)
 }
 
 func (g *Graph) Reset() {
@@ -103,47 +141,12 @@ func (graph *Graph) Densify() {
 		if len(graph.Vertices[vidx].OutEdges) == 0 {
 			for tidx := range graph.Vertices {
 				if tidx != vidx {
-					graph.Vertices[vidx].OutEdges = append(graph.Vertices[vidx].OutEdges, Edge{uint32(tidx)})
+					graph.Vertices[vidx].OutEdges = append(graph.Vertices[vidx].OutEdges, Edge{Target: uint32(tidx)})
 				}
 			}
 		}
 	}
 	info("Densification complete.")
-}
-
-func MaxUint64(x, y uint64) uint64 {
-	if x < y {
-		return y
-	}
-	return x
-}
-func MaxFloat64(x, y float64) float64 {
-	if x < y {
-		return y
-	}
-	return x
-}
-func MinFloat64(x, y float64) float64 {
-	if y < x {
-		return y
-	}
-	return x
-}
-func Median(n []int) int {
-	sort.Ints(n) // sort numbers
-	idx := len(n) / 2
-	if len(n)%2 == 0 { // even
-		return n[idx]
-	}
-	return (n[idx-1] + n[idx]) / 2
-}
-func MedianFloat64(n []float64) float64 {
-	sort.Float64s(n) // sort numbers
-	idx := len(n) / 2
-	if len(n)%2 == 0 { // even
-		return n[idx]
-	}
-	return (n[idx-1] + n[idx]) / 2
 }
 
 func (g *Graph) ComputeGraphStats(inDeg bool, outDeg bool) {
@@ -160,11 +163,11 @@ func (g *Graph) ComputeGraphStats(inDeg bool, outDeg bool) {
 		}
 		numEdges += uint64(len(g.Vertices[vidx].OutEdges))
 		if outDeg {
-			maxOutDegree = MaxUint64(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
+			maxOutDegree = mathutils.MaxUint64(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
 			listOutDegree = append(listOutDegree, len(g.Vertices[vidx].OutEdges))
 		}
 		if inDeg {
-			maxInDegree = MaxUint64(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
+			maxInDegree = mathutils.MaxUint64(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
 			listInDegree = append(listInDegree, len(g.Vertices[vidx].InEdges))
 		}
 	}
@@ -175,16 +178,16 @@ func (g *Graph) ComputeGraphStats(inDeg bool, outDeg bool) {
 	info("Edges : ", numEdges)
 	if outDeg {
 		info("MaxOutDeg : ", maxOutDegree)
-		info("MedianOutDeg : ", Median(listOutDegree))
+		info("MedianOutDeg : ", mathutils.Median(listOutDegree))
 	}
 	if inDeg {
 		info("MaxInDeg : ", maxInDegree)
-		info("MedianInDeg : ", Median(listInDegree))
+		info("MedianInDeg : ", mathutils.Median(listInDegree))
 	}
 	info("---- End of Stats ----")
 }
 
-func ResultCompare(a []float64, b []float64) {
+func ResultCompare(a []float64, b []float64) float64 {
 	largestDiff := float64(0)
 	smallestDiff := float64(0)
 	avgDiff := float64(0)
@@ -192,14 +195,15 @@ func ResultCompare(a []float64, b []float64) {
 
 	for idx := range a {
 		delta := math.Abs((b[idx] - a[idx]) * 100.0 / a[idx])
+		//delta := math.Abs((b[idx] - a[idx]))
 		listDiff = append(listDiff, delta)
 		avgDiff += delta
-		largestDiff = MaxFloat64(largestDiff, delta)
-		smallestDiff = MinFloat64(smallestDiff, delta)
+		largestDiff = mathutils.MaxFloat64(largestDiff, delta)
+		smallestDiff = mathutils.MinFloat64(smallestDiff, delta)
 	}
 	avgDiff = avgDiff / float64(len(a))
 
-	medianDiff := MedianFloat64(listDiff)
+	medianDiff := mathutils.MedianFloat64(listDiff)
 
 	info("---- Result Compare ----")
 	info("largestDiff : ", largestDiff)
@@ -207,6 +211,7 @@ func ResultCompare(a []float64, b []float64) {
 	info("avgDiff : ", avgDiff)
 	info("medianDiff : ", medianDiff)
 	info("---- End of Compare ----")
+	return largestDiff
 }
 
 func (g *Graph) PrintVertexProps(prefix string) {
@@ -217,6 +222,18 @@ func (g *Graph) PrintVertexProps(prefix string) {
 		sum += g.Vertices[vidx].Properties.Value
 	}
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
+}
+
+func (g *Graph) PrintStructure() {
+	log.Println(g.VertexMap)
+	for vidx := range g.Vertices {
+		pr := fmt.Sprintf("%d", g.Vertices[vidx].Id)
+		el := ""
+		for _, e := range g.Vertices[vidx].OutEdges {
+			el += fmt.Sprintf("%d, ", g.Vertices[e.Target].Id)
+		}
+		log.Println(pr + ": " + el)
+	}
 }
 
 func (g *Graph) GetVertexProps() []float64 {

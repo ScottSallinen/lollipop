@@ -1,147 +1,144 @@
 package main
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"log"
-	"math"
+	"net/http"
+	"sync"
 
-	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
+
+	_ "net/http/pprof"
 )
 
-// DAMPINGFACTOR Damping Factor
-const DAMPINGFACTOR = float64(0.85)
-const EPSILON = float64(0.001)
-const PRINTPROPS = false
+const DEBUG = false
 
-func OnInit(g *graph.Graph, data interface{}) error {
-	for vidx := range g.Vertices {
-		g.Vertices[vidx].Properties.Residual = 0.0
-		g.Vertices[vidx].Properties.Latent = 0.0
-		g.Vertices[vidx].Properties.Value = 0.0
-		g.Vertices[vidx].Scratch = 1.0
-	}
-
-	return nil
+func info(args ...interface{}) {
+	log.Println("[Pagerank]\t", fmt.Sprint(args...))
 }
 
-func OnVisitVertex(g *graph.Graph, vidx uint32, data interface{}) int {
-	vertex := &g.Vertices[vidx]
-	vertex.Properties.Residual += data.(float64)
-
-	toDistribute := DAMPINGFACTOR * (vertex.Properties.Residual)
-	toAbsorb := (1.0 - DAMPINGFACTOR) * (vertex.Properties.Residual)
-
-	myDelta := math.Abs(toAbsorb / (vertex.Properties.Value - toAbsorb))
-	if myDelta > EPSILON {
-		vertex.Properties.Value += toAbsorb
-		vertex.Properties.Residual = 0.0
-
-		if len(vertex.OutEdges) > 0 {
-			distribute := toDistribute / float64(len(vertex.OutEdges))
-			for eidx := range vertex.OutEdges {
-				target := vertex.OutEdges[eidx].Target
-				g.OnQueueVisit(g, vidx, target, distribute)
-			}
-		} else {
-			vertex.Properties.Latent += toDistribute
-		}
-		return len(vertex.OutEdges)
+func dinfo(args ...interface{}) {
+	if DEBUG {
+		info(args...)
 	}
-	return 0
-}
-
-func OnFini(g *graph.Graph, data interface{}) error {
-	/// fix sink nodes -- grouped sinks
-	numSinks := 0
-	globalLatent := 0.0
-	nonSinkSum := 0.0
-
-	/// One pass over all vertices -- compute some global totals.
-	for vidx := range g.Vertices {
-		if len(g.Vertices[vidx].OutEdges) == 0 { /// Sink vertex
-			globalLatent += g.Vertices[vidx].Properties.Latent
-			numSinks++
-		} else {
-			nonSinkSum += g.Vertices[vidx].Properties.Value
-		}
-	}
-	/// The total value in the non-sink graph.
-
-	//log.Println(numSinks, globalLatent, nonSinkSum)
-
-	/// Note: the amount latent here was already pre-dampened, so the retainment percent must be computed by the raw mass, so we undampen for that calculation (multiply by 1/d).
-	/// The subtraction of 1.0*sinks is because we discount each sink node's contribution of 1u of mass from the amount latent.
-	/// We divide by the size of the non-sink graph for the final retainment percent.
-	retainSumPct := ((globalLatent * (1.0 / DAMPINGFACTOR)) - 1.0*float64(numSinks)) / float64((len(g.Vertices) - numSinks))
-
-	SinkQuota := float64(1.0) / float64(len(g.Vertices)-1)
-	NormalQuota := float64(len(g.Vertices)-numSinks) / float64(len(g.Vertices)-1)
-
-	geometricLatentSum := globalLatent / (1.0 - DAMPINGFACTOR*(SinkQuota*(float64(numSinks-1))+(NormalQuota*retainSumPct)))
-
-	/// One pass over all vertices -- make adjustment based on sink/non-sink status.
-	for vidx := range g.Vertices {
-		var toAbsorb float64
-		if len(g.Vertices[vidx].OutEdges) != 0 {
-			/// All vertices that are NOT a sink node
-			toAbsorb = (NormalQuota) * (geometricLatentSum * (1.0 - retainSumPct)) * (g.Vertices[vidx].Properties.Value / nonSinkSum)
-		} else {
-			/// All vertices that are a sink node
-			/// Relative 'power' of this sink compared to others determines its retainment. Note: we undampen for this ratio as well.
-			relativeSinkPowerPct := (g.Vertices[vidx].Properties.Latent*(1.0/DAMPINGFACTOR) - 1.0) / ((globalLatent * (1.0 / DAMPINGFACTOR)) - float64(numSinks)*1.0)
-			toAbsorb = (1.0 - DAMPINGFACTOR) * (SinkQuota) * (geometricLatentSum) * (1.0 - g.Vertices[vidx].Properties.Latent/globalLatent)
-			toAbsorb += (1.0 - DAMPINGFACTOR) * (NormalQuota) * (geometricLatentSum) * (retainSumPct) * (relativeSinkPowerPct)
-		}
-		g.Vertices[vidx].Properties.Value += toAbsorb
-		//g.Vertices[vidx].Properties.Value /= float64(len(g.Vertices))
-	}
-
-	if PRINTPROPS {
-		g.PrintVertexProps("fff : ")
-		g.PrintVertexPropsNorm("fff : ", float64(len(g.Vertices))) //float64(len(g.Vertices))
-	}
-
-	return nil
 }
 
 func OnCheckCorrectness(g *graph.Graph) error {
 	sum := 0.0
+	sumsc := 0.0
 	resid := 0.0
 	for vidx := range g.Vertices {
 		sum += g.Vertices[vidx].Properties.Value
 		resid += g.Vertices[vidx].Properties.Residual
+		sumsc += g.Vertices[vidx].Scratch
 	}
 	totalAbs := (sum) / float64(len(g.Vertices))
 	totalResid := (resid) / float64(len(g.Vertices))
 	total := totalAbs + totalResid
-	log.Println("Total absorbed: \t", totalAbs)
-	log.Println("Total residual: \t", totalResid)
-	log.Println("Total mass: \t", total)
+	info("Total absorbed: ", totalAbs)
+	info("Total residual: ", totalResid)
+	info("Total scratch: ", sumsc/float64(len(g.Vertices)))
+	info("Total sum mass: ", total)
 
-	enforce.ENFORCE(total > 0.999 && total < 1.001)
+	if !mathutils.FloatEquals(total, INITMASS) {
+		return errors.New("Final mass not equal to init.")
+	}
 	return nil
+}
+
+func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph {
+	frame := framework.Framework{}
+	frame.OnVisitVertex = OnVisitVertex
+	frame.OnFinish = OnFinish
+	frame.OnCheckCorrectness = OnCheckCorrectness
+	frame.OnEdgeAdd = OnEdgeAdd
+	frame.OnEdgeDel = OnEdgeDel
+
+	g := &graph.Graph{}
+	g.OnInitVertex = OnInitVertex
+
+	if !dynamic {
+		g.LoadGraphStatic(gName)
+	}
+
+	frame.Init(g, async, dynamic)
+
+	var feederWg sync.WaitGroup
+	feederWg.Add(1)
+	var frameWait sync.WaitGroup
+	frameWait.Add(1)
+
+	if dynamic {
+		go g.LoadGraphDynamic(gName, &feederWg)
+	}
+
+	frame.Run(g, &feederWg, &frameWait)
+	return g
 }
 
 func main() {
 	gptr := flag.String("g", "data/test.txt", "Graph file")
 	aptr := flag.Bool("a", false, "Use async")
+	dptr := flag.Bool("d", false, "Dynamic")
+	cptr := flag.Bool("c", false, "Compare static vs dynamic")
+	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
 	gName := *gptr
 	doAsync := *aptr
-	g := graph.LoadGraph(gName)
+	doDynamic := *dptr
+	graph.THREADS = *tptr
 
-	frame := framework.Framework{}
-	frame.OnInit = OnInit
-	frame.OnVisitVertex = OnVisitVertex
-	frame.OnFini = OnFini
-	frame.OnCheckCorrectness = OnCheckCorrectness
+	//runtime.SetMutexProfileFraction(1)
+	go func() {
+		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+	}()
 
-	//g.ComputeInEdges()
+	runAsync := doAsync
+	if doDynamic {
+		runAsync = true
+	}
+	g := LaunchGraphExecution(gName, runAsync, doDynamic)
+
 	g.ComputeGraphStats(false, false)
+	resName := "static"
+	if doDynamic {
+		resName = "dynamic"
+	}
+	g.WriteVertexProps("results/props-" + resName + ".txt")
 
-	frame.Run(g, doAsync)
+	if *cptr {
+		runAsync = doAsync
+		if !doDynamic {
+			runAsync = true
+		}
+		gAlt := LaunchGraphExecution(gName, runAsync, !doDynamic)
 
-	g.WriteVertexProps("results/props-c.txt")
+		gAlt.ComputeGraphStats(false, false)
+		resName := "dynamic"
+		if doDynamic {
+			resName = "static"
+		}
+		gAlt.WriteVertexProps("results/props-" + resName + ".txt")
+
+		a := make([]float64, len(g.Vertices))
+		b := make([]float64, len(g.Vertices))
+
+		for vidx := range g.Vertices {
+			g1raw := g.Vertices[vidx].Id
+			g2idx := gAlt.VertexMap[g1raw]
+
+			g1values := &g.Vertices[vidx].Properties
+			g2values := &gAlt.Vertices[g2idx].Properties
+
+			a[vidx] = g1values.Value
+			b[vidx] = g2values.Value
+		}
+
+		graph.ResultCompare(a, b)
+		info("Comparison verified.")
+	}
 }

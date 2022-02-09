@@ -1,4 +1,5 @@
 results
+data
 
 # Binaries for programs and plugins
 *.exe
@@ -15,3 +16,5 @@ results
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+*.bak
