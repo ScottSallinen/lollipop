@@ -73,7 +73,7 @@ func EnactStructureChange(g *graph.Graph, frame *Framework, tidx uint32, changes
 		src.Mutex.Unlock()
 		if change.Type == graph.ADD {
 			frame.OnEdgeAdd(g, sidx, didx, nil)
-		} else {
+		} else if change.Type == graph.DEL {
 			frame.OnEdgeDel(g, sidx, didx, nil)
 		}
 		g.Mutex.RUnlock()

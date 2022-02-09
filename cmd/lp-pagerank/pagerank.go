@@ -47,8 +47,8 @@ func OnEdgeDel(g *graph.Graph, sidx uint32, didx uint32, data interface{}) {
 		distNew := distAllPrev / (float64(len(src.OutEdges)))
 		distDelta := distNew - distOld
 
-		for edge := range src.OutEdges {
-			target := src.OutEdges[edge].Target
+		for eidx := range src.OutEdges {
+			target := src.OutEdges[eidx].Target
 			g.OnQueueVisit(g, sidx, target, distDelta)
 		}
 	}

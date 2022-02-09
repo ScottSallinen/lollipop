@@ -99,6 +99,13 @@ func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph, g2 *graph.Graph)
 	}
 }
 
+func shuffleSC(sc []StructureChange) {
+	for i := range sc {
+		j := rand.Intn(i + 1)
+		sc[i], sc[j] = sc[j], sc[i]
+	}
+}
+
 func TestDynamicCreation(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	EPSILON = 0.00001
@@ -119,10 +126,7 @@ func TestDynamicCreation(t *testing.T) {
 			{graph.ADD, 4, 5},
 			{graph.ADD, 6, 2},
 		}
-		for i := range rawTestGraph {
-			j := rand.Intn(i + 1)
-			rawTestGraph[i], rawTestGraph[j] = rawTestGraph[j], rawTestGraph[i]
-		}
+		shuffleSC(rawTestGraph)
 
 		gDyn := DynamicGraphExecutionFromSC(rawTestGraph)
 
@@ -164,13 +168,6 @@ func TestDynamicCreation(t *testing.T) {
 			testFail = true
 		}
 		enforce.ENFORCE(!testFail)
-	}
-}
-
-func shuffleSC(sc []StructureChange) {
-	for i := range sc {
-		j := rand.Intn(i + 1)
-		sc[i], sc[j] = sc[j], sc[i]
 	}
 }
 
@@ -226,9 +223,9 @@ func TestDynamicWithDelete(t *testing.T) {
 			{graph.ADD, 6, 2},
 		}
 
-		InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)
+		adjustedGraph := InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)
 
-		gDyn := DynamicGraphExecutionFromSC(rawTestGraph)
+		gDyn := DynamicGraphExecutionFromSC(adjustedGraph)
 
 		gStatic := LaunchGraphExecution("../../data/test.txt", true, false)
 
