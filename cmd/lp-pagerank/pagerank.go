@@ -65,7 +65,7 @@ func OnVisitVertex(g *graph.Graph, vidx uint32, data interface{}) int {
 	toAbsorb := (1.0 - DAMPINGFACTOR) * (vertex.Properties.Residual)
 
 	/// TODO: Epsilon adjustments...
-	if math.Abs(toAbsorb/(vertex.Properties.Value-toAbsorb)) > EPSILON || vertex.Properties.Residual > EPSILON {
+	if vertex.Properties.Residual > EPSILON || math.Abs(toAbsorb/(vertex.Properties.Value-toAbsorb)) > EPSILON {
 		vertex.Properties.Value += toAbsorb
 		vertex.Properties.Residual = 0.0
 

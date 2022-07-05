@@ -14,6 +14,8 @@ func info(args ...interface{}) {
 }
 
 var THREADS = 32
+var TARGETRATE = float64(0)
+var ORACLEMAP map[uint32]float64
 
 // Graph t
 type Graph struct {
@@ -30,6 +32,7 @@ type Graph struct {
 	MsgRecv           []uint32
 	TerminateVote     []int
 	TerminateData     []int64
+	Watch             mathutils.Watch
 }
 
 type VisitType int
@@ -97,7 +100,6 @@ type Vertex struct {
 type VertexProp struct {
 	Value    float64
 	Residual float64
-	Latent   float64
 }
 
 func (v *Vertex) Reset() {
@@ -172,19 +174,19 @@ func (g *Graph) ComputeGraphStats(inDeg bool, outDeg bool) {
 		}
 	}
 
-	info("---- Graph Stats ----")
-	info("Vertices : ", len(g.Vertices))
-	info("Sinks : ", numSinks, " pct:", fmt.Sprintf("%.3f", float64(numSinks)*100.0/float64(len(g.Vertices))))
-	info("Edges : ", numEdges)
+	info("----GraphStats----")
+	info("Vertices ", len(g.Vertices))
+	info("Sinks ", numSinks, " pct:", fmt.Sprintf("%.3f", float64(numSinks)*100.0/float64(len(g.Vertices))))
+	info("Edges ", numEdges)
 	if outDeg {
-		info("MaxOutDeg : ", maxOutDegree)
-		info("MedianOutDeg : ", mathutils.Median(listOutDegree))
+		info("MaxOutDeg ", maxOutDegree)
+		info("MedianOutDeg ", mathutils.Median(listOutDegree))
 	}
 	if inDeg {
-		info("MaxInDeg : ", maxInDegree)
-		info("MedianInDeg : ", mathutils.Median(listInDegree))
+		info("MaxInDeg ", maxInDegree)
+		info("MedianInDeg ", mathutils.Median(listInDegree))
 	}
-	info("---- End of Stats ----")
+	info("----EndStats----")
 }
 
 func ResultCompare(a []float64, b []float64) float64 {
@@ -205,12 +207,15 @@ func ResultCompare(a []float64, b []float64) float64 {
 
 	medianDiff := mathutils.MedianFloat64(listDiff)
 
-	info("---- Result Compare ----")
-	info("largestDiff : ", largestDiff)
-	info("smallestDiff : ", smallestDiff)
-	info("avgDiff : ", avgDiff)
-	info("medianDiff : ", medianDiff)
-	info("---- End of Compare ----")
+	/*
+		info("---- Result Compare ----")
+		info("largestDiff : ", largestDiff)
+		info("smallestDiff : ", smallestDiff)
+		info("avgDiff : ", avgDiff)
+		info("medianDiff : ", medianDiff)
+		info("---- End of Compare ----")
+	*/
+	info("Median ", medianDiff, " Average ", avgDiff, " Largest ", largestDiff)
 	return largestDiff
 }
 

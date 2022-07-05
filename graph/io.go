@@ -139,7 +139,7 @@ func (g *Graph) LoadGraphStatic(graphName string) {
 
 	g.LoadVertexMap(graphName)
 	t0 := time.Since(m0)
-	info("Built map in ", t0)
+	info("Built map (ms) ", t0.Milliseconds())
 	m1 := time.Now()
 
 	queuechans := make([]chan QueueElem, deqCount)
@@ -168,7 +168,7 @@ func (g *Graph) LoadGraphStatic(graphName string) {
 	deqWg.Wait()
 
 	t1 := time.Since(m1)
-	info("Read ", lines, " edges in ", t1)
+	info("Read ", lines, " edges in (ms) ", t1.Milliseconds())
 }
 
 func (g *Graph) WriteVertexProps(fname string) {

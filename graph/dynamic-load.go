@@ -56,12 +56,11 @@ func (g *Graph) LoadGraphDynamic(graphName string, feederWg *sync.WaitGroup) {
 	for e := range resultchan {
 		lines += e
 	}
+	deqWg.Wait()
 
 	t1 := time.Since(m1)
-	info("Read ", lines, " edges in ", t1)
+	info("Read ", lines, " edges in (ms) ", t1.Milliseconds(), " fromWatch ", g.Watch.Elapsed())
 
-	deqWg.Wait()
-	info("Dequeue complete, no more work to do.")
 	for i := 0; i < THREADS; i++ {
 		close(g.ThreadStructureQ[i])
 	}

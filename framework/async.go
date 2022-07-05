@@ -6,6 +6,7 @@ import (
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 //func OnQueueEdgeAddAsync(g *graph.Graph, SrcRaw uint32, DstRaw uint32, VisitData interface{}) {
@@ -29,17 +30,20 @@ func EnactStructureChange(g *graph.Graph, frame *Framework, tidx uint32, changes
 			hasChanged = true
 		}
 	}
-
 	g.Mutex.RUnlock()
+
 	if hasChanged {
 		g.Mutex.Lock()
 		for IdRaw := range newVid {
 			vidx, idOk := g.VertexMap[IdRaw]
 			if !idOk {
+				// First, create vertex.
 				vidx = uint32(len(g.VertexMap))
 				g.VertexMap[uint32(IdRaw)] = vidx
 				g.Vertices = append(g.Vertices, graph.Vertex{Id: IdRaw})
 				g.OnInitVertex(g, vidx, nil)
+				// Next, visit the source vertex if needed.
+				frame.OnVisitVertex(g, vidx, 0.0)
 			}
 		}
 		g.Mutex.Unlock()
@@ -50,12 +54,8 @@ func EnactStructureChange(g *graph.Graph, frame *Framework, tidx uint32, changes
 		sidx := g.VertexMap[change.SrcRaw]
 		didx := g.VertexMap[change.DstRaw]
 		src := &g.Vertices[sidx]
-		src.Mutex.Lock()
-		val := src.Scratch
-		src.Scratch = 0
-		src.Active = false
-		src.Mutex.Unlock()
-		frame.OnVisitVertex(g, sidx, val)
+
+		// Next, add the edge to the source vertex.
 		src.Mutex.Lock()
 		if change.Type == graph.ADD {
 			/// Add edge.. simple
@@ -71,6 +71,8 @@ func EnactStructureChange(g *graph.Graph, frame *Framework, tidx uint32, changes
 			src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
 		}
 		src.Mutex.Unlock()
+
+		// Send the edge change message.
 		if change.Type == graph.ADD {
 			frame.OnEdgeAdd(g, sidx, didx, nil)
 		} else if change.Type == graph.DEL {
@@ -80,12 +82,13 @@ func EnactStructureChange(g *graph.Graph, frame *Framework, tidx uint32, changes
 	}
 }
 
+// Todo: fix this when needed
 func OnQueueEdgeAddRevAsync(g *graph.Graph, sidx uint32, didx uint32, VisitData interface{}) {
 	// We message destination
 	select {
 	case g.MessageQ[g.Vertices[didx].ToThreadIdx()] <- graph.Message{Type: graph.ADDREV, Sidx: sidx, Didx: didx, Val: VisitData.(float64)}:
 	default:
-		enforce.ENFORCE(false, "queue error")
+		enforce.ENFORCE(false, "queue error, tidx:", g.Vertices[didx].ToThreadIdx(), " filled to ", len(g.MessageQ[g.Vertices[didx].ToThreadIdx()]))
 	}
 	// Source increments message counter
 	g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
@@ -93,20 +96,24 @@ func OnQueueEdgeAddRevAsync(g *graph.Graph, sidx uint32, didx uint32, VisitData 
 
 func OnQueueVisitAsync(g *graph.Graph, sidx uint32, didx uint32, VisitData interface{}) {
 	target := &g.Vertices[didx]
-	target.Mutex.Lock()
-	target.Scratch += VisitData.(float64)
+
+	mathutils.AtomicAddFloat64(&(target.Scratch), VisitData.(float64))
+
 	// Maybe send message
 	if !target.Active {
-		select {
-		case g.MessageQ[g.Vertices[didx].ToThreadIdx()] <- graph.Message{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: 0.0}:
-		default:
-			enforce.ENFORCE(false, "queue error")
+		// Double if to ensure only one applicant, as there may be multiple entrants here.
+		target.Mutex.Lock()
+		if !target.Active {
+			select {
+			case g.MessageQ[g.Vertices[didx].ToThreadIdx()] <- graph.Message{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: 0.0}:
+			default:
+				enforce.ENFORCE(false, "queue error, tidx:", g.Vertices[didx].ToThreadIdx(), " filled to ", len(g.MessageQ[g.Vertices[didx].ToThreadIdx()]))
+			}
+			g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
+			target.Active = true
 		}
-		//atomic.AddUint32(&g.MsgSend[g.Vertices[sidx].ToThreadIdx()], 1)
-		g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
-		target.Active = true
+		target.Mutex.Unlock()
 	}
-	target.Mutex.Unlock()
 }
 
 func (frame *Framework) ConvergeAsync(g *graph.Graph, feederWg *sync.WaitGroup) {
@@ -114,9 +121,9 @@ func (frame *Framework) ConvergeAsync(g *graph.Graph, feederWg *sync.WaitGroup) 
 	VOTES := graph.THREADS + 1
 	wg.Add(VOTES)
 
-	exit := false
-	defer func() { exit = true }()
-	go PrintTerminationStatus(g, &exit)
+	//exit := false
+	//defer func() { exit = true }()
+	//go PrintTerminationStatus(g, &exit)
 
 	go func() {
 		g.TerminateData[VOTES-1] = int64(len(g.Vertices)) // overestimate so we don't accidentally terminate early
@@ -147,10 +154,12 @@ func (frame *Framework) ConvergeAsync(g *graph.Graph, feederWg *sync.WaitGroup) 
 						g.TerminateVote[tidx] = -1
 						target := &g.Vertices[msg.Didx]
 						target.Mutex.Lock()
-						val := target.Scratch
-						target.Scratch = 0
+						//val := target.Scratch
+						//target.Scratch = 0
+						val := mathutils.AtomicSwapFloat64(&target.Scratch, 0)
 						target.Active = false
 						target.Mutex.Unlock()
+
 						frame.OnVisitVertex(g, msg.Didx, val)
 						g.MsgRecv[tidx] += 1
 					} else {
@@ -174,9 +183,9 @@ func (frame *Framework) ConvergeAsyncDyn(g *graph.Graph, feederWg *sync.WaitGrou
 	VOTES := graph.THREADS + 1
 	wg.Add(VOTES)
 
-	exit := false
-	defer func() { exit = true }()
-	go PrintTerminationStatus(g, &exit)
+	//exit := false
+	//defer func() { exit = true }()
+	//go PrintTerminationStatus(g, &exit)
 
 	go func() {
 		feederWg.Wait()
@@ -187,6 +196,7 @@ func (frame *Framework) ConvergeAsyncDyn(g *graph.Graph, feederWg *sync.WaitGrou
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
 			gsc := make([]graph.StructureChange, 0, 4096)
+			strucClosed := false
 			for {
 				select {
 				case msg := <-g.MessageQ[tidx]:
@@ -195,8 +205,9 @@ func (frame *Framework) ConvergeAsyncDyn(g *graph.Graph, feederWg *sync.WaitGrou
 					g.Mutex.RLock()
 					target := &g.Vertices[msg.Didx]
 					target.Mutex.Lock()
-					val := target.Scratch
-					target.Scratch = 0
+					//val := target.Scratch
+					//target.Scratch = 0
+					val := mathutils.AtomicSwapFloat64(&target.Scratch, 0)
 					target.Active = false
 					target.Mutex.Unlock()
 
@@ -216,10 +227,92 @@ func (frame *Framework) ConvergeAsyncDyn(g *graph.Graph, feederWg *sync.WaitGrou
 					g.Mutex.RUnlock()
 					g.MsgRecv[tidx] += 1
 				default:
+					if strucClosed != true {
+						gsc = gsc[:0] // reuse buffer
+					fillLoop:
+						for {
+							select {
+							case msg, ok := <-g.ThreadStructureQ[tidx]:
+								if ok {
+									gsc = append(gsc, msg)
+								} else {
+									strucClosed = true
+									break fillLoop
+								}
+							default:
+								break fillLoop
+							}
+						}
+
+						if len(gsc) != 0 {
+							EnactStructureChange(g, frame, tidx, gsc)
+						}
+					}
+
+					if strucClosed { // No more structure changes (channel is closed)
+						if frame.CheckTermination(g, tidx) {
+							wg.Done()
+							return
+						}
+					}
+				}
+			}
+		}(uint32(t), &wg)
+	}
+	wg.Wait()
+	frame.EnsureCompleteness(g)
+}
+
+func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.WaitGroup) {
+	info("ConvergeAsyncDynWithRate")
+	var wg sync.WaitGroup
+	VOTES := graph.THREADS + 1
+	wg.Add(VOTES)
+
+	haltFlag := false
+	//exit := false
+	//defer func() { exit = true }()
+	//go PrintTerminationStatus(g, &exit)
+
+	go func() {
+		feederWg.Wait()
+		wg.Done()
+		g.TerminateVote[VOTES-1] = 1
+	}()
+
+	/*
+		go func(hf *bool) {
+			for !(*hf) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			wg.Done()
+			g.TerminateVote[VOTES-1] = 1
+		}(&haltFlag)
+	*/
+
+	//m1 := time.Now()
+	threadEdges := make([]uint64, graph.THREADS)
+	for te := range threadEdges {
+		threadEdges[te] = 0
+	}
+
+	for t := 0; t < graph.THREADS; t++ {
+		go func(tidx uint32, wg *sync.WaitGroup) {
+
+			gsc := make([]graph.StructureChange, 0, 4096)
+			strucClosed := false
+			infoTimer := time.Now()
+			for {
+				if strucClosed != true && haltFlag != true {
+					//m2 := time.Since(m1)
+					m2 := g.Watch.Elapsed()
+					targetEdgeCount := m2.Seconds() * (float64(graph.TARGETRATE) / float64(graph.THREADS))
+					incEdgeCount := uint64(targetEdgeCount) - threadEdges[tidx]
+
 					gsc = gsc[:0] // reuse buffer
-					strucClosed := false
+					ec := uint64(0)
 				fillLoop:
-					for {
+					for ; ec < incEdgeCount; ec++ {
 						select {
 						case msg, ok := <-g.ThreadStructureQ[tidx]:
 							if ok {
@@ -232,14 +325,75 @@ func (frame *Framework) ConvergeAsyncDyn(g *graph.Graph, feederWg *sync.WaitGrou
 							break fillLoop
 						}
 					}
-
 					if len(gsc) != 0 {
 						EnactStructureChange(g, frame, tidx, gsc)
-					} else if strucClosed { // No more structure changes (channel is closed)
-						if frame.CheckTermination(g, tidx) {
-							wg.Done()
-							return
+						threadEdges[tidx] += uint64(len(gsc))
+
+						allEdgeCount := uint64(0)
+						for te := range threadEdges {
+							allEdgeCount += threadEdges[te]
+							//if allEdgeCount > 18838563 {
+							//	haltFlag = true
+							//	strucClosed = true
+							//	info("haltAt ", g.Watch.Elapsed().Milliseconds())
+							//}
 						}
+						allRate := float64(allEdgeCount) / g.Watch.Elapsed().Seconds()
+
+						if tidx == 0 {
+							infoTimerChk := time.Since(infoTimer)
+							if infoTimerChk.Seconds() > 1.0 {
+								info("Approx_rate: ", uint64(allRate), " T0_Ingest_pct(", ec, "/", incEdgeCount, ")eq: ", (ec/(incEdgeCount+1))*100.0, " rate_achieve_pct ", allRate/float64(graph.TARGETRATE))
+								infoTimer = time.Now()
+							}
+						}
+
+						if allRate/float64(graph.TARGETRATE) < 0.99 {
+							continue
+						}
+					}
+				}
+
+				algCount := 0
+			algLoop:
+				for ; algCount < 100; algCount++ {
+					select {
+					case msg := <-g.MessageQ[tidx]:
+						g.TerminateVote[tidx] = -1
+
+						g.Mutex.RLock()
+						target := &g.Vertices[msg.Didx]
+						target.Mutex.Lock()
+						//val := target.Scratch
+						//target.Scratch = 0
+						val := mathutils.AtomicSwapFloat64(&target.Scratch, 0)
+						target.Active = false
+						target.Mutex.Unlock()
+
+						switch msg.Type {
+						case graph.ADD:
+							enforce.ENFORCE(false)
+							break
+						case graph.DEL:
+							enforce.ENFORCE(false)
+							break
+						case graph.VISIT:
+							frame.OnVisitVertex(g, msg.Didx, (msg.Val + val))
+							break
+						default:
+							enforce.ENFORCE(false)
+						}
+						g.Mutex.RUnlock()
+						g.MsgRecv[tidx] += 1
+					default:
+						break algLoop
+					}
+				}
+
+				if algCount != 100 && strucClosed { // No more structure changes (channel is closed)
+					if frame.CheckTermination(g, tidx) {
+						wg.Done()
+						return
 					}
 				}
 			}
@@ -305,8 +459,8 @@ func PrintTerminationStatus(g *graph.Graph, exit *bool) {
 			chktermData[i] = int64(g.MsgSend[i]) - int64(g.MsgRecv[i])
 			chkRes += chktermData[i]
 		}
-		info(chktermData, chkRes)
-		info(g.TerminateVote)
+		//info("Effective: ", chktermData)
+		info("Outstanding:  ", chkRes, " Votes: ", g.TerminateVote)
 		time.Sleep(5 * time.Second)
 	}
 }

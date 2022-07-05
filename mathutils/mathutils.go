@@ -3,6 +3,8 @@ package mathutils
 import (
 	"math"
 	"sort"
+	"sync/atomic"
+	"unsafe"
 )
 
 func FloatEquals(a float64, b float64, args ...interface{}) bool {
@@ -51,4 +53,33 @@ func MedianFloat64(n []float64) float64 {
 		return n[idx]
 	}
 	return (n[idx-1] + n[idx]) / 2
+}
+
+func AtomicAddFloat64(val *float64, delta float64) (new float64, old float64) {
+	for {
+		old = *val
+		new = old + delta
+		if atomic.CompareAndSwapUint64(
+			(*uint64)(unsafe.Pointer(val)),
+			math.Float64bits(old),
+			math.Float64bits(new),
+		) {
+			break
+		}
+	}
+	return
+}
+
+func AtomicSwapFloat64(val *float64, new float64) (old float64) {
+	for {
+		old = *val
+		if atomic.CompareAndSwapUint64(
+			(*uint64)(unsafe.Pointer(val)),
+			math.Float64bits(old),
+			math.Float64bits(new),
+		) {
+			break
+		}
+	}
+	return
 }

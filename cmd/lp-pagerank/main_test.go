@@ -151,10 +151,6 @@ func TestDynamicCreation(t *testing.T) {
 				t.Error("Value not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
 				testFail = true
 			}
-			if !mathutils.FloatEquals(g1values.Latent, g2values.Latent, allowedVariance) {
-				t.Error("Latent not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
-				testFail = true
-			}
 			if !mathutils.FloatEquals(g1values.Residual, g2values.Residual, allowedVariance) {
 				t.Error("Residual not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
 				testFail = true
@@ -245,10 +241,6 @@ func TestDynamicWithDelete(t *testing.T) {
 			b[vidx] = g2values.Value
 			if !mathutils.FloatEquals(g1values.Value, g2values.Value, allowedVariance) {
 				t.Error("Value not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
-				testFail = true
-			}
-			if !mathutils.FloatEquals(g1values.Latent, g2values.Latent, allowedVariance) {
-				t.Error("Latent not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
 				testFail = true
 			}
 			if !mathutils.FloatEquals(g1values.Residual, g2values.Residual, allowedVariance) {
