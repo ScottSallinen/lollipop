@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
@@ -20,6 +19,7 @@ type Framework struct {
 	OnCheckCorrectness OnCheckCorrectnessFunc
 	OnEdgeAdd          OnEdgeAddFunc
 	OnEdgeDel          OnEdgeDelFunc
+	OnCompareOracle    OnCompareOracleFunc
 }
 
 type OnVisitVertexFunc func(g *graph.Graph, vidx uint32, data interface{}) int
@@ -27,6 +27,7 @@ type OnFinishFunc func(g *graph.Graph, data interface{}) error
 type OnCheckCorrectnessFunc func(g *graph.Graph) error
 type OnEdgeAddFunc func(g *graph.Graph, sidx uint32, didx uint32, VisitData interface{})
 type OnEdgeDelFunc func(g *graph.Graph, sidx uint32, didx uint32, VisitData interface{})
+type OnCompareOracleFunc func(g *graph.Graph)
 
 func (frame *Framework) Init(g *graph.Graph, async bool, dynamic bool) {
 	//info("Started.")
@@ -65,13 +66,13 @@ func (frame *Framework) Init(g *graph.Graph, async bool, dynamic bool) {
 		g.AlgConverge = frame.ConvergeSync
 	}
 
-	m0 := time.Now()
+	//m0 := time.Now()
 	for vidx := range g.Vertices {
 		g.OnInitVertex(g, uint32(vidx), nil)
 	}
-	t0 := time.Since(m0)
+	//t0 := time.Since(m0)
 
-	info("Initialized(ms) ", t0.Milliseconds())
+	//info("Initialized(ms) ", t0.Milliseconds())
 }
 
 func (frame *Framework) Run(g *graph.Graph, inputWg *sync.WaitGroup, outputWg *sync.WaitGroup) {
@@ -82,11 +83,11 @@ func (frame *Framework) Run(g *graph.Graph, inputWg *sync.WaitGroup, outputWg *s
 
 	info("Termination(ms) ", g.Watch.Elapsed().Milliseconds(), " realtime(ms): ", g.Watch.AbsoluteElapsed().Milliseconds())
 
-	m2 := time.Now()
+	//m2 := time.Now()
 	frame.OnFinish(g, nil)
-	t2 := time.Since(m2)
+	//t2 := time.Since(m2)
 
-	info("Finalized(ms) ", t2.Milliseconds())
+	//info("Finalized(ms) ", t2.Milliseconds())
 
 	err := frame.OnCheckCorrectness(g)
 	if err != nil {

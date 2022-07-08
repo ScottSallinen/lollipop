@@ -1,18 +1,16 @@
 package main
 
 import (
-	"encoding/gob"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
@@ -59,13 +57,15 @@ func OnCheckCorrectness(g *graph.Graph) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool) *graph.Graph {
 	frame := framework.Framework{}
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
 	frame.OnCheckCorrectness = OnCheckCorrectness
 	frame.OnEdgeAdd = OnEdgeAdd
 	frame.OnEdgeDel = OnEdgeDel
+
+	frame.OnCompareOracle = CompareToOracle
 
 	g := &graph.Graph{}
 	g.OnInitVertex = OnInitVertex
@@ -85,9 +85,11 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph {
 		go g.LoadGraphDynamic(gName, &feederWg)
 	}
 
-	//exit := false
-	//defer func() { exit = true }()
-	//go CompareToOracleRunnable(g, &exit)
+	if oracle {
+		exit := false
+		defer func() { exit = true }()
+		go CompareToOracleRunnable(g, &exit, 1000*time.Millisecond)
+	}
 
 	frame.Run(g, &feederWg, &frameWait)
 	return g
@@ -99,8 +101,7 @@ func main() {
 	dptr := flag.Bool("d", false, "Dynamic")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second")
 	cptr := flag.Bool("c", false, "Compare static vs dynamic")
-	optr := flag.Bool("o", false, "Save execution props as oracle values")
-	pptr := flag.Bool("p", false, "Comepare results to oracle values")
+	optr := flag.Bool("o", false, "Compare to oracle results during runtime")
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
 	gName := *gptr
@@ -124,20 +125,11 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	if *pptr {
-		vmap := gNameMain + ".vresmap"
-		file, err := os.Open(vmap)
-		enforce.ENFORCE(err)
-		defer file.Close()
-		err = gob.NewDecoder(file).Decode(&graph.ORACLEMAP)
-		enforce.ENFORCE(err)
-	}
-
 	runAsync := doAsync
 	if doDynamic {
 		runAsync = true
 	}
-	g := LaunchGraphExecution(gName, runAsync, doDynamic)
+	g := LaunchGraphExecution(gName, runAsync, doDynamic, *optr)
 
 	CompareToOracle(g)
 	g.ComputeGraphStats(false, false)
@@ -147,27 +139,12 @@ func main() {
 	}
 	g.WriteVertexProps(gNameMain + "-props-" + resName + ".txt")
 
-	if *optr {
-		g.WriteVertexProps(gNameMain + "-props-oracle.txt")
-
-		vmap := gNameMain + ".vresmap"
-		graph.ORACLEMAP = make(map[uint32]float64)
-		for vidx := range g.Vertices {
-			graph.ORACLEMAP[g.Vertices[vidx].Id] = g.Vertices[vidx].Properties.Value
-		}
-		newFile, err := os.Create(vmap)
-		enforce.ENFORCE(err)
-		defer newFile.Close()
-		err = gob.NewEncoder(newFile).Encode(graph.ORACLEMAP)
-		enforce.ENFORCE(err)
-	}
-
 	if *cptr {
 		runAsync = doAsync
 		if !doDynamic {
 			runAsync = true
 		}
-		gAlt := LaunchGraphExecution(gName, runAsync, !doDynamic)
+		gAlt := LaunchGraphExecution(gName, runAsync, !doDynamic, *optr)
 
 		gAlt.ComputeGraphStats(false, false)
 		resName := "dynamic"
@@ -195,45 +172,23 @@ func main() {
 	}
 }
 
-func CompareToOracleRunnable(g *graph.Graph, exit *bool) {
-	time.Sleep(1 * time.Second)
+func CompareToOracleRunnable(g *graph.Graph, exit *bool, sleepTime time.Duration) {
+	time.Sleep(sleepTime)
 	for !*exit {
 		CompareToOracle(g)
-		time.Sleep(1 * time.Second)
+		time.Sleep(sleepTime)
 	}
 }
 
+var resultCache []float64
+
 func CompareToOracle(g *graph.Graph) {
-	/*
-		if graph.ORACLEMAP != nil {
-			a := make([]float64, len(graph.ORACLEMAP))
-			b := make([]float64, len(graph.ORACLEMAP))
-
-			vidx := 0
-			g.Mutex.Lock()
-
-			for id, value := range graph.ORACLEMAP {
-				g2idx, ok := g.VertexMap[id]
-
-				g2value := 1.0 * 0.85
-				if ok {
-					g2value = g.Vertices[g2idx].Properties.Value
-					//numEdges += uint64(len(g.Vertices[g2idx].OutEdges))
-				}
-				a[vidx] = value
-				b[vidx] = g2value
-				vidx++
-			}
-			graph.ResultCompare(a, b)
-			g.Mutex.Unlock()
-		}
-	*/
-
 	numEdges := uint64(0)
 
 	g.Mutex.Lock()
 	g.Watch.Pause()
 	info("----INLINE----")
+	info("inlineTime(ms) ", g.Watch.Elapsed().Milliseconds())
 	frame := framework.Framework{}
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -258,14 +213,14 @@ func CompareToOracle(g *graph.Graph) {
 		gVertexStash[v].Scratch = g.Vertices[v].Scratch
 	}
 
-	frame.Init(altG, true, false)
-
-	var feederWg sync.WaitGroup
-	feederWg.Add(1)
-	var frameWait sync.WaitGroup
-	frameWait.Add(1)
-
-	frame.Run(altG, &feederWg, &frameWait)
+	if resultCache == nil {
+		frame.Init(altG, true, false)
+		var feederWg sync.WaitGroup
+		feederWg.Add(1)
+		var frameWait sync.WaitGroup
+		frameWait.Add(1)
+		frame.Run(altG, &feederWg, &frameWait)
+	}
 
 	ia := make([]float64, len(g.Vertices))
 	ib := make([]float64, len(g.Vertices))
@@ -280,9 +235,37 @@ func CompareToOracle(g *graph.Graph) {
 		ib[v] = g.Vertices[v].Properties.Value
 		// Resetting the effect of the "early finish"
 		g.Vertices[v].Properties.Value = gVertexStash[v].Properties.Value
+		g.Vertices[v].Properties.Residual = gVertexStash[v].Properties.Residual
+		g.Vertices[v].Scratch = gVertexStash[v].Scratch
 	}
-	info("edgeCount: ", numEdges)
+	if resultCache == nil && numEdges == 28511807 {
+		resultCache = make([]float64, len(ia))
+		copy(resultCache, ia)
+	}
+	if resultCache != nil {
+		copy(ia, resultCache)
+	}
+	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges, " vertexPct ", (len(g.Vertices)*100)/1791489, " edgePct ", (numEdges*100)/28511807)
 	graph.ResultCompare(ia, ib)
+
+	iaRank := mathutils.NewIndexedFloat64Slice(ia)
+	ibRank := mathutils.NewIndexedFloat64Slice(ib)
+	sort.Sort(sort.Reverse(iaRank))
+	sort.Sort(sort.Reverse(ibRank))
+
+	topN := 1000
+	topK := 100
+	if len(iaRank.Idx) < topN {
+		topN = len(iaRank.Idx)
+	}
+	iaRk := make([]int, topK)
+	copy(iaRk, iaRank.Idx[:topK])
+	ibRk := make([]int, topK)
+	copy(ibRk, ibRank.Idx[:topK])
+
+	mRBO6 := mathutils.CalculateRBO(iaRank.Idx[:topN], ibRank.Idx[:topN], 0.6)
+	mRBO9 := mathutils.CalculateRBO(iaRk, ibRk, 0.9)
+	info("top", topN, " RBO6 ", fmt.Sprintf("%.4f", mRBO6*100.0), " top", topK, " RBO9 ", fmt.Sprintf("%.4f", mRBO9*100.0))
 
 	/*
 		// Next test, how long to finish G from its current state?

@@ -131,8 +131,8 @@ func (g *Graph) BuildMap(graphName string) {
 }
 
 func (g *Graph) LoadGraphStatic(graphName string) {
-	deqCount := mathutils.MaxUint32(uint32(THREADS), 1)
-	enqCount := mathutils.MaxUint32(uint32(THREADS/2), 1)
+	deqCount := mathutils.Max(uint32(THREADS), 1)
+	enqCount := mathutils.Max(uint32(THREADS/2), 1)
 
 	m0 := time.Now()
 	g.VertexMap = make(map[uint32]uint32)

@@ -70,11 +70,18 @@ func EnactStructureChange(g *graph.Graph, frame *Framework, tidx uint32, changes
 			}
 			src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
 		}
+		val := float64(0)
+
+		// TODO: Adjust this for delete as well?
+		if change.Type == graph.ADD {
+			val = mathutils.AtomicSwapFloat64(&src.Scratch, 0)
+		}
+
 		src.Mutex.Unlock()
 
 		// Send the edge change message.
 		if change.Type == graph.ADD {
-			frame.OnEdgeAdd(g, sidx, didx, nil)
+			frame.OnEdgeAdd(g, sidx, didx, val)
 		} else if change.Type == graph.DEL {
 			frame.OnEdgeDel(g, sidx, didx, nil)
 		}
@@ -147,6 +154,7 @@ func (frame *Framework) ConvergeAsync(g *graph.Graph, feederWg *sync.WaitGroup) 
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
 			for {
+				//g.Mutex.RLock()
 				select {
 				case msg, ok := <-g.MessageQ[tidx]:
 					if ok {
@@ -171,6 +179,7 @@ func (frame *Framework) ConvergeAsync(g *graph.Graph, feederWg *sync.WaitGroup) 
 						return
 					}
 				}
+				//g.Mutex.RUnlock()
 			}
 		}(uint32(t), &wg)
 	}
@@ -355,8 +364,9 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 				}
 
 				algCount := 0
+				const algTarget = 10000
 			algLoop:
-				for ; algCount < 100; algCount++ {
+				for ; algCount < algTarget; algCount++ {
 					select {
 					case msg := <-g.MessageQ[tidx]:
 						g.TerminateVote[tidx] = -1
@@ -390,7 +400,7 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 					}
 				}
 
-				if algCount != 100 && strucClosed { // No more structure changes (channel is closed)
+				if algCount < algTarget && strucClosed { // No more structure changes (channel is closed)
 					if frame.CheckTermination(g, tidx) {
 						wg.Done()
 						return

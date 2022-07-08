@@ -27,8 +27,8 @@ func (g *Graph) DynamicEdgeDequeuer(queuechan chan QueueElem, deqWg *sync.WaitGr
 }
 
 func (g *Graph) LoadGraphDynamic(graphName string, feederWg *sync.WaitGroup) {
-	deqCount := mathutils.MaxUint32(uint32(THREADS), 1)
-	enqCount := mathutils.MaxUint32(uint32(THREADS/2), 1)
+	deqCount := mathutils.Max(uint32(THREADS), 1)
+	enqCount := mathutils.Max(uint32(THREADS/2), 1)
 
 	m1 := time.Now()
 

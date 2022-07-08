@@ -4,13 +4,12 @@ import (
 	"sync"
 
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 func OnQueueVisitSync(g *graph.Graph, sidx uint32, didx uint32, VisitData interface{}) {
 	target := &g.Vertices[didx]
-	target.Mutex.Lock()
-	target.Scratch += VisitData.(float64)
-	target.Mutex.Unlock()
+	mathutils.AtomicAddFloat64(&target.Scratch, VisitData.(float64))
 }
 
 func (frame *Framework) ConvergeSync(g *graph.Graph, wg *sync.WaitGroup) {
@@ -31,11 +30,7 @@ func (frame *Framework) ConvergeSync(g *graph.Graph, wg *sync.WaitGroup) {
 				for j := start; j < end; j++ {
 					target := &g.Vertices[j]
 					if target.Scratch != 0 || iteration == 0 {
-						target.Mutex.Lock()
-						msgVal := 0.0
-						msgVal = target.Scratch
-						target.Scratch = 0
-						target.Mutex.Unlock()
+						msgVal := mathutils.AtomicSwapFloat64(&target.Scratch, 0.0)
 						mActive := frame.OnVisitVertex(g, j, msgVal)
 						if mActive > 0 {
 							vertexActive = 1
@@ -47,6 +42,7 @@ func (frame *Framework) ConvergeSync(g *graph.Graph, wg *sync.WaitGroup) {
 
 		wg.Wait()
 		iteration++
+		//frame.OnCompareOracle(g)
 		if vertexActive != 1 {
 			break
 		}

@@ -17,7 +17,37 @@ func OnInitVertex(g *graph.Graph, vidx uint32, data interface{}) {
 	g.Vertices[vidx].Scratch = 0.0
 }
 
+// OnEdgeAdd is the complex version which merges a Visit call.
 func OnEdgeAdd(g *graph.Graph, sidx uint32, didx uint32, data interface{}) {
+	src := &g.Vertices[sidx]
+	distAllPrev := src.Properties.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+
+	src.Properties.Residual += data.(float64)
+	toDistribute := DAMPINGFACTOR * (src.Properties.Residual)
+	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Properties.Residual)
+	src.Properties.Value += toAbsorb
+	src.Properties.Residual = 0.0
+	distribute := toDistribute / float64(len(src.OutEdges))
+
+	if len(src.OutEdges) > 1 { /// Not just our first edge
+		distOld := distAllPrev / (float64(len(src.OutEdges) - 1))
+		distNew := distAllPrev / (float64(len(src.OutEdges)))
+		distDelta := distNew - distOld
+
+		for eidx := range src.OutEdges {
+			target := src.OutEdges[eidx].Target
+			if target != didx { /// Only old edges
+				g.OnQueueVisit(g, sidx, target, distDelta+distribute)
+			}
+		}
+	}
+	distNewEdge := distAllPrev / (float64(len(src.OutEdges)))
+
+	g.OnQueueVisit(g, sidx, didx, distNewEdge+distribute)
+}
+
+// OnEdgeAddBasic is the simple version which does not merge a Visit call.
+func OnEdgeAddBasic(g *graph.Graph, sidx uint32, didx uint32, data interface{}) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Properties.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -64,8 +94,8 @@ func OnVisitVertex(g *graph.Graph, vidx uint32, data interface{}) int {
 	toDistribute := DAMPINGFACTOR * (vertex.Properties.Residual)
 	toAbsorb := (1.0 - DAMPINGFACTOR) * (vertex.Properties.Residual)
 
-	/// TODO: Epsilon adjustments...
-	if vertex.Properties.Residual > EPSILON || math.Abs(toAbsorb/(vertex.Properties.Value-toAbsorb)) > EPSILON {
+	/// TODO: Epsilon adjustments...|| math.Abs(toAbsorb/(vertex.Properties.Value-toAbsorb)) > EPSILON
+	if math.Abs(vertex.Properties.Residual) > EPSILON {
 		vertex.Properties.Value += toAbsorb
 		vertex.Properties.Residual = 0.0
 
@@ -93,6 +123,13 @@ func OnFinish(g *graph.Graph, data interface{}) error {
 			globalLatent += g.Vertices[vidx].Properties.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 			numSinks++
 		} else {
+			// New: absorb any leftovers of residual?
+			/*
+				g.Vertices[vidx].Properties.Value += (1.0 - DAMPINGFACTOR) * (g.Vertices[vidx].Properties.Residual + g.Vertices[vidx].Scratch)
+				// Ideally we distribute, but to cheat the total sum mass check, we leave some here.
+				g.Vertices[vidx].Properties.Residual = (1.0 - DAMPINGFACTOR) * g.Vertices[vidx].Properties.Residual
+				g.Vertices[vidx].Scratch = (1.0 - DAMPINGFACTOR) * g.Vertices[vidx].Scratch
+			*/
 			nonSinkSum += g.Vertices[vidx].Properties.Value
 		}
 	}

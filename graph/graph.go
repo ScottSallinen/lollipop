@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"sort"
 	"sync"
 
 	"github.com/ScottSallinen/lollipop/mathutils"
@@ -15,7 +16,6 @@ func info(args ...interface{}) {
 
 var THREADS = 32
 var TARGETRATE = float64(0)
-var ORACLEMAP map[uint32]float64
 
 // Graph t
 type Graph struct {
@@ -165,11 +165,11 @@ func (g *Graph) ComputeGraphStats(inDeg bool, outDeg bool) {
 		}
 		numEdges += uint64(len(g.Vertices[vidx].OutEdges))
 		if outDeg {
-			maxOutDegree = mathutils.MaxUint64(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
+			maxOutDegree = mathutils.Max(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
 			listOutDegree = append(listOutDegree, len(g.Vertices[vidx].OutEdges))
 		}
 		if inDeg {
-			maxInDegree = mathutils.MaxUint64(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
+			maxInDegree = mathutils.Max(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
 			listInDegree = append(listInDegree, len(g.Vertices[vidx].InEdges))
 		}
 	}
@@ -196,16 +196,23 @@ func ResultCompare(a []float64, b []float64) float64 {
 	listDiff := []float64{}
 
 	for idx := range a {
-		delta := math.Abs((b[idx] - a[idx]) * 100.0 / a[idx])
-		//delta := math.Abs((b[idx] - a[idx]))
+		delta := math.Abs((b[idx] - a[idx]) * 100.0 / math.Min(a[idx], b[idx]))
 		listDiff = append(listDiff, delta)
 		avgDiff += delta
-		largestDiff = mathutils.MaxFloat64(largestDiff, delta)
-		smallestDiff = mathutils.MinFloat64(smallestDiff, delta)
+		largestDiff = mathutils.Max(largestDiff, delta)
+		smallestDiff = mathutils.Min(smallestDiff, delta)
 	}
 	avgDiff = avgDiff / float64(len(a))
 
-	medianDiff := mathutils.MedianFloat64(listDiff)
+	sort.Float64s(listDiff)
+
+	medianIdx := len(listDiff) / 2
+	medianDiff := listDiff[medianIdx]
+	if len(listDiff)%2 == 1 { // odd
+		medianDiff = (listDiff[medianIdx-1] + listDiff[medianIdx]) / 2
+	}
+
+	percentile95 := listDiff[int(float64(len(listDiff))*0.95)]
 
 	/*
 		info("---- Result Compare ----")
@@ -215,7 +222,7 @@ func ResultCompare(a []float64, b []float64) float64 {
 		info("medianDiff : ", medianDiff)
 		info("---- End of Compare ----")
 	*/
-	info("Median ", medianDiff, " Average ", avgDiff, " Largest ", largestDiff)
+	info("Average ", avgDiff, " Median ", medianDiff, " 95p ", percentile95, " Largest ", largestDiff)
 	return largestDiff
 }
 

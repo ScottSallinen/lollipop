@@ -5,6 +5,8 @@ import (
 	"sort"
 	"sync/atomic"
 	"unsafe"
+
+	"golang.org/x/exp/constraints"
 )
 
 func FloatEquals(a float64, b float64, args ...interface{}) bool {
@@ -14,40 +16,22 @@ func FloatEquals(a float64, b float64, args ...interface{}) bool {
 	return math.Abs(a-b) < 0.001
 }
 
-func MaxUint64(x, y uint64) uint64 {
+func Max[T constraints.Ordered](x, y T) T {
 	if x < y {
 		return y
 	}
 	return x
 }
-func MaxUint32(x, y uint32) uint32 {
-	if x < y {
-		return y
-	}
-	return x
-}
-func MaxFloat64(x, y float64) float64 {
-	if x < y {
-		return y
-	}
-	return x
-}
-func MinFloat64(x, y float64) float64 {
+
+func Min[T constraints.Ordered](x, y T) T {
 	if y < x {
 		return y
 	}
 	return x
 }
+
 func Median(n []int) int {
 	sort.Ints(n) // sort numbers
-	idx := len(n) / 2
-	if len(n)%2 == 0 { // even
-		return n[idx]
-	}
-	return (n[idx-1] + n[idx]) / 2
-}
-func MedianFloat64(n []float64) float64 {
-	sort.Float64s(n) // sort numbers
 	idx := len(n) / 2
 	if len(n)%2 == 0 { // even
 		return n[idx]
@@ -82,4 +66,24 @@ func AtomicSwapFloat64(val *float64, new float64) (old float64) {
 		}
 	}
 	return
+}
+
+type IndexedFloat64Slice struct {
+	sort.Float64Slice
+	Idx []int
+}
+
+func (s IndexedFloat64Slice) Swap(i, j int) {
+	s.Float64Slice.Swap(i, j)
+	s.Idx[i], s.Idx[j] = s.Idx[j], s.Idx[i]
+}
+
+func NewIndexedFloat64Slice(n []float64) *IndexedFloat64Slice {
+	cpy := make([]float64, len(n))
+	copy(cpy, n)
+	s := &IndexedFloat64Slice{Float64Slice: sort.Float64Slice(cpy), Idx: make([]int, len(n))}
+	for i := range s.Idx {
+		s.Idx[i] = i
+	}
+	return s
 }
