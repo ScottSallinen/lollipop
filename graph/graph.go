@@ -16,13 +16,13 @@ func info(args ...interface{}) {
 
 var THREADS = 32
 var TARGETRATE = float64(0)
+var DEBUG = false
 
 // Graph t
 type Graph struct {
 	Mutex             sync.RWMutex
 	VertexMap         map[uint32]uint32 // Raw to internal
-	Vertices          []Vertex          `json:"vertices"`
-	OnInitVertex      OnInitVertexFunc
+	Vertices          []Vertex
 	OnQueueVisit      OnQueueVisitFunc
 	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc
 	AlgConverge       ConvergeFunc
@@ -33,6 +33,10 @@ type Graph struct {
 	TerminateVote     []int
 	TerminateData     []int64
 	Watch             mathutils.Watch
+	EmptyVal          float64 // Value used to represent "empty" or "no work to do"
+	SourceInitVal     float64 // Value to begin at source vertex
+	SourceInit        bool    // A specific source vertex starts the algorithm.
+	SourceVertex      uint32  // Raw ID of source vertex, if applicable.
 }
 
 type VisitType int
@@ -56,18 +60,17 @@ type StructureChange struct {
 	Type   VisitType // add or del
 	SrcRaw uint32
 	DstRaw uint32
+	Weight float64
 }
 
-type OnInitVertexFunc func(g *Graph, vidx uint32, data interface{})
-type OnQueueVisitFunc func(g *Graph, sidx uint32, didx uint32, VisitData interface{})
-type OnQueueEdgeAddRevFunc func(g *Graph, sidx uint32, didx uint32, VisitData interface{})
+type OnQueueVisitFunc func(g *Graph, sidx uint32, didx uint32, VisitData float64)
+type OnQueueEdgeAddRevFunc func(g *Graph, sidx uint32, didx uint32, VisitData float64)
 type ConvergeFunc func(g *Graph, wg *sync.WaitGroup)
 
 // Edge t
 type Edge struct {
-	Target uint32 `json:"target"`
-	//Prop   float64 `json:"prop"`
-	//Weight float64 `json:"weight"`
+	Target uint32  `json:"target"`
+	Weight float64 `json:"weight"`
 }
 
 // Edge t
@@ -78,33 +81,26 @@ type InEdge struct {
 }
 
 func (e *Edge) Reset() {
-	e = &Edge{}
+	*e = Edge{}
 }
 
 func (e *InEdge) Reset() {
-	e = &InEdge{}
+	*e = InEdge{}
 }
 
 // Vertex t
 type Vertex struct {
-	Id uint32 `json:"id"`
-	//Weight      float64    `json:"weight"`
-	Properties VertexProp `json:"properties"`
-	OutEdges   []Edge     `json:"outedges"`
-	InEdges    []InEdge   `json:"inedges"`
-	Scratch    float64
-	Active     bool
-	Mutex      sync.Mutex
-}
-
-type VertexProp struct {
-	Value    float64
+	Scratch  float64
 	Residual float64
+	Value    float64
+	Id       uint32
+	OutEdges []Edge
+	InEdges  []InEdge
+	Mutex    sync.Mutex
 }
 
 func (v *Vertex) Reset() {
-	v.Properties = VertexProp{}
-	v.Scratch = 0
+	*v = Vertex{}
 	for eidx := range v.OutEdges {
 		v.OutEdges[eidx].Reset()
 	}
@@ -165,11 +161,11 @@ func (g *Graph) ComputeGraphStats(inDeg bool, outDeg bool) {
 		}
 		numEdges += uint64(len(g.Vertices[vidx].OutEdges))
 		if outDeg {
-			maxOutDegree = mathutils.Max(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
+			maxOutDegree = mathutils.MaxUint64(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
 			listOutDegree = append(listOutDegree, len(g.Vertices[vidx].OutEdges))
 		}
 		if inDeg {
-			maxInDegree = mathutils.Max(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
+			maxInDegree = mathutils.MaxUint64(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
 			listInDegree = append(listInDegree, len(g.Vertices[vidx].InEdges))
 		}
 	}
@@ -199,8 +195,8 @@ func ResultCompare(a []float64, b []float64) float64 {
 		delta := math.Abs((b[idx] - a[idx]) * 100.0 / math.Min(a[idx], b[idx]))
 		listDiff = append(listDiff, delta)
 		avgDiff += delta
-		largestDiff = mathutils.Max(largestDiff, delta)
-		smallestDiff = mathutils.Min(smallestDiff, delta)
+		largestDiff = mathutils.MaxFloat64(largestDiff, delta)
+		smallestDiff = mathutils.MinFloat64(smallestDiff, delta)
 	}
 	avgDiff = avgDiff / float64(len(a))
 
@@ -211,17 +207,8 @@ func ResultCompare(a []float64, b []float64) float64 {
 	if len(listDiff)%2 == 1 { // odd
 		medianDiff = (listDiff[medianIdx-1] + listDiff[medianIdx]) / 2
 	}
-
 	percentile95 := listDiff[int(float64(len(listDiff))*0.95)]
 
-	/*
-		info("---- Result Compare ----")
-		info("largestDiff : ", largestDiff)
-		info("smallestDiff : ", smallestDiff)
-		info("avgDiff : ", avgDiff)
-		info("medianDiff : ", medianDiff)
-		info("---- End of Compare ----")
-	*/
 	info("Average ", avgDiff, " Median ", medianDiff, " 95p ", percentile95, " Largest ", largestDiff)
 	return largestDiff
 }
@@ -230,8 +217,8 @@ func (g *Graph) PrintVertexProps(prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%.3f", g.Vertices[vidx].Properties.Value) + " "
-		sum += g.Vertices[vidx].Properties.Value
+		top += fmt.Sprintf("%d:[%.3f,%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Value, g.Vertices[vidx].Residual, g.Vertices[vidx].Scratch)
+		sum += g.Vertices[vidx].Value
 	}
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
 }
@@ -251,32 +238,9 @@ func (g *Graph) PrintStructure() {
 func (g *Graph) GetVertexProps() []float64 {
 	props := []float64{}
 	for vidx := range g.Vertices {
-		props = append(props, g.Vertices[vidx].Properties.Value)
+		props = append(props, g.Vertices[vidx].Value)
 	}
 	return props
-}
-
-func (g *Graph) PrintVertexPropsDiv(prefix string, factor float64) {
-	top := prefix
-	sum := 0.0
-	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%.3f", g.Vertices[vidx].Properties.Value/factor) + " "
-		sum += g.Vertices[vidx].Properties.Value / factor
-	}
-	info(top + " : " + fmt.Sprintf("%.3f", sum))
-}
-
-func (g *Graph) PrintVertexPropsNorm(prefix string, norm float64) {
-	top := prefix
-	sum := 0.0
-	for vidx := range g.Vertices {
-		sum += g.Vertices[vidx].Properties.Value
-	}
-	normMult := norm / sum
-	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%.3f", g.Vertices[vidx].Properties.Value*normMult) + " "
-	}
-	info(top + " : " + fmt.Sprintf("%.3f", norm) + " (from " + fmt.Sprintf("%.3f", sum) + ")")
 }
 
 func (g *Graph) PrintVertexInEdgeSum(prefix string) {

@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 const DAMPINGFACTOR = float64(0.85)
@@ -11,22 +12,46 @@ const INITMASS = 1.0
 
 var EPSILON = float64(0.001)
 
-func OnInitVertex(g *graph.Graph, vidx uint32, data interface{}) {
-	g.Vertices[vidx].Properties.Residual = INITMASS
-	g.Vertices[vidx].Properties.Value = 0.0
+func MessageAggregator(target *graph.Vertex, data float64) (newInfo bool) {
+	/*
+		target.Mutex.Lock()
+		tmp := target.Scratch
+		target.Scratch += data
+		target.Mutex.Unlock()
+		return tmp == 0.0
+	*/
+	old := mathutils.AtomicAddFloat64(&target.Scratch, data)
+	return old == 0.0
+}
+
+func AggregateRetrieve(target *graph.Vertex) float64 {
+	/*
+		target.Mutex.Lock()
+		tmp := target.Scratch
+		target.Scratch = 0
+		target.Mutex.Unlock()
+		return tmp
+	*/
+	old := mathutils.AtomicSwapFloat64(&target.Scratch, 0.0)
+	return old
+}
+
+func OnInitVertex(g *graph.Graph, vidx uint32) {
+	g.Vertices[vidx].Residual = INITMASS
+	g.Vertices[vidx].Value = 0.0
 	g.Vertices[vidx].Scratch = 0.0
 }
 
 // OnEdgeAdd is the complex version which merges a Visit call.
-func OnEdgeAdd(g *graph.Graph, sidx uint32, didx uint32, data interface{}) {
+func OnEdgeAdd(g *graph.Graph, sidx uint32, didx uint32, data float64) {
 	src := &g.Vertices[sidx]
-	distAllPrev := src.Properties.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+	distAllPrev := src.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
-	src.Properties.Residual += data.(float64)
-	toDistribute := DAMPINGFACTOR * (src.Properties.Residual)
-	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Properties.Residual)
-	src.Properties.Value += toAbsorb
-	src.Properties.Residual = 0.0
+	src.Residual += data
+	toDistribute := DAMPINGFACTOR * (src.Residual)
+	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Residual)
+	src.Value += toAbsorb
+	src.Residual = 0.0
 	distribute := toDistribute / float64(len(src.OutEdges))
 
 	if len(src.OutEdges) > 1 { /// Not just our first edge
@@ -47,9 +72,9 @@ func OnEdgeAdd(g *graph.Graph, sidx uint32, didx uint32, data interface{}) {
 }
 
 // OnEdgeAddBasic is the simple version which does not merge a Visit call.
-func OnEdgeAddBasic(g *graph.Graph, sidx uint32, didx uint32, data interface{}) {
+func OnEdgeAddBasic(g *graph.Graph, sidx uint32, didx uint32, data float64) {
 	src := &g.Vertices[sidx]
-	distAllPrev := src.Properties.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+	distAllPrev := src.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
 	if len(src.OutEdges) > 1 { /// Not just our first edge
 		distOld := distAllPrev / (float64(len(src.OutEdges) - 1))
@@ -68,9 +93,9 @@ func OnEdgeAddBasic(g *graph.Graph, sidx uint32, didx uint32, data interface{}) 
 	g.OnQueueVisit(g, sidx, didx, distNewEdge)
 }
 
-func OnEdgeDel(g *graph.Graph, sidx uint32, didx uint32, data interface{}) {
+func OnEdgeDel(g *graph.Graph, sidx uint32, didx uint32, data float64) {
 	src := &g.Vertices[sidx]
-	distAllPrev := src.Properties.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+	distAllPrev := src.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
 	if len(src.OutEdges) > 0 { /// Still have edges left
 		distOld := distAllPrev / (float64(len(src.OutEdges) + 1))
@@ -87,17 +112,16 @@ func OnEdgeDel(g *graph.Graph, sidx uint32, didx uint32, data interface{}) {
 	g.OnQueueVisit(g, sidx, didx, distOldEdge)
 }
 
-func OnVisitVertex(g *graph.Graph, vidx uint32, data interface{}) int {
+func OnVisitVertex(g *graph.Graph, vidx uint32, data float64) int {
 	vertex := &g.Vertices[vidx]
-	vertex.Properties.Residual += data.(float64)
+	vertex.Residual += data
 
-	toDistribute := DAMPINGFACTOR * (vertex.Properties.Residual)
-	toAbsorb := (1.0 - DAMPINGFACTOR) * (vertex.Properties.Residual)
+	if math.Abs(vertex.Residual) > EPSILON {
+		toDistribute := DAMPINGFACTOR * (vertex.Residual)
+		toAbsorb := (1.0 - DAMPINGFACTOR) * (vertex.Residual)
 
-	/// TODO: Epsilon adjustments...|| math.Abs(toAbsorb/(vertex.Properties.Value-toAbsorb)) > EPSILON
-	if math.Abs(vertex.Properties.Residual) > EPSILON {
-		vertex.Properties.Value += toAbsorb
-		vertex.Properties.Residual = 0.0
+		vertex.Value += toAbsorb
+		vertex.Residual = 0.0
 
 		if len(vertex.OutEdges) > 0 {
 			distribute := toDistribute / float64(len(vertex.OutEdges))
@@ -111,7 +135,7 @@ func OnVisitVertex(g *graph.Graph, vidx uint32, data interface{}) int {
 	return 0
 }
 
-func OnFinish(g *graph.Graph, data interface{}) error {
+func OnFinish(g *graph.Graph) error {
 	/// Fix all sink node latent values
 	numSinks := 0       /// Number of sink nodes.
 	globalLatent := 0.0 /// Total latent values from sinks.
@@ -119,18 +143,20 @@ func OnFinish(g *graph.Graph, data interface{}) error {
 
 	/// One pass over all vertices -- compute some global totals.
 	for vidx := range g.Vertices {
+		// New: absorb any leftovers of residual
+		//*/
+		g.Vertices[vidx].Value += (1.0 - DAMPINGFACTOR) * (g.Vertices[vidx].Residual + g.Vertices[vidx].Scratch)
+		// Ideally we distribute (the residual should be spread among nbrs).
+		// But we must cheat the total sum mass check, so we leave some here (Residual is no longer meaningful, just used for bookkeeping).
+		g.Vertices[vidx].Residual = (DAMPINGFACTOR) * (g.Vertices[vidx].Residual + g.Vertices[vidx].Scratch)
+		g.Vertices[vidx].Scratch = 0.0
+		//*/
+
 		if len(g.Vertices[vidx].OutEdges) == 0 { /// Sink vertex
-			globalLatent += g.Vertices[vidx].Properties.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+			globalLatent += g.Vertices[vidx].Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 			numSinks++
 		} else {
-			// New: absorb any leftovers of residual?
-			/*
-				g.Vertices[vidx].Properties.Value += (1.0 - DAMPINGFACTOR) * (g.Vertices[vidx].Properties.Residual + g.Vertices[vidx].Scratch)
-				// Ideally we distribute, but to cheat the total sum mass check, we leave some here.
-				g.Vertices[vidx].Properties.Residual = (1.0 - DAMPINGFACTOR) * g.Vertices[vidx].Properties.Residual
-				g.Vertices[vidx].Scratch = (1.0 - DAMPINGFACTOR) * g.Vertices[vidx].Scratch
-			*/
-			nonSinkSum += g.Vertices[vidx].Properties.Value
+			nonSinkSum += g.Vertices[vidx].Value
 		}
 	}
 
@@ -148,16 +174,16 @@ func OnFinish(g *graph.Graph, data interface{}) error {
 	for vidx := range g.Vertices {
 		var toAbsorb float64
 		if len(g.Vertices[vidx].OutEdges) != 0 { /// All vertices that are NOT a sink node
-			toAbsorb = (NormalQuota) * (geometricLatentSum * (1.0 - retainSumPct)) * (g.Vertices[vidx].Properties.Value / nonSinkSum)
+			toAbsorb = (NormalQuota) * (geometricLatentSum * (1.0 - retainSumPct)) * (g.Vertices[vidx].Value / nonSinkSum)
 		} else { /// All vertices that are a sink node
 			/// Relative 'power' of this sink compared to others determines its retainment. Note: we undampen for this ratio as well.
-			vLatent := g.Vertices[vidx].Properties.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+			vLatent := g.Vertices[vidx].Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 			relativeSinkPowerPct := (vLatent*(1.0/DAMPINGFACTOR) - 1.0) / ((globalLatent * (1.0 / DAMPINGFACTOR)) - float64(numSinks)*1.0)
 			toAbsorb = (1.0 - DAMPINGFACTOR) * (SinkQuota) * (geometricLatentSum) * (1.0 - vLatent/globalLatent)
 			toAbsorb += (1.0 - DAMPINGFACTOR) * (NormalQuota) * (geometricLatentSum) * (retainSumPct) * (relativeSinkPowerPct)
 		}
-		g.Vertices[vidx].Properties.Value += toAbsorb
-		//g.Vertices[vidx].Properties.Value /= float64(len(g.Vertices)) /// If we want to normalize here
+		g.Vertices[vidx].Value += toAbsorb
+		//g.Vertices[vidx].Value /= float64(len(g.Vertices)) /// If we want to normalize here
 	}
 
 	return nil

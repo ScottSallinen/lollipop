@@ -1,51 +1,62 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 
-	_ "net/http/pprof"
-
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/ScottSallinen/lollipop/mathutils"
-	"github.com/gorilla/mux"
+
+	_ "net/http/pprof"
 )
 
 func info(args ...interface{}) {
-	log.Println("[Pagerank]\t", fmt.Sprint(args...))
+	log.Println("[SSSP]\t", fmt.Sprint(args...))
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
 func OnCheckCorrectness(g *graph.Graph) error {
-	sum := 0.0
-	sumsc := 0.0
-	resid := 0.0
+	noInVtx := make(map[uint32]uint32)
+	// First check: denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
 	for vidx := range g.Vertices {
-		sum += g.Vertices[vidx].Value
-		resid += g.Vertices[vidx].Residual
-		sumsc += g.Vertices[vidx].Scratch
+		ourValue := g.Vertices[vidx].Value
+		if g.Vertices[vidx].Id == g.SourceVertex {
+			enforce.ENFORCE(ourValue == g.SourceInitVal, ourValue)
+		}
+		if ourValue == g.EmptyVal { // we were never visted
+			noInVtx[uint32(vidx)] = 1
+		} else {
+			for eidx := range g.Vertices[vidx].OutEdges {
+				target := g.Vertices[vidx].OutEdges[eidx].Target
+				enforce.ENFORCE(g.Vertices[target].Value <= (ourValue + g.Vertices[vidx].OutEdges[eidx].Weight))
+			}
+		}
 	}
-	totalAbs := (sum) / float64(len(g.Vertices))
-	totalResid := (resid) / float64(len(g.Vertices))
-	totalScratch := (sumsc) / float64(len(g.Vertices))
-	total := totalAbs + totalResid + totalScratch
-
-	if !mathutils.FloatEquals(total, INITMASS) {
-		info("Total absorbed: ", totalAbs)
-		info("Total residual: ", totalResid)
-		info("Total scratch: ", totalScratch)
-		info("Total sum mass: ", total)
-		return errors.New("final mass not equal to init")
+	maxValue := 0.0
+	// Ensure unvisited vertices have no in edges or all pointing edges are also unvisted vertices.
+	for vidx := range g.Vertices {
+		ourValue := g.Vertices[vidx].Value
+		if ourValue < g.EmptyVal {
+			maxValue = math.Max(maxValue, ourValue)
+		}
+		if ourValue == g.EmptyVal { // we were never visted
+			for eidx := range g.Vertices[vidx].OutEdges {
+				target := g.Vertices[vidx].OutEdges[eidx].Target
+				_, inMap := noInVtx[target]
+				enforce.ENFORCE(!inMap)
+			}
+		}
 	}
+	info("maxValue ", maxValue)
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool) *graph.Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, rawSrc uint32) *graph.Graph {
 	frame := framework.Framework{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -57,7 +68,10 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool) *
 	frame.AggregateRetrieve = AggregateRetrieve
 
 	g := &graph.Graph{}
-	g.EmptyVal = 0.0
+	g.SourceInit = true
+	g.SourceInitVal = 1.0
+	g.EmptyVal = math.MaxFloat64
+	g.SourceVertex = rawSrc
 
 	frame.Launch(g, gName, async, dynamic, oracle)
 
@@ -79,8 +93,6 @@ func main() {
 	graph.THREADS = *tptr
 	graph.TARGETRATE = *rptr
 
-	//debug.SetGCPercent(-1)
-
 	gNameMainT := strings.Split(gName, "/")
 	gNameMain := gNameMainT[len(gNameMainT)-1]
 	gNameMainTD := strings.Split(gNameMain, ".")
@@ -95,10 +107,8 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
-	myRouter := mux.NewRouter().StrictSlash(true)
-	myRouter.PathPrefix("/debug/pprof/").Handler(http.DefaultServeMux)
 
-	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr)
+	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr, 0)
 
 	g.ComputeGraphStats(false, false)
 

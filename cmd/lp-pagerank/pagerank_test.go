@@ -40,14 +40,16 @@ type StructureChange struct {
 
 func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph {
 	frame := framework.Framework{}
+	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
 	frame.OnCheckCorrectness = OnCheckCorrectness
 	frame.OnEdgeAdd = OnEdgeAdd
 	frame.OnEdgeDel = OnEdgeDel
+	frame.MessageAggregator = MessageAggregator
+	frame.AggregateRetrieve = AggregateRetrieve
 
 	g := &graph.Graph{}
-	g.OnInitVertex = OnInitVertex
 
 	frame.Init(g, true, true)
 
@@ -61,7 +63,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph {
 	for _, v := range sc {
 		switch v.change {
 		case graph.ADD:
-			g.SendAdd(v.srcRaw, v.dstRaw)
+			g.SendAdd(v.srcRaw, v.dstRaw, 0.0)
 			info("add ", v.srcRaw, v.dstRaw)
 		case graph.DEL:
 			g.SendDel(v.srcRaw, v.dstRaw)
@@ -116,6 +118,8 @@ func TestDynamicCreation(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 
+		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
+
 		rawTestGraph := []StructureChange{
 			{graph.ADD, 1, 4},
 			{graph.ADD, 2, 0},
@@ -141,17 +145,21 @@ func TestDynamicCreation(t *testing.T) {
 			g1raw := gDyn.Vertices[vidx].Id
 			g2idx := gStatic.VertexMap[g1raw]
 
-			g1values := &gDyn.Vertices[vidx].Properties
-			g2values := &gStatic.Vertices[g2idx].Properties
+			g1values := &gDyn.Vertices[vidx]
+			g2values := &gStatic.Vertices[g2idx]
 
 			a[vidx] = g1values.Value
 			b[vidx] = g2values.Value
 
 			if !mathutils.FloatEquals(g1values.Value, g2values.Value, allowedVariance) {
+				gStatic.PrintVertexProps("S ")
+				gDyn.PrintVertexProps("D ")
 				t.Error("Value not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
 				testFail = true
 			}
 			if !mathutils.FloatEquals(g1values.Residual, g2values.Residual, allowedVariance) {
+				gStatic.PrintVertexProps("S ")
+				gDyn.PrintVertexProps("D ")
 				t.Error("Residual not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
 				testFail = true
 			}
@@ -172,9 +180,7 @@ func InjectDeletesRetainFinalStructure(sc []StructureChange, chance float64) []S
 	previousAdds := []StructureChange{}
 	returnSC := []StructureChange{}
 
-	for i := range sc {
-		availableAdds[i] = sc[i]
-	}
+	copy(availableAdds, sc)
 	shuffleSC(availableAdds)
 
 	for len(availableAdds) > 0 {
@@ -234,16 +240,20 @@ func TestDynamicWithDelete(t *testing.T) {
 			g1raw := gDyn.Vertices[vidx].Id
 			g2idx := gStatic.VertexMap[g1raw]
 
-			g1values := &gDyn.Vertices[vidx].Properties
-			g2values := &gStatic.Vertices[g2idx].Properties
+			g1values := &gDyn.Vertices[vidx]
+			g2values := &gStatic.Vertices[g2idx]
 
 			a[vidx] = g1values.Value
 			b[vidx] = g2values.Value
 			if !mathutils.FloatEquals(g1values.Value, g2values.Value, allowedVariance) {
+				gStatic.PrintVertexProps("S ")
+				gDyn.PrintVertexProps("D ")
 				t.Error("Value not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
 				testFail = true
 			}
 			if !mathutils.FloatEquals(g1values.Residual, g2values.Residual, allowedVariance) {
+				gStatic.PrintVertexProps("S")
+				gDyn.PrintVertexProps("D")
 				t.Error("Residual not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
 				testFail = true
 			}

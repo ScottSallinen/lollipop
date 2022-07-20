@@ -5,8 +5,7 @@ import (
 	"sort"
 	"sync/atomic"
 	"unsafe"
-
-	"golang.org/x/exp/constraints"
+	//"golang.org/x/exp/constraints"
 )
 
 func FloatEquals(a float64, b float64, args ...interface{}) bool {
@@ -16,14 +15,34 @@ func FloatEquals(a float64, b float64, args ...interface{}) bool {
 	return math.Abs(a-b) < 0.001
 }
 
-func Max[T constraints.Ordered](x, y T) T {
+//func Max[T constraints.Ordered](x, y T) T {
+//	if x < y {
+//		return y
+//	}
+//	return x
+//}
+
+func MaxFloat64(x, y float64) float64 {
+	if x < y {
+		return y
+	}
+	return x
+}
+func MaxUint64(x, y uint64) uint64 {
 	if x < y {
 		return y
 	}
 	return x
 }
 
-func Min[T constraints.Ordered](x, y T) T {
+//func Min[T constraints.Ordered](x, y T) T {
+//	if y < x {
+//		return y
+//	}
+//	return x
+//}
+
+func MinFloat64(x, y float64) float64 {
 	if y < x {
 		return y
 	}
@@ -39,10 +58,10 @@ func Median(n []int) int {
 	return (n[idx-1] + n[idx]) / 2
 }
 
-func AtomicAddFloat64(val *float64, delta float64) (new float64, old float64) {
+func AtomicAddFloat64(val *float64, delta float64) (old float64) {
 	for {
 		old = *val
-		new = old + delta
+		new := old + delta
 		if atomic.CompareAndSwapUint64(
 			(*uint64)(unsafe.Pointer(val)),
 			math.Float64bits(old),
