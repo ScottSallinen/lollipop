@@ -33,7 +33,7 @@ type OnInitVertexFunc func(g *graph.Graph, vidx uint32)
 type OnVisitVertexFunc func(g *graph.Graph, vidx uint32, data float64) int
 type OnFinishFunc func(g *graph.Graph) error
 type OnCheckCorrectnessFunc func(g *graph.Graph) error
-type OnEdgeAddFunc func(g *graph.Graph, sidx uint32, didx uint32, VisitData float64)
+type OnEdgeAddFunc func(g *graph.Graph, sidx uint32, didxs map[uint32]int, VisitData float64)
 type OnEdgeDelFunc func(g *graph.Graph, sidx uint32, didx uint32, VisitData float64)
 type MessageAggregatorFunc func(g *graph.Vertex, VisitData float64) (newInfo bool)
 type AggregateRetrieveFunc func(g *graph.Vertex) (data float64)
@@ -54,7 +54,7 @@ func (frame *Framework) Init(g *graph.Graph, async bool, dynamic bool) {
 		for i := 0; i < graph.THREADS; i++ {
 			if dynamic {
 				// Need a better way to manipulate channel size for dynamic. Maybe request approx vertex count from user?
-				g.MessageQ[i] = make(chan graph.Message, (4 * 4096 * 64))
+				g.MessageQ[i] = make(chan graph.Message, (4 * 4096 * 64 * 64))
 				g.ThreadStructureQ[i] = make(chan graph.StructureChange, 4*4*4096)
 			} else {
 				g.MessageQ[i] = make(chan graph.Message, len(g.Vertices)+8)

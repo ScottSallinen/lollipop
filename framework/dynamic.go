@@ -9,28 +9,36 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func (frame *Framework) EnactStructureChange(g *graph.Graph, tidx uint32, changes []graph.StructureChange) {
-	hasChanged := false
+func (frame *Framework) EnactStructureChanges(g *graph.Graph, tidx uint32, changes []graph.StructureChange) {
+	hasChangedIdMapping := false
 	newVid := make(map[uint32]bool, len(changes)*2)
+	miniGraph := make(map[uint32][]graph.StructureChange, len(changes))
 
+	// First pass: read lock the graph (no changes, just need consistent view).
 	g.Mutex.RLock()
 	for _, change := range changes {
+		// Gather changes to a given source vertex. We use raw IDs as they may not exist yet.
+		miniGraph[change.SrcRaw] = append(miniGraph[change.SrcRaw], change)
 		_, srcOk := g.VertexMap[change.SrcRaw]
 		_, dstOk := g.VertexMap[change.DstRaw]
+		// If a given raw ID does not exist yet, keep track of it (uniquely).
 		if !srcOk {
 			newVid[change.SrcRaw] = true
-			hasChanged = true
+			hasChangedIdMapping = true
 		}
 		if !dstOk {
 			newVid[change.DstRaw] = true
-			hasChanged = true
+			hasChangedIdMapping = true
 		}
 	}
 	g.Mutex.RUnlock()
 
-	if hasChanged {
+	// If we have a new raw ID to add to the graph, we need to write lock the graph.
+	if hasChangedIdMapping {
 		g.Mutex.Lock()
 		for IdRaw := range newVid {
+			// Here we can double check the existance of a raw ID.
+			// Another thread may have already added it before we aquired the lock.
 			_, idOk := g.VertexMap[IdRaw]
 			if !idOk {
 				// First, create vertex.
@@ -50,37 +58,89 @@ func (frame *Framework) EnactStructureChange(g *graph.Graph, tidx uint32, change
 	}
 	newVid = nil
 
-	for _, change := range changes {
+	// Next, range over the newly added graph structure. Here we range over vertices.
+	for vRaw := range miniGraph {
 		g.Mutex.RLock()
-		sidx := g.VertexMap[change.SrcRaw]
-		didx := g.VertexMap[change.DstRaw]
+		sidx := g.VertexMap[vRaw]
 		src := &g.Vertices[sidx]
-
-		// Next, add the edge to the source vertex.
-		//src.Mutex.Lock()
-		if change.Type == graph.ADD {
-			/// Add edge.. simple
-			src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
-			//src.Mutex.Unlock()
-			val := frame.AggregateRetrieve(src) // TODO: Adjust this for delete as well
-			// Send the edge change message.
-			frame.OnEdgeAdd(g, sidx, didx, val)
-		} else if change.Type == graph.DEL {
-			/// Delete edge.. naively find target and swap last element with the hole.
-			for k, v := range src.OutEdges {
-				if v.Target == didx {
-					src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
+		// Here we loop over changes to a vertices edges.
+		changeIdx := 0
+		for changeIdx < len(miniGraph[vRaw]) {
+			// First: gather any consecutive edge ADDs. This is because we wish to aggregate them.
+			didxMap := make(map[uint32]int, len(miniGraph[vRaw]))
+			for ; changeIdx < len(miniGraph[vRaw]); changeIdx++ {
+				change := miniGraph[vRaw][changeIdx]
+				if change.Type == graph.ADD {
+					didx := g.VertexMap[change.DstRaw]
+					didxMap[didx] = len(src.OutEdges)
+					src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
+				} else {
+					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
 				}
 			}
-			src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-			//src.Mutex.Unlock()
-			// Send the edge change message.
-			frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
-		}
+			// From the gathered set of consecutive adds, apply them.
+			if len(didxMap) > 0 {
+				val := frame.AggregateRetrieve(src)
+				frame.OnEdgeAdd(g, sidx, didxMap, val)
+			}
 
+			// If we didn't finish, it means we hit a delete. Address it here.
+			if changeIdx < len(miniGraph[vRaw]) {
+				change := miniGraph[vRaw][changeIdx]
+				enforce.ENFORCE(change.Type == graph.DEL)
+				didx := g.VertexMap[change.DstRaw]
+				/// Delete edge.. naively find target and swap last element with the hole.
+				for k, v := range src.OutEdges {
+					if v.Target == didx {
+						src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
+						break
+					}
+				}
+				src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
+				frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
+				changeIdx++
+			}
+			// Addressed the delete, continue the loop (go back to checking for consecutive adds).
+		}
 		g.Mutex.RUnlock()
 	}
+	miniGraph = nil
+
+	/*
+		for _, change := range changes {
+			g.Mutex.RLock()
+			sidx := g.VertexMap[change.SrcRaw]
+			didx := g.VertexMap[change.DstRaw]
+			src := &g.Vertices[sidx]
+
+			// Next, add the edge to the source vertex.
+			//src.Mutex.Lock()
+			if change.Type == graph.ADD {
+				didxm := make(map[uint32]int)
+				didxm[didx] = len(src.OutEdges)
+				/// Add edge.. simple
+				src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
+				//src.Mutex.Unlock()
+				val := frame.AggregateRetrieve(src) // TODO: Adjust this for delete as well
+				// Send the edge change message.
+				frame.OnEdgeAdd(g, sidx, didxm, val)
+			} else if change.Type == graph.DEL {
+				/// Delete edge.. naively find target and swap last element with the hole.
+				for k, v := range src.OutEdges {
+					if v.Target == didx {
+						src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
+						break
+					}
+				}
+				src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
+				//src.Mutex.Unlock()
+				// Send the edge change message.
+				frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
+			}
+			g.Mutex.RUnlock()
+		}
+	*/
 }
 
 // Todo: fix this when needed
@@ -169,7 +229,7 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 						}
 					}
 					if len(gsc) != 0 {
-						frame.EnactStructureChange(g, tidx, gsc)
+						frame.EnactStructureChanges(g, tidx, gsc)
 						threadEdges[tidx] += uint64(len(gsc))
 
 						allEdgeCount := uint64(0)

@@ -69,15 +69,15 @@ type ConvergeFunc func(g *Graph, wg *sync.WaitGroup)
 
 // Edge t
 type Edge struct {
-	Target uint32  `json:"target"`
-	Weight float64 `json:"weight"`
+	Target uint32
+	Weight float64
 }
 
 // Edge t
 type InEdge struct {
-	Target uint32  `json:"target"`
-	Prop   float64 `json:"prop"`
-	//Weight float64 `json:"weight"`
+	Target uint32
+	Prop   float64
+	//Weight float64
 }
 
 func (e *Edge) Reset() {

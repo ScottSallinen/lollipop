@@ -43,7 +43,7 @@ func OnInitVertex(g *graph.Graph, vidx uint32) {
 }
 
 // OnEdgeAdd is the complex version which merges a Visit call.
-func OnEdgeAdd(g *graph.Graph, sidx uint32, didx uint32, data float64) {
+func OnEdgeAdd(g *graph.Graph, sidx uint32, didxs map[uint32]int, data float64) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -55,20 +55,24 @@ func OnEdgeAdd(g *graph.Graph, sidx uint32, didx uint32, data float64) {
 	distribute := toDistribute / float64(len(src.OutEdges))
 
 	if len(src.OutEdges) > 1 { /// Not just our first edge
-		distOld := distAllPrev / (float64(len(src.OutEdges) - 1))
+		distOld := distAllPrev / (float64(len(src.OutEdges) - len(didxs)))
 		distNew := distAllPrev / (float64(len(src.OutEdges)))
 		distDelta := distNew - distOld
 
 		for eidx := range src.OutEdges {
 			target := src.OutEdges[eidx].Target
-			if target != didx { /// Only old edges
+			if _, in := didxs[target]; in {
+				/// Do nothing, this only goes to old edges
+			} else {
 				g.OnQueueVisit(g, sidx, target, distDelta+distribute)
 			}
 		}
 	}
 	distNewEdge := distAllPrev / (float64(len(src.OutEdges)))
 
-	g.OnQueueVisit(g, sidx, didx, distNewEdge+distribute)
+	for didx := range didxs {
+		g.OnQueueVisit(g, sidx, didx, distNewEdge+distribute)
+	}
 }
 
 // OnEdgeAddBasic is the simple version which does not merge a Visit call.

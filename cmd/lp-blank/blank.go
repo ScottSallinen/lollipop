@@ -16,7 +16,7 @@ func OnInitVertex(g *graph.Graph, vidx uint32) {
 	g.Vertices[vidx].Value = 0.0
 }
 
-func OnEdgeAdd(g *graph.Graph, sidx uint32, didx uint32, data float64) {
+func OnEdgeAdd(g *graph.Graph, sidx uint32, didx map[uint32]int, data float64) {
 
 }
 

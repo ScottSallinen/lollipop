@@ -29,14 +29,17 @@ func OnInitVertex(g *graph.Graph, vidx uint32) {
 	g.Vertices[vidx].Scratch = g.EmptyVal
 }
 
-func OnEdgeAdd(g *graph.Graph, sidx uint32, didx uint32, data float64) {
+func OnEdgeAdd(g *graph.Graph, sidx uint32, didxs map[uint32]int, data float64) {
 	if OnVisitVertex(g, sidx, data) > 0 {
 		// do nothing, we had messaged all edges
 	} else {
 		src := &g.Vertices[sidx]
 		if src.Value < g.EmptyVal { // Only useful if we are connected
 			// Latest edge is len(src.OutEdges)-1
-			g.OnQueueVisit(g, sidx, didx, (src.Value + src.OutEdges[len(src.OutEdges)-1].Weight))
+			// New: didx maps to the real index in the edge array
+			for didx, eidx := range didxs {
+				g.OnQueueVisit(g, sidx, didx, (src.Value + src.OutEdges[eidx].Weight))
+			}
 		}
 	}
 }
