@@ -73,7 +73,7 @@ func (frame *Framework) EnactStructureChanges(g *graph.Graph, tidx uint32, chang
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
 					didxMap[didx] = len(src.OutEdges)
-					src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
+					src.OutEdges = append(src.OutEdges, graph.NewEdge(didx, change.Weight))
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
@@ -107,52 +107,44 @@ func (frame *Framework) EnactStructureChanges(g *graph.Graph, tidx uint32, chang
 	}
 	miniGraph = nil
 
-	/*
-		for _, change := range changes {
-			g.Mutex.RLock()
-			sidx := g.VertexMap[change.SrcRaw]
-			didx := g.VertexMap[change.DstRaw]
-			src := &g.Vertices[sidx]
+	/* // Old basic version that does not aggregate messages.
+	for _, change := range changes {
+		g.Mutex.RLock()
+		sidx := g.VertexMap[change.SrcRaw]
+		didx := g.VertexMap[change.DstRaw]
+		src := &g.Vertices[sidx]
 
-			// Next, add the edge to the source vertex.
-			//src.Mutex.Lock()
-			if change.Type == graph.ADD {
-				didxm := make(map[uint32]int)
-				didxm[didx] = len(src.OutEdges)
-				/// Add edge.. simple
-				src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
-				//src.Mutex.Unlock()
-				val := frame.AggregateRetrieve(src) // TODO: Adjust this for delete as well
-				// Send the edge change message.
-				frame.OnEdgeAdd(g, sidx, didxm, val)
-			} else if change.Type == graph.DEL {
-				/// Delete edge.. naively find target and swap last element with the hole.
-				for k, v := range src.OutEdges {
-					if v.Target == didx {
-						src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
-						break
-					}
+		// Next, add the edge to the source vertex.
+		//src.Mutex.Lock()
+		if change.Type == graph.ADD {
+			didxm := make(map[uint32]int)
+			didxm[didx] = len(src.OutEdges)
+			/// Add edge.. simple
+			src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
+			//src.Mutex.Unlock()
+			val := frame.AggregateRetrieve(src) // TODO: Adjust this for delete as well
+			// Send the edge change message.
+			frame.OnEdgeAdd(g, sidx, didxm, val)
+		} else if change.Type == graph.DEL {
+			/// Delete edge.. naively find target and swap last element with the hole.
+			for k, v := range src.OutEdges {
+				if v.Target == didx {
+					src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
+					break
 				}
-				src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-				//src.Mutex.Unlock()
-				// Send the edge change message.
-				frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
 			}
-			g.Mutex.RUnlock()
+			src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
+			//src.Mutex.Unlock()
+			// Send the edge change message.
+			frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
 		}
-	*/
+		g.Mutex.RUnlock()
+	}
+	//*/
 }
 
 // Todo: fix this when needed
 func OnQueueEdgeAddRevAsync(g *graph.Graph, sidx uint32, didx uint32, VisitData float64) {
-	// We message destination
-	select {
-	case g.MessageQ[g.Vertices[didx].ToThreadIdx()] <- graph.Message{Type: graph.ADDREV, Sidx: sidx, Didx: didx, Val: VisitData}:
-	default:
-		enforce.ENFORCE(false, "queue error, tidx:", g.Vertices[didx].ToThreadIdx(), " filled to ", len(g.MessageQ[g.Vertices[didx].ToThreadIdx()]))
-	}
-	// Source increments message counter
-	g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
 }
 
 /// ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
@@ -180,7 +172,7 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 		g.TerminateVote[VOTES-1] = 1
 	}()
 
-	/*
+	/* // For debugging if the termination isn't working.
 		go func(hf *bool) {
 			for !(*hf) {
 				time.Sleep(10 * time.Millisecond)
@@ -188,7 +180,7 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 			wg.Done()
 			g.TerminateVote[VOTES-1] = 1
 		}(&haltFlag)
-	*/
+	/*/
 
 	//m1 := time.Now()
 	threadEdges := make([]uint64, graph.THREADS)
@@ -198,8 +190,10 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
-
-			gsc := make([]graph.StructureChange, 0, 4096)
+			const MsgBundleSize = 256
+			const GscBundleSize = 4096 * 16
+			msgBuffer := make([]graph.Message, MsgBundleSize)
+			gscBuffer := make([]graph.StructureChange, GscBundleSize)
 			strucClosed := false
 			infoTimer := time.Now()
 			for {
@@ -209,14 +203,13 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 					targetEdgeCount := m2.Seconds() * (float64(graph.TARGETRATE) / float64(graph.THREADS))
 					incEdgeCount := uint64(targetEdgeCount) - threadEdges[tidx]
 
-					gsc = gsc[:0] // reuse buffer
 					ec := uint64(0)
 				fillLoop:
-					for ; ec < incEdgeCount; ec++ {
+					for ; ec < incEdgeCount && ec < GscBundleSize; ec++ {
 						select {
 						case msg, ok := <-g.ThreadStructureQ[tidx]:
 							if ok {
-								gsc = append(gsc, msg)
+								gscBuffer[ec] = msg
 							} else {
 								if tidx == 0 {
 									info("T0EdgeFinish ", g.Watch.Elapsed().Milliseconds())
@@ -228,9 +221,9 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 							break fillLoop
 						}
 					}
-					if len(gsc) != 0 {
-						frame.EnactStructureChanges(g, tidx, gsc)
-						threadEdges[tidx] += uint64(len(gsc))
+					if ec != 0 {
+						frame.EnactStructureChanges(g, tidx, gscBuffer[:ec])
+						threadEdges[tidx] += uint64(ec)
 
 						allEdgeCount := uint64(0)
 						for te := range threadEdges {
@@ -258,27 +251,26 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 				}
 
 				algCount := 0
-				const algTarget = 1000
-				g.TerminateVote[tidx] = -1
-				//seenV := make(map[uint32]uint32)
-				g.Mutex.RLock()
 			algLoop:
-				for ; algCount < algTarget; algCount++ {
+				for ; algCount < MsgBundleSize; algCount++ {
 					select {
 					case msg := <-g.MessageQ[tidx]:
+						msgBuffer[algCount] = msg
+					default:
+						break algLoop
+					}
+				}
 
+				if algCount != 0 {
+					g.TerminateVote[tidx] = -1
+					g.Mutex.RLock()
+					for i := 0; i < algCount; i++ {
+						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
-						//if c, ok := seenV[msg.Didx]; ok {
-						//	info(tidx, ":", " re seen ", msg.Sidx, "->", msg.Didx, " count ", c)
-						//}
-						//seenV[msg.Didx] += 1
-						//target.Mutex.Lock()
 						if msg.Val != g.EmptyVal {
 							frame.MessageAggregator(target, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)
-						//target.Active = false
-						//target.Mutex.Unlock()
 
 						//switch msg.Type {
 						//case graph.ADD:
@@ -290,14 +282,10 @@ func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.
 						//default:
 						//	enforce.ENFORCE(false)
 						//}
-						g.MsgRecv[tidx] += 1
-					default:
-						break algLoop
 					}
-				}
-				g.Mutex.RUnlock()
-
-				if (algCount < algTarget) && strucClosed { // No more structure changes (channel is closed)
+					g.Mutex.RUnlock()
+					g.MsgRecv[tidx] += uint32(algCount)
+				} else if strucClosed { // No more structure changes (channel is closed)
 					if frame.CheckTermination(g, tidx) {
 						wg.Done()
 						return

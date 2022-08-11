@@ -13,7 +13,6 @@ import (
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
-	"github.com/gorilla/mux"
 )
 
 func info(args ...interface{}) {
@@ -45,7 +44,7 @@ func OnCheckCorrectness(g *graph.Graph) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool) *graph.Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool) *graph.Graph {
 	frame := framework.Framework{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -59,9 +58,11 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool) *
 	g := &graph.Graph{}
 	g.EmptyVal = 0.0
 
-	frame.Launch(g, gName, async, dynamic, oracle)
+	frame.Launch(g, gName, async, dynamic, oracleRun)
 
-	frame.CompareToOracle(g)
+	if oracleFin {
+		frame.CompareToOracle(g)
+	}
 
 	return g
 }
@@ -72,14 +73,13 @@ func main() {
 	dptr := flag.Bool("d", false, "Dynamic")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")
 	optr := flag.Bool("o", false, "Compare to oracle results during runtime")
+	fptr := flag.Bool("f", false, "Compare to oracle results (computed via async) upon finishing the initial algorithm.")
 	pptr := flag.Bool("p", false, "Save vertex properties to disk")
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
 	gName := *gptr
 	graph.THREADS = *tptr
 	graph.TARGETRATE = *rptr
-
-	//debug.SetGCPercent(-1)
 
 	gNameMainT := strings.Split(gName, "/")
 	gNameMain := gNameMainT[len(gNameMainT)-1]
@@ -91,14 +91,14 @@ func main() {
 	}
 	gNameMain = "results/" + gNameMain
 
+	//debug.SetGCPercent(-1)
 	//runtime.SetMutexProfileFraction(1)
+
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
-	myRouter := mux.NewRouter().StrictSlash(true)
-	myRouter.PathPrefix("/debug/pprof/").Handler(http.DefaultServeMux)
 
-	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr)
+	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr, *fptr)
 
 	g.ComputeGraphStats(false, false)
 

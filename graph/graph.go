@@ -67,17 +67,29 @@ type OnQueueVisitFunc func(g *Graph, sidx uint32, didx uint32, VisitData float64
 type OnQueueEdgeAddRevFunc func(g *Graph, sidx uint32, didx uint32, VisitData float64)
 type ConvergeFunc func(g *Graph, wg *sync.WaitGroup)
 
-// Edge t
+// Note: for now we have fake edge weights where the weight is just 1.
+// This can be adjusted in the future by just adjusting the constructor
+// and retrieval process here. But the edge weight consumes a lot of memory
+// for large graphs and should ideally be optional. A better way to
+// do this dynamically would be nice.
+// Will also need to think about a better way to have templated edge types
+// if we are exploring edges with timestamps.
 type Edge struct {
 	Target uint32
-	Weight float64
+	//Weight float64
+}
+
+func NewEdge(target uint32, weight float64) Edge {
+	return Edge{target}
+}
+func (*Edge) GetWeight() float64 {
+	return 1.0
 }
 
 // Edge t
 type InEdge struct {
 	Target uint32
-	Prop   float64
-	//Weight float64
+	Weight float64
 }
 
 func (e *Edge) Reset() {
@@ -132,19 +144,6 @@ func (g *Graph) ComputeInEdges() {
 		}
 	}
 	info("Computed inbound edges.")
-}
-
-func (graph *Graph) Densify() {
-	for vidx := range graph.Vertices {
-		if len(graph.Vertices[vidx].OutEdges) == 0 {
-			for tidx := range graph.Vertices {
-				if tidx != vidx {
-					graph.Vertices[vidx].OutEdges = append(graph.Vertices[vidx].OutEdges, Edge{Target: uint32(tidx)})
-				}
-			}
-		}
-	}
-	info("Densification complete.")
 }
 
 func (g *Graph) ComputeGraphStats(inDeg bool, outDeg bool) {
@@ -249,7 +248,7 @@ func (g *Graph) PrintVertexInEdgeSum(prefix string) {
 	for vidx := range g.Vertices {
 		localsum := 0.0
 		for eidx := range g.Vertices[vidx].InEdges {
-			localsum += g.Vertices[vidx].InEdges[eidx].Prop
+			localsum += g.Vertices[vidx].InEdges[eidx].Weight
 		}
 		sum += localsum
 		top += fmt.Sprintf("%.3f", localsum) + " "

@@ -25,7 +25,7 @@ func (g *Graph) EdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
 		srcIdx := g.VertexMap[uint32(qElem.SrcRaw)]
 		dstIdx := g.VertexMap[uint32(qElem.DstRaw)]
 
-		g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, Edge{Target: uint32(dstIdx), Weight: qElem.Weight})
+		g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, NewEdge(uint32(dstIdx), qElem.Weight))
 	}
 	deqWg.Done()
 }
@@ -62,6 +62,7 @@ func EdgeEnqueuer(queuechans []chan RawEdge, graphName string, wg *sync.WaitGrou
 		}
 		//stringFields = nil
 
+		// TODO: Deal with multi-graphs :)
 		//if src == dst {
 		//	continue
 		//}

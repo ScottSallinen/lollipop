@@ -15,6 +15,7 @@ import (
 )
 
 // Expectation when 1 is src.
+// TODO: Test other sources!
 func testGraphExpect(g *graph.Graph, t *testing.T) {
 	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, g.EmptyVal}
 	for i := range expectations {
@@ -27,7 +28,7 @@ func testGraphExpect(g *graph.Graph, t *testing.T) {
 func TestAsyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", true, false, false, 1)
+		g := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1)
 		g.PrintVertexProps("")
 		testGraphExpect(g, t)
 	}
@@ -35,7 +36,7 @@ func TestAsyncStatic(t *testing.T) {
 func TestSyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", false, false, false, 1)
+		g := LaunchGraphExecution("../../data/test.txt", false, false, false, false, 1)
 		g.PrintVertexProps("")
 		testGraphExpect(g, t)
 	}
@@ -43,7 +44,7 @@ func TestSyncStatic(t *testing.T) {
 func TestAsyncDynamic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", true, true, false, 1)
+		g := LaunchGraphExecution("../../data/test.txt", true, true, false, false, 1)
 		testGraphExpect(g, t)
 		g.PrintVertexProps("")
 	}
@@ -155,7 +156,7 @@ func TestDynamicCreation(t *testing.T) {
 
 		gDyn := DynamicGraphExecutionFromSC(rawTestGraph, 1)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, 1)
+		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1)
 
 		a := make([]float64, len(gDyn.Vertices))
 		b := make([]float64, len(gStatic.Vertices))

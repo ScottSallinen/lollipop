@@ -9,9 +9,13 @@ import (
 
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/gorilla/mux"
 )
 
+// This function is mostly optional, but is a good way to describe
+// an algorithm that can check for correctness of a result (outside just the go tests)
+// For example, for breadth first search, you wouldn't expect a neighbour to be more than
+// one hop away; for graph colouring you wouldn't expect two neighbours to have the same colour,
+// etc. This can codify the desire to ensure correct behaviour.
 func OnCheckCorrectness(g *graph.Graph) error {
 	return nil
 }
@@ -28,6 +32,14 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph {
 	frame.AggregateRetrieve = AggregateRetrieve
 
 	g := &graph.Graph{}
+
+	// Some potential extra defines here, for if the algorithm has a "point" initialization
+	// or is instead initialized by default behaviour (where every vertex is visited initially)
+	// g.SourceInit = true
+	// g.SourceInitVal = 1.0
+	// g.EmptyVal = math.MaxFloat64
+	// g.SourceVertex = rawSrc
+
 	frame.Launch(g, gName, async, dynamic, false)
 	return g
 }
@@ -46,8 +58,6 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
-	myRouter := mux.NewRouter().StrictSlash(true)
-	myRouter.PathPrefix("/debug/pprof/").Handler(http.DefaultServeMux)
 
 	g := LaunchGraphExecution(*gptr, *aptr, *dptr)
 	g.ComputeGraphStats(false, false)

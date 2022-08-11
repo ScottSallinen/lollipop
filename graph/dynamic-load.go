@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 /// SendAdd: Direct add for debugging
@@ -71,6 +72,7 @@ func (g *Graph) DynamicEdgeEnqueuer(graphName string, wg *sync.WaitGroup, idx ui
 			weight := 1.0
 		*/
 
+		// TODO: Deal with multi-graphs :)
 		//if src == dst {
 		//	continue
 		//}
@@ -82,8 +84,13 @@ func (g *Graph) DynamicEdgeEnqueuer(graphName string, wg *sync.WaitGroup, idx ui
 }
 
 func (g *Graph) LoadGraphDynamic(graphName string, feederWg *sync.WaitGroup) {
-	//enqCount := mathutils.Max(uint32(THREADS/4), 1)
-	enqCount := uint64(4)
+	// The enqueue count here should actually be just 1 to honour an event log properly.
+	// If order is irrelevant, then we can scrape through it potentially faster with more..
+	// perhaps this should be parameterized.
+	// Also, it may be reasonable to have multiple files as input sources, each could have it's own enqueuer.
+	// .. assuming the sources are independent.
+	enqCount := mathutils.MaxUint64(uint64(THREADS/4), 1)
+	//enqCount := uint64(4)
 
 	m1 := time.Now()
 

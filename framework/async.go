@@ -15,7 +15,8 @@ func (frame *Framework) OnQueueVisitAsync(g *graph.Graph, sidx uint32, didx uint
 
 	//target.Mutex.Lock()
 	doSendMessage := frame.MessageAggregator(target, VisitData)
-	// Maybe send message
+
+	// Old direct way of doing things with locks here rather than in the algorithm.
 	//if !target.Active {
 	//	doSendMessage = true
 	//	target.Active = true
@@ -76,34 +77,45 @@ func (frame *Framework) ConvergeAsync(g *graph.Graph, feederWg *sync.WaitGroup) 
 		wg.Done()
 	}()
 
+	const MsgBundleSize = 256
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
+			msgBuffer := make([]graph.Message, MsgBundleSize)
 			for {
 				//g.Mutex.RLock() // If we want to lock for oracle comparisons
-				select {
-				case msg, ok := <-g.MessageQ[tidx]:
-					if ok {
-						g.TerminateVote[tidx] = -1
+				msgCounter := 0
+				//msgBuffer := msgBuffer[:MsgBundleSize]
+			fillLoop:
+				for ; msgCounter < MsgBundleSize; msgCounter++ {
+					select {
+					case msg := <-g.MessageQ[tidx]:
+						msgBuffer[msgCounter] = msg
+					default:
+						break fillLoop
+					}
+				}
+				//msgBuffer = msgBuffer[:msgCounter]
+
+				if msgCounter != 0 {
+					g.TerminateVote[tidx] = -1
+					for i := 0; i < msgCounter; i++ {
+						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
-						//target.Mutex.Lock()
 						if msg.Val != g.EmptyVal {
 							frame.MessageAggregator(target, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)
-						//target.Active = false
-						//target.Mutex.Unlock()
 
 						frame.OnVisitVertex(g, msg.Didx, val)
-						g.MsgRecv[tidx] += 1
-					} else {
-						enforce.ENFORCE(false, "Message channel closed!")
 					}
-				default:
+					g.MsgRecv[tidx] += uint32(msgCounter)
+				} else {
 					if frame.CheckTermination(g, tidx) {
 						wg.Done()
 						return
 					}
 				}
+
 				//g.Mutex.RUnlock()
 			}
 		}(uint32(t), &wg)

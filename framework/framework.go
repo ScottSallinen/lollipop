@@ -53,8 +53,8 @@ func (frame *Framework) Init(g *graph.Graph, async bool, dynamic bool) {
 		g.TerminateData = make([]int64, graph.THREADS+1)
 		for i := 0; i < graph.THREADS; i++ {
 			if dynamic {
-				// Need a better way to manipulate channel size for dynamic. Maybe request approx vertex count from user?
-				g.MessageQ[i] = make(chan graph.Message, (4 * 4096 * 64 * 64))
+				// TODO: Need a better way to manipulate channel size for dynamic. Maybe request approx vertex count from user?
+				g.MessageQ[i] = make(chan graph.Message, (4 * 4096 * 64))
 				g.ThreadStructureQ[i] = make(chan graph.StructureChange, 4*4*4096)
 			} else {
 				g.MessageQ[i] = make(chan graph.Message, len(g.Vertices)+8)
@@ -191,6 +191,8 @@ func (originalFrame *Framework) CompareToOracle(g *graph.Graph) {
 		g.Vertices[v].Residual = gVertexStash[v].Residual
 		g.Vertices[v].Scratch = gVertexStash[v].Scratch
 	}
+
+	// TODO: should be parameterized...
 	const ORACLEEDGES = 28511807
 	const ORACLEVERTICES = 1791489
 

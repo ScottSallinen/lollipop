@@ -38,7 +38,7 @@ func OnEdgeAdd(g *graph.Graph, sidx uint32, didxs map[uint32]int, data float64) 
 			// Latest edge is len(src.OutEdges)-1
 			// New: didx maps to the real index in the edge array
 			for didx, eidx := range didxs {
-				g.OnQueueVisit(g, sidx, didx, (src.Value + src.OutEdges[eidx].Weight))
+				g.OnQueueVisit(g, sidx, didx, (src.Value + src.OutEdges[eidx].GetWeight()))
 			}
 		}
 	}
@@ -57,7 +57,7 @@ func OnVisitVertex(g *graph.Graph, vidx uint32, data float64) int {
 		// Send an update to all neighbours.
 		for eidx := range src.OutEdges {
 			target := src.OutEdges[eidx].Target
-			g.OnQueueVisit(g, vidx, target, (src.Value + src.OutEdges[eidx].Weight))
+			g.OnQueueVisit(g, vidx, target, (src.Value + src.OutEdges[eidx].GetWeight()))
 		}
 		return len(src.OutEdges)
 	}
