@@ -90,7 +90,7 @@ func main() {
 	gNameMain := gNameMainT[len(gNameMainT)-1]
 	gNameMainTD := strings.Split(gNameMain, ".")
 	if len(gNameMainTD) > 1 {
-		gNameMain = gNameMainTD[len(gNameMainT)-2]
+		gNameMain = gNameMainTD[len(gNameMainTD)-2]
 	} else {
 		gNameMain = gNameMainTD[0]
 	}
