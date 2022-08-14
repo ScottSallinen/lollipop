@@ -20,7 +20,7 @@ func (w *Watch) Start() {
 	w.StartTime = time.Now()
 	w.AdjustedTime = w.StartTime
 	if w.Paused {
-		enforce.ENFORCE("watch cant start because paused")
+		enforce.FAIL("watch cant start because paused")
 	}
 	w.Mu.Unlock()
 }
@@ -52,7 +52,7 @@ func (w *Watch) Pause() {
 		w.PauseTime = time.Now()
 		w.Paused = true
 	} else {
-		enforce.ENFORCE("watch already paused")
+		enforce.FAIL("watch already paused")
 	}
 	w.Mu.Unlock()
 }
@@ -63,7 +63,7 @@ func (w *Watch) UnPause() {
 		w.Paused = false
 		w.AdjustedTime = w.AdjustedTime.Add(time.Since(w.PauseTime))
 	} else {
-		enforce.ENFORCE("watch wasnt paused")
+		enforce.FAIL("watch wasnt paused")
 	}
 	w.Mu.Unlock()
 }
