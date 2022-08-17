@@ -30,7 +30,7 @@ func (g *Graph) EdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
 	deqWg.Done()
 }
 
-func EdgeEnqueuer(queuechans []chan RawEdge, graphName string, wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
+func EdgeEnqueuer(queuechans []chan RawEdge, graphName string, undirected bool, wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -68,6 +68,9 @@ func EdgeEnqueuer(queuechans []chan RawEdge, graphName string, wg *sync.WaitGrou
 		//}
 
 		queuechans[uint64(src)%deqCount] <- RawEdge{uint32(src), uint32(dst), weight}
+		if undirected {
+			queuechans[uint64(dst)%deqCount] <- RawEdge{uint32(dst), uint32(src), weight}
+		}
 	}
 	result <- mLines
 	wg.Done()
@@ -138,7 +141,7 @@ func (g *Graph) BuildMap(graphName string) {
 	close(work)
 }
 
-func (g *Graph) LoadGraphStatic(graphName string) {
+func (g *Graph) LoadGraphStatic(graphName string, undirected bool) {
 	deqCount := mathutils.MaxUint64(uint64(THREADS), 1)
 	enqCount := mathutils.MaxUint64(uint64(THREADS/2), 1)
 
@@ -162,7 +165,7 @@ func (g *Graph) LoadGraphStatic(graphName string) {
 	var enqWg sync.WaitGroup
 	enqWg.Add(int(enqCount))
 	for i := uint64(0); i < enqCount; i++ {
-		go EdgeEnqueuer(queuechans, graphName, &enqWg, i, enqCount, deqCount, resultchan)
+		go EdgeEnqueuer(queuechans, graphName, undirected, &enqWg, i, enqCount, deqCount, resultchan)
 	}
 	enqWg.Wait()
 	for i := uint64(0); i < deqCount; i++ {

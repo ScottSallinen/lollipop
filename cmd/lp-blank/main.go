@@ -20,7 +20,7 @@ func OnCheckCorrectness(g *graph.Graph) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph {
 	frame := framework.Framework{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -40,7 +40,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph {
 	// g.EmptyVal = math.MaxFloat64
 	// g.SourceVertex = rawSrc
 
-	frame.Launch(g, gName, async, dynamic, false)
+	frame.Launch(g, gName, async, dynamic, oracle, undirected)
 	return g
 }
 
@@ -48,6 +48,7 @@ func main() {
 	gptr := flag.String("g", "data/test.txt", "Graph file")
 	aptr := flag.Bool("a", false, "Use async")
 	dptr := flag.Bool("d", false, "Dynamic")
+	uptr := flag.Bool("u", false, "Interpret the input graph as undirected (add transpose edges)")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
@@ -59,6 +60,6 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr)
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, false, *uptr)
 	g.ComputeGraphStats(false, false)
 }

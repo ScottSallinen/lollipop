@@ -62,7 +62,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	g.EmptyVal = math.MaxFloat64
 	g.SourceVertex = rawSrc
 
-	frame.Launch(g, gName, async, dynamic, oracleRun)
+	frame.Launch(g, gName, async, dynamic, oracleRun, false)
 
 	if oracleFin {
 		frame.CompareToOracle(g)

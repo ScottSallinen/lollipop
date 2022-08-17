@@ -43,7 +43,7 @@ func LoadEdgeList(graphName string, threads int) (finallist []graph.RawEdge) {
 	var enqWg sync.WaitGroup
 	enqWg.Add(int(qCount))
 	for i := uint64(0); i < qCount; i++ {
-		go graph.EdgeEnqueuer(queuechans, graphName, &enqWg, i, qCount, qCount, resultchan)
+		go graph.EdgeEnqueuer(queuechans, graphName, false, &enqWg, i, qCount, qCount, resultchan)
 	}
 	enqWg.Wait()
 	for i := uint64(0); i < qCount; i++ {

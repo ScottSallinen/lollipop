@@ -97,9 +97,9 @@ func (frame *Framework) Run(g *graph.Graph, inputWg *sync.WaitGroup, outputWg *s
 	outputWg.Done()
 }
 
-func (frame *Framework) Launch(g *graph.Graph, gName string, async bool, dynamic bool, oracle bool) {
+func (frame *Framework) Launch(g *graph.Graph, gName string, async bool, dynamic bool, oracle bool, undirected bool) {
 	if !dynamic {
-		g.LoadGraphStatic(gName)
+		g.LoadGraphStatic(gName, undirected)
 	}
 
 	frame.Init(g, async, dynamic)
@@ -110,7 +110,7 @@ func (frame *Framework) Launch(g *graph.Graph, gName string, async bool, dynamic
 	frameWait.Add(1)
 
 	if dynamic {
-		go g.LoadGraphDynamic(gName, &feederWg)
+		go g.LoadGraphDynamic(gName, undirected, &feederWg)
 	}
 
 	if oracle {

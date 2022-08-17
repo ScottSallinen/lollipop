@@ -58,7 +58,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	g := &graph.Graph{}
 	g.EmptyVal = 0.0
 
-	frame.Launch(g, gName, async, dynamic, oracleRun)
+	frame.Launch(g, gName, async, dynamic, oracleRun, false)
 
 	if oracleFin {
 		frame.CompareToOracle(g)

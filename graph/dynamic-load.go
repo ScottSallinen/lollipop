@@ -30,7 +30,7 @@ func (g *Graph) DynamicEdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGrou
 	deqWg.Done()
 }
 
-func (g *Graph) DynamicEdgeEnqueuer(graphName string, wg *sync.WaitGroup, idx uint64, enqCount uint64, result chan uint64) {
+func (g *Graph) DynamicEdgeEnqueuer(graphName string, undirected bool, wg *sync.WaitGroup, idx uint64, enqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -78,12 +78,15 @@ func (g *Graph) DynamicEdgeEnqueuer(graphName string, wg *sync.WaitGroup, idx ui
 		//}
 
 		g.ThreadStructureQ[g.RawIdToThreadIdx(uint32(src))] <- StructureChange{Type: ADD, SrcRaw: uint32(src), DstRaw: uint32(dst), Weight: weight}
+		if undirected {
+			g.ThreadStructureQ[g.RawIdToThreadIdx(uint32(dst))] <- StructureChange{Type: ADD, SrcRaw: uint32(dst), DstRaw: uint32(src), Weight: weight}
+		}
 	}
 	result <- mLines
 	wg.Done()
 }
 
-func (g *Graph) LoadGraphDynamic(graphName string, feederWg *sync.WaitGroup) {
+func (g *Graph) LoadGraphDynamic(graphName string, undirected bool, feederWg *sync.WaitGroup) {
 	// The enqueue count here should actually be just 1 to honour an event log properly.
 	// If order is irrelevant, then we can scrape through it potentially faster with more..
 	// perhaps this should be parameterized.
@@ -98,7 +101,7 @@ func (g *Graph) LoadGraphDynamic(graphName string, feederWg *sync.WaitGroup) {
 	var enqWg sync.WaitGroup
 	enqWg.Add(int(enqCount))
 	for i := uint64(0); i < enqCount; i++ {
-		go g.DynamicEdgeEnqueuer(graphName, &enqWg, i, enqCount, resultchan)
+		go g.DynamicEdgeEnqueuer(graphName, undirected, &enqWg, i, enqCount, resultchan)
 	}
 	enqWg.Wait()
 
