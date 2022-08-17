@@ -2,6 +2,7 @@ package framework
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/graph"
 )
@@ -9,8 +10,11 @@ import (
 func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitSync(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64) {
 	target := &g.Vertices[didx]
 	//target.Mutex.Lock()
-	frame.MessageAggregator(target, &g.Vertices[sidx], VisitData)
+	newInfo := frame.MessageAggregator(target, &g.Vertices[sidx], VisitData)
 	//target.Mutex.Unlock()
+	if newInfo {
+		atomic.StoreInt32(&target.IsActive, 1)
+	}
 }
 
 func (frame *Framework[VertexProp, EdgeProp]) ConvergeSync(g *graph.Graph[VertexProp, EdgeProp], wg *sync.WaitGroup) {
@@ -35,7 +39,8 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeSync(g *graph.Graph[Vertex
 				}
 				for j := start; j < end; j++ {
 					target := &g.Vertices[j]
-					if target.Scratch != g.EmptyVal || iteration == 0 {
+					active := atomic.SwapInt32(&target.IsActive, 0) == 1
+					if target.Scratch != g.EmptyVal || active || iteration == 0 {
 						//target.Mutex.Lock()
 						msgVal := frame.AggregateRetrieve(target)
 						//target.Mutex.Unlock()

@@ -103,6 +103,7 @@ type Vertex[VertexProp, EdgeProp any] struct {
 	InEdges  []InEdge         // Incoming edges (currently unused).
 	Mutex    sync.Mutex       // Mutex for thread synchroniziation, if needed.
 	Property VertexProp       // Generic property type, can be variable per algorithm.
+	IsActive int32      // Indicates if the vertex awaits a visit in ConvergeSync
 }
 
 func (v *Vertex[VertexProp, EdgeProp]) Reset() {
@@ -217,6 +218,14 @@ func (g *Graph[VertexProp, EdgeProp]) PrintStructure() {
 		}
 		log.Println(pr + ": " + el)
 	}
+}
+
+func (g *Graph[VertexProp, EdgeProp]) PrintVertexProperty(prefix string) {
+	message := prefix
+	for vi := range g.Vertices {
+		message += fmt.Sprintf("%d:%v, ", g.Vertices[vi].Id, &g.Vertices[vi].Property)
+	}
+	info(message)
 }
 
 func (g *Graph[VertexProp, EdgeProp]) PrintVertexInEdgeSum(prefix string) {
