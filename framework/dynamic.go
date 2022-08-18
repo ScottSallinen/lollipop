@@ -9,7 +9,7 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func (frame *Framework) EnactStructureChanges(g *graph.Graph, tidx uint32, changes []graph.StructureChange) {
+func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexProp], tidx uint32, changes []graph.StructureChange) {
 	hasChangedIdMapping := false
 	newVid := make(map[uint32]bool, len(changes)*2)
 	miniGraph := make(map[uint32][]graph.StructureChange, len(changes))
@@ -44,7 +44,7 @@ func (frame *Framework) EnactStructureChanges(g *graph.Graph, tidx uint32, chang
 				// First, create vertex.
 				vidx := uint32(len(g.VertexMap))
 				g.VertexMap[uint32(IdRaw)] = vidx
-				g.Vertices = append(g.Vertices, graph.Vertex{Id: IdRaw})
+				g.Vertices = append(g.Vertices, graph.Vertex[VertexProp]{Id: IdRaw})
 				frame.OnInitVertex(g, vidx)
 				// Next, visit the newly created vertex if needed.
 				if g.SourceInit && IdRaw == g.SourceVertex { // Only visit targetted vertex.
@@ -143,12 +143,8 @@ func (frame *Framework) EnactStructureChanges(g *graph.Graph, tidx uint32, chang
 	//*/
 }
 
-// Todo: fix this when needed
-func OnQueueEdgeAddRevAsync(g *graph.Graph, sidx uint32, didx uint32, VisitData float64) {
-}
-
 /// ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
-func (frame *Framework) ConvergeAsyncDynWithRate(g *graph.Graph, feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp], feederWg *sync.WaitGroup) {
 	info("ConvergeAsyncDynWithRate")
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1

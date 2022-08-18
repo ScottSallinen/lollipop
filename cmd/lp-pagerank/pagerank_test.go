@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -12,6 +13,16 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
+
+func PrintVertexProps(g *graph.Graph[VertexProperty], prefix string) {
+	top := prefix
+	sum := 0.0
+	for vidx := range g.Vertices {
+		top += fmt.Sprintf("%d:[%.3f,%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Residual, g.Vertices[vidx].Scratch)
+		sum += g.Vertices[vidx].Property.Value
+	}
+	info(top + " : " + fmt.Sprintf("%.3f", sum))
+}
 
 func TestAsyncDynamic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
@@ -38,8 +49,8 @@ type StructureChange struct {
 	dstRaw uint32
 }
 
-func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph {
-	frame := framework.Framework{}
+func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph[VertexProperty] {
+	frame := framework.Framework[VertexProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -49,7 +60,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph {
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph{}
+	g := &graph.Graph[VertexProperty]{}
 
 	frame.Init(g, true, true)
 
@@ -79,7 +90,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph {
 	return g
 }
 
-func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph, g2 *graph.Graph) {
+func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty], g2 *graph.Graph[VertexProperty]) {
 	if len(g1.Vertices) != len(g2.Vertices) {
 		t.Error("vertex count mismatch", len(g1.Vertices), len(g2.Vertices))
 	}
@@ -148,19 +159,19 @@ func TestDynamicCreation(t *testing.T) {
 			g1values := &gDyn.Vertices[vidx]
 			g2values := &gStatic.Vertices[g2idx]
 
-			a[vidx] = g1values.Value
-			b[vidx] = g2values.Value
+			a[vidx] = g1values.Property.Value
+			b[vidx] = g2values.Property.Value
 
-			if !mathutils.FloatEquals(g1values.Value, g2values.Value, allowedVariance) {
-				gStatic.PrintVertexProps("S ")
-				gDyn.PrintVertexProps("D ")
-				t.Error("Value not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
+			if !mathutils.FloatEquals(g1values.Property.Value, g2values.Property.Value, allowedVariance) {
+				PrintVertexProps(gStatic, "S ")
+				PrintVertexProps(gDyn, "D ")
+				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
 				testFail = true
 			}
-			if !mathutils.FloatEquals(g1values.Residual, g2values.Residual, allowedVariance) {
-				gStatic.PrintVertexProps("S ")
-				gDyn.PrintVertexProps("D ")
-				t.Error("Residual not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
+			if !mathutils.FloatEquals(g1values.Property.Residual, g2values.Property.Residual, allowedVariance) {
+				PrintVertexProps(gStatic, "S ")
+				PrintVertexProps(gDyn, "D ")
+				t.Error("Residual not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
 				testFail = true
 			}
 		}
@@ -243,18 +254,18 @@ func TestDynamicWithDelete(t *testing.T) {
 			g1values := &gDyn.Vertices[vidx]
 			g2values := &gStatic.Vertices[g2idx]
 
-			a[vidx] = g1values.Value
-			b[vidx] = g2values.Value
-			if !mathutils.FloatEquals(g1values.Value, g2values.Value, allowedVariance) {
-				gStatic.PrintVertexProps("S ")
-				gDyn.PrintVertexProps("D ")
-				t.Error("Value not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
+			a[vidx] = g1values.Property.Value
+			b[vidx] = g2values.Property.Value
+			if !mathutils.FloatEquals(g1values.Property.Value, g2values.Property.Value, allowedVariance) {
+				PrintVertexProps(gStatic, "S ")
+				PrintVertexProps(gDyn, "D ")
+				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
 				testFail = true
 			}
-			if !mathutils.FloatEquals(g1values.Residual, g2values.Residual, allowedVariance) {
-				gStatic.PrintVertexProps("S")
-				gDyn.PrintVertexProps("D")
-				t.Error("Residual not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
+			if !mathutils.FloatEquals(g1values.Property.Residual, g2values.Property.Residual, allowedVariance) {
+				PrintVertexProps(gStatic, "S ")
+				PrintVertexProps(gDyn, "D ")
+				t.Error("Residual not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
 				testFail = true
 			}
 		}

@@ -3,42 +3,42 @@ package framework
 import (
 	"fmt"
 	"log"
-	"sort"
 	"sync"
 	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 var resultCache []float64
 
-func info(args ...interface{}) {
+func info(args ...any) {
 	log.Println("[Framework]\t", fmt.Sprint(args...))
 }
 
-type Framework struct {
-	OnInitVertex       OnInitVertexFunc
-	OnVisitVertex      OnVisitVertexFunc
-	OnFinish           OnFinishFunc
-	OnCheckCorrectness OnCheckCorrectnessFunc
-	OnEdgeAdd          OnEdgeAddFunc
-	OnEdgeDel          OnEdgeDelFunc
-	MessageAggregator  MessageAggregatorFunc
-	AggregateRetrieve  AggregateRetrieveFunc
+type Framework[VertexProp any] struct {
+	OnInitVertex       OnInitVertexFunc[VertexProp]
+	OnVisitVertex      OnVisitVertexFunc[VertexProp]
+	OnFinish           OnFinishFunc[VertexProp]
+	OnCheckCorrectness OnCheckCorrectnessFunc[VertexProp]
+	OnEdgeAdd          OnEdgeAddFunc[VertexProp]
+	OnEdgeDel          OnEdgeDelFunc[VertexProp]
+	MessageAggregator  MessageAggregatorFunc[VertexProp]
+	AggregateRetrieve  AggregateRetrieveFunc[VertexProp]
+	OracleComparison   OracleComparison[VertexProp]
 }
 
-type OnInitVertexFunc func(g *graph.Graph, vidx uint32)
-type OnVisitVertexFunc func(g *graph.Graph, vidx uint32, data float64) int
-type OnFinishFunc func(g *graph.Graph) error
-type OnCheckCorrectnessFunc func(g *graph.Graph) error
-type OnEdgeAddFunc func(g *graph.Graph, sidx uint32, didxs map[uint32]int, VisitData float64)
-type OnEdgeDelFunc func(g *graph.Graph, sidx uint32, didx uint32, VisitData float64)
-type MessageAggregatorFunc func(g *graph.Vertex, VisitData float64) (newInfo bool)
-type AggregateRetrieveFunc func(g *graph.Vertex) (data float64)
+type OnInitVertexFunc[VertexProp any] func(g *graph.Graph[VertexProp], vidx uint32)
+type OnVisitVertexFunc[VertexProp any] func(g *graph.Graph[VertexProp], vidx uint32, data float64) int
+type OnFinishFunc[VertexProp any] func(g *graph.Graph[VertexProp]) error
+type OnCheckCorrectnessFunc[VertexProp any] func(g *graph.Graph[VertexProp]) error
+type OnEdgeAddFunc[VertexProp any] func(g *graph.Graph[VertexProp], sidx uint32, didxs map[uint32]int, VisitData float64)
+type OnEdgeDelFunc[VertexProp any] func(g *graph.Graph[VertexProp], sidx uint32, didx uint32, VisitData float64)
+type MessageAggregatorFunc[VertexProp any] func(g *graph.Vertex[VertexProp], VisitData float64) (newInfo bool)
+type AggregateRetrieveFunc[VertexProp any] func(g *graph.Vertex[VertexProp]) (data float64)
+type OracleComparison[VertexProp any] func(g *graph.Graph[VertexProp], oracle *graph.Graph[VertexProp], resultCache *[]float64)
 
-func (frame *Framework) Init(g *graph.Graph, async bool, dynamic bool) {
+func (frame *Framework[VertexProp]) Init(g *graph.Graph[VertexProp], async bool, dynamic bool) {
 	//info("Started.")
 	if async || dynamic {
 		g.OnQueueVisit = frame.OnQueueVisitAsync
@@ -60,7 +60,6 @@ func (frame *Framework) Init(g *graph.Graph, async bool, dynamic bool) {
 				g.MessageQ[i] = make(chan graph.Message, len(g.Vertices)+8)
 			}
 		}
-		g.OnQueueEdgeAddRev = OnQueueEdgeAddRevAsync
 		if dynamic {
 			g.AlgConverge = frame.ConvergeAsyncDynWithRate
 		} else {
@@ -79,7 +78,7 @@ func (frame *Framework) Init(g *graph.Graph, async bool, dynamic bool) {
 	//info("Initialized(ms) ", t0.Milliseconds())
 }
 
-func (frame *Framework) Run(g *graph.Graph, inputWg *sync.WaitGroup, outputWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp]) Run(g *graph.Graph[VertexProp], inputWg *sync.WaitGroup, outputWg *sync.WaitGroup) {
 	//info("Running.")
 	g.Watch.Start()
 	g.AlgConverge(g, inputWg)
@@ -97,7 +96,7 @@ func (frame *Framework) Run(g *graph.Graph, inputWg *sync.WaitGroup, outputWg *s
 	outputWg.Done()
 }
 
-func (frame *Framework) Launch(g *graph.Graph, gName string, async bool, dynamic bool, oracle bool, undirected bool) {
+func (frame *Framework[VertexProp]) Launch(g *graph.Graph[VertexProp], gName string, async bool, dynamic bool, oracle bool, undirected bool) {
 	if !dynamic {
 		g.LoadGraphStatic(gName, undirected)
 	}
@@ -122,7 +121,7 @@ func (frame *Framework) Launch(g *graph.Graph, gName string, async bool, dynamic
 	frame.Run(g, &feederWg, &frameWait)
 }
 
-func (frame *Framework) CompareToOracleRunnable(g *graph.Graph, exit *bool, sleepTime time.Duration) {
+func (frame *Framework[VertexProp]) CompareToOracleRunnable(g *graph.Graph[VertexProp], exit *bool, sleepTime time.Duration) {
 	time.Sleep(sleepTime)
 	for !*exit {
 		frame.CompareToOracle(g)
@@ -130,14 +129,14 @@ func (frame *Framework) CompareToOracleRunnable(g *graph.Graph, exit *bool, slee
 	}
 }
 
-func (originalFrame *Framework) CompareToOracle(g *graph.Graph) {
+func (originalFrame *Framework[VertexProp]) CompareToOracle(g *graph.Graph[VertexProp]) {
 	numEdges := uint64(0)
 
 	g.Mutex.Lock()
 	g.Watch.Pause()
 	info("----INLINE----")
 	info("inlineCurrentTime(ms) ", g.Watch.Elapsed().Milliseconds())
-	newFrame := Framework{}
+	newFrame := Framework[VertexProp]{}
 	newFrame.OnInitVertex = originalFrame.OnInitVertex
 	newFrame.OnVisitVertex = originalFrame.OnVisitVertex
 	newFrame.OnFinish = originalFrame.OnFinish
@@ -147,23 +146,22 @@ func (originalFrame *Framework) CompareToOracle(g *graph.Graph) {
 	newFrame.MessageAggregator = originalFrame.MessageAggregator
 	newFrame.AggregateRetrieve = originalFrame.AggregateRetrieve
 
-	altG := &graph.Graph{}
+	altG := &graph.Graph[VertexProp]{}
 	altG.EmptyVal = g.EmptyVal
 	altG.SourceInit = g.SourceInit
 	altG.SourceInitVal = g.SourceInitVal
 	altG.SourceVertex = g.SourceVertex
 
 	altG.VertexMap = g.VertexMap // ok to shallow copy, we do not edit.
-	altG.Vertices = make([]graph.Vertex, len(g.Vertices))
-	gVertexStash := make([]graph.Vertex, len(g.Vertices))
+	altG.Vertices = make([]graph.Vertex[VertexProp], len(g.Vertices))
+	gVertexStash := make([]graph.Vertex[VertexProp], len(g.Vertices))
 	for v := range g.Vertices {
 		altG.Vertices[v].Id = g.Vertices[v].Id
 		altG.Vertices[v].OutEdges = g.Vertices[v].OutEdges
 		numEdges += uint64(len(g.Vertices[v].OutEdges))
-		gVertexStash[v].Value = g.Vertices[v].Value
 		gVertexStash[v].Id = g.Vertices[v].Id
-		gVertexStash[v].Residual = g.Vertices[v].Residual
 		gVertexStash[v].Scratch = g.Vertices[v].Scratch
+		gVertexStash[v].Property = g.Vertices[v].Property
 	}
 
 	if resultCache == nil {
@@ -175,58 +173,18 @@ func (originalFrame *Framework) CompareToOracle(g *graph.Graph) {
 		newFrame.Run(altG, &feederWg, &frameWait)
 	}
 
-	ia := make([]float64, len(g.Vertices))
-	ib := make([]float64, len(g.Vertices))
-
 	// Here we "early finish" proper G immediately for a fair comparison (i.e., including sink adjustment)
 	// to compare a fully finished to the current state. Since the OnFinish is minute in cost but big in effect,
 	// important to compare with it applied to both .
 	newFrame.OnFinish(g)
 
+	originalFrame.OracleComparison(g, altG, &resultCache)
+
 	for v := range g.Vertices {
-		ia[v] = altG.Vertices[v].Value
-		ib[v] = g.Vertices[v].Value
 		// Resetting the effect of the "early finish"
-		g.Vertices[v].Value = gVertexStash[v].Value
-		g.Vertices[v].Residual = gVertexStash[v].Residual
 		g.Vertices[v].Scratch = gVertexStash[v].Scratch
+		g.Vertices[v].Property = gVertexStash[v].Property
 	}
-
-	// TODO: should be parameterized...
-	const ORACLEEDGES = 28511807
-	const ORACLEVERTICES = 1791489
-
-	if resultCache == nil && numEdges == ORACLEEDGES {
-		resultCache = make([]float64, len(ia))
-		copy(resultCache, ia)
-	}
-	if resultCache != nil {
-		copy(ia, resultCache)
-	}
-	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges, " vertexPct ", (len(g.Vertices)*100)/ORACLEVERTICES, " edgePct ", (numEdges*100)/ORACLEEDGES)
-	graph.ResultCompare(ia, ib)
-
-	iaRank := mathutils.NewIndexedFloat64Slice(ia)
-	ibRank := mathutils.NewIndexedFloat64Slice(ib)
-	sort.Sort(sort.Reverse(iaRank))
-	sort.Sort(sort.Reverse(ibRank))
-
-	topN := 1000
-	topK := 100
-	if len(iaRank.Idx) < topN {
-		topN = len(iaRank.Idx)
-	}
-	if len(iaRank.Idx) < topK {
-		topK = len(iaRank.Idx)
-	}
-	iaRk := make([]int, topK)
-	copy(iaRk, iaRank.Idx[:topK])
-	ibRk := make([]int, topK)
-	copy(ibRk, ibRank.Idx[:topK])
-
-	mRBO6 := mathutils.CalculateRBO(iaRank.Idx[:topN], ibRank.Idx[:topN], 0.6)
-	mRBO9 := mathutils.CalculateRBO(iaRk, ibRk, 0.9)
-	info("top", topN, " RBO6 ", fmt.Sprintf("%.4f", mRBO6*100.0), " top", topK, " RBO9 ", fmt.Sprintf("%.4f", mRBO9*100.0))
 
 	/*
 		// This currently does not work.. we would need to pull the queues and then add them back.

@@ -10,7 +10,7 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-func info(args ...interface{}) {
+func info(args ...any) {
 	log.Println("[Graph]\t", fmt.Sprint(args...))
 }
 
@@ -19,13 +19,13 @@ var TARGETRATE = float64(0)
 var DEBUG = false
 
 // Graph t
-type Graph struct {
+type Graph[VertexProp any] struct {
 	Mutex             sync.RWMutex
 	VertexMap         map[uint32]uint32 // Raw to internal
-	Vertices          []Vertex
-	OnQueueVisit      OnQueueVisitFunc
-	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc
-	AlgConverge       ConvergeFunc
+	Vertices          []Vertex[VertexProp]
+	OnQueueVisit      OnQueueVisitFunc[VertexProp]
+	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc[VertexProp]
+	AlgConverge       ConvergeFunc[VertexProp]
 	MessageQ          []chan Message
 	ThreadStructureQ  []chan StructureChange
 	MsgSend           []uint32
@@ -63,9 +63,9 @@ type StructureChange struct {
 	Weight float64
 }
 
-type OnQueueVisitFunc func(g *Graph, sidx uint32, didx uint32, VisitData float64)
-type OnQueueEdgeAddRevFunc func(g *Graph, sidx uint32, didx uint32, VisitData float64)
-type ConvergeFunc func(g *Graph, wg *sync.WaitGroup)
+type OnQueueVisitFunc[VertexProp any] func(g *Graph[VertexProp], sidx uint32, didx uint32, VisitData float64)
+type OnQueueEdgeAddRevFunc[VertexProp any] func(g *Graph[VertexProp], sidx uint32, didx uint32, VisitData float64)
+type ConvergeFunc[VertexProp any] func(g *Graph[VertexProp], wg *sync.WaitGroup)
 
 // Note: for now we have fake edge weights where the weight is just 1.
 // This can be adjusted in the future by just adjusting the constructor
@@ -100,19 +100,18 @@ func (e *InEdge) Reset() {
 	*e = InEdge{}
 }
 
-// Vertex t
-type Vertex struct {
-	Scratch  float64
-	Residual float64
-	Value    float64
-	Id       uint32
-	OutEdges []Edge
-	InEdges  []InEdge
-	Mutex    sync.Mutex
+// Vertex Main type defining a vertex in a graph. Contains necessary per-vertex information for structure and identification.
+type Vertex[VertexProp any] struct {
+	Id       uint32     // Raw (external) ID of a vertex, reflecting the external original identifier of a vertex, NOT the internal [0, N] index.
+	Scratch  float64    // Common scratchpad / accumulator, also used to track activity.
+	OutEdges []Edge     // Main outgoing edgelist.
+	InEdges  []InEdge   // Incoming edges (currently unused).
+	Mutex    sync.Mutex // Mutex for thread synchroniziation, if needed.
+	Property VertexProp // Generic property type, can be variable per algorithm.
 }
 
-func (v *Vertex) Reset() {
-	*v = Vertex{}
+func (v *Vertex[VertexProp]) Reset() {
+	*v = Vertex[VertexProp]{}
 	for eidx := range v.OutEdges {
 		v.OutEdges[eidx].Reset()
 	}
@@ -121,22 +120,22 @@ func (v *Vertex) Reset() {
 	}
 }
 
-func (v *Vertex) ToThreadIdx() uint32 {
+func (v *Vertex[VertexProp]) ToThreadIdx() uint32 {
 	return v.Id % uint32(THREADS)
 }
 
-func (g *Graph) RawIdToThreadIdx(RawId uint32) uint32 {
+func (g *Graph[VertexProp]) RawIdToThreadIdx(RawId uint32) uint32 {
 	return RawId % uint32(THREADS)
 }
 
-func (g *Graph) Reset() {
+func (g *Graph[VertexProp]) Reset() {
 	for vidx := range g.Vertices {
 		g.Vertices[vidx].Reset()
 	}
 }
 
 // ComputeInEdges t
-func (g *Graph) ComputeInEdges() {
+func (g *Graph[VertexProp]) ComputeInEdges() {
 	for vidx := range g.Vertices {
 		for eidx := range g.Vertices[vidx].OutEdges {
 			target := int(g.Vertices[vidx].OutEdges[eidx].Target)
@@ -146,7 +145,7 @@ func (g *Graph) ComputeInEdges() {
 	info("Computed inbound edges.")
 }
 
-func (g *Graph) ComputeGraphStats(inDeg bool, outDeg bool) {
+func (g *Graph[VertexProp]) ComputeGraphStats(inDeg bool, outDeg bool) {
 	maxOutDegree := uint64(0)
 	maxInDegree := uint64(0)
 	listInDegree := []int{}
@@ -212,17 +211,7 @@ func ResultCompare(a []float64, b []float64) float64 {
 	return largestDiff
 }
 
-func (g *Graph) PrintVertexProps(prefix string) {
-	top := prefix
-	sum := 0.0
-	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%d:[%.3f,%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Value, g.Vertices[vidx].Residual, g.Vertices[vidx].Scratch)
-		sum += g.Vertices[vidx].Value
-	}
-	info(top + " : " + fmt.Sprintf("%.3f", sum))
-}
-
-func (g *Graph) PrintStructure() {
+func (g *Graph[VertexProp]) PrintStructure() {
 	log.Println(g.VertexMap)
 	for vidx := range g.Vertices {
 		pr := fmt.Sprintf("%d", g.Vertices[vidx].Id)
@@ -234,15 +223,7 @@ func (g *Graph) PrintStructure() {
 	}
 }
 
-func (g *Graph) GetVertexProps() []float64 {
-	props := []float64{}
-	for vidx := range g.Vertices {
-		props = append(props, g.Vertices[vidx].Value)
-	}
-	return props
-}
-
-func (g *Graph) PrintVertexInEdgeSum(prefix string) {
+func (g *Graph[VertexProp]) PrintVertexInEdgeSum(prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {

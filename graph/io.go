@@ -3,7 +3,6 @@ package graph
 import (
 	"bufio"
 	"encoding/gob"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -20,7 +19,7 @@ type RawEdge struct {
 	Weight float64
 }
 
-func (g *Graph) EdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
+func (g *Graph[VertexProp]) EdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
 		srcIdx := g.VertexMap[uint32(qElem.SrcRaw)]
 		dstIdx := g.VertexMap[uint32(qElem.DstRaw)]
@@ -76,7 +75,7 @@ func EdgeEnqueuer(queuechans []chan RawEdge, graphName string, undirected bool, 
 	wg.Done()
 }
 
-func (g *Graph) LoadVertexMap(graphName string) {
+func (g *Graph[VertexProp]) LoadVertexMap(graphName string) {
 	vmap := graphName + ".vmap"
 	file, err := os.Open(vmap)
 	if err != nil {
@@ -93,14 +92,14 @@ func (g *Graph) LoadVertexMap(graphName string) {
 		g.VertexMap = make(map[uint32]uint32)
 		err = gob.NewDecoder(file).Decode(&g.VertexMap)
 		enforce.ENFORCE(err)
-		g.Vertices = make([]Vertex, len(g.VertexMap))
+		g.Vertices = make([]Vertex[VertexProp], len(g.VertexMap))
 		for k, v := range g.VertexMap {
-			g.Vertices[v] = Vertex{Id: k}
+			g.Vertices[v] = Vertex[VertexProp]{Id: k}
 		}
 	}
 }
 
-func (g *Graph) BuildMap(graphName string) {
+func (g *Graph[VertexProp]) BuildMap(graphName string) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -113,12 +112,12 @@ func (g *Graph) BuildMap(graphName string) {
 			if _, ok := g.VertexMap[uint32(srcRaw)]; !ok {
 				sidx := uint32(len(g.VertexMap))
 				g.VertexMap[uint32(srcRaw)] = sidx
-				g.Vertices = append(g.Vertices, Vertex{Id: uint32(srcRaw)})
+				g.Vertices = append(g.Vertices, Vertex[VertexProp]{Id: uint32(srcRaw)})
 			}
 			if _, ok := g.VertexMap[uint32(dstRaw)]; !ok {
 				didx := uint32(len(g.VertexMap))
 				g.VertexMap[uint32(dstRaw)] = didx
-				g.Vertices = append(g.Vertices, Vertex{Id: uint32(dstRaw)})
+				g.Vertices = append(g.Vertices, Vertex[VertexProp]{Id: uint32(dstRaw)})
 			}
 		}
 	}(work)
@@ -141,7 +140,7 @@ func (g *Graph) BuildMap(graphName string) {
 	close(work)
 }
 
-func (g *Graph) LoadGraphStatic(graphName string, undirected bool) {
+func (g *Graph[VertexProp]) LoadGraphStatic(graphName string, undirected bool) {
 	deqCount := mathutils.MaxUint64(uint64(THREADS), 1)
 	enqCount := mathutils.MaxUint64(uint64(THREADS/2), 1)
 
@@ -180,14 +179,4 @@ func (g *Graph) LoadGraphStatic(graphName string, undirected bool) {
 
 	t1 := time.Since(m1)
 	info("Read ", lines, " edges in (ms) ", t1.Milliseconds())
-}
-
-func (g *Graph) WriteVertexProps(fname string) {
-	f, err := os.Create(fname)
-	enforce.ENFORCE(err)
-	defer f.Close()
-	for vidx := range g.Vertices {
-		_, err := f.WriteString(fmt.Sprintf("%d %.4f %.4f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Value, g.Vertices[vidx].Residual))
-		enforce.ENFORCE(err)
-	}
 }

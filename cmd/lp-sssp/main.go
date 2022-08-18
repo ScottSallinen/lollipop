@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 
 	_ "net/http/pprof"
@@ -15,16 +16,16 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func info(args ...interface{}) {
+func info(args ...any) {
 	log.Println("[SSSP]\t", fmt.Sprint(args...))
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
-func OnCheckCorrectness(g *graph.Graph) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
 	maxValue := 0.0
 	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
 	for vidx := range g.Vertices {
-		ourValue := g.Vertices[vidx].Value
+		ourValue := g.Vertices[vidx].Property.Value
 		if ourValue < g.EmptyVal {
 			maxValue = math.Max(maxValue, ourValue)
 		}
@@ -37,7 +38,7 @@ func OnCheckCorrectness(g *graph.Graph) error {
 		} else {
 			for eidx := range g.Vertices[vidx].OutEdges {
 				target := g.Vertices[vidx].OutEdges[eidx].Target
-				enforce.ENFORCE(g.Vertices[target].Value <= (ourValue + g.Vertices[vidx].OutEdges[eidx].GetWeight()))
+				enforce.ENFORCE(g.Vertices[target].Property.Value <= (ourValue + g.Vertices[vidx].OutEdges[eidx].GetWeight()))
 			}
 		}
 	}
@@ -45,8 +46,34 @@ func OnCheckCorrectness(g *graph.Graph) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32) *graph.Graph {
-	frame := framework.Framework{}
+func OracleComparison(g *graph.Graph[VertexProperty], oracle *graph.Graph[VertexProperty], resultCache *[]float64) {
+	ia := make([]float64, len(g.Vertices))
+	ib := make([]float64, len(g.Vertices))
+	numEdges := uint64(0)
+
+	for v := range g.Vertices {
+		ia[v] = oracle.Vertices[v].Property.Value
+		ib[v] = g.Vertices[v].Property.Value
+		numEdges += uint64(len(g.Vertices[v].OutEdges))
+	}
+
+	// TODO: should be parameterized...
+	const ORACLEEDGES = 28511807
+	const ORACLEVERTICES = 1791489
+
+	if resultCache == nil && numEdges == ORACLEEDGES {
+		*resultCache = make([]float64, len(ia))
+		copy(*resultCache, ia)
+	}
+	if resultCache != nil {
+		copy(ia, *resultCache)
+	}
+	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges, " vertexPct ", (len(g.Vertices)*100)/ORACLEVERTICES, " edgePct ", (numEdges*100)/ORACLEEDGES)
+	graph.ResultCompare(ia, ib)
+}
+
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32) *graph.Graph[VertexProperty] {
+	frame := framework.Framework[VertexProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -55,8 +82,9 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
+	frame.OracleComparison = OracleComparison
 
-	g := &graph.Graph{}
+	g := &graph.Graph[VertexProperty]{}
 	g.SourceInit = true
 	g.SourceInitVal = 1.0
 	g.EmptyVal = math.MaxFloat64
@@ -110,6 +138,16 @@ func main() {
 		if *dptr {
 			resName = "dynamic"
 		}
-		g.WriteVertexProps(gNameMain + "-props-" + resName + ".txt")
+		WriteVertexProps(g, gNameMain+"-props-"+resName+".txt")
+	}
+}
+
+func WriteVertexProps(g *graph.Graph[VertexProperty], fname string) {
+	f, err := os.Create(fname)
+	enforce.ENFORCE(err)
+	defer f.Close()
+	for vidx := range g.Vertices {
+		_, err := f.WriteString(fmt.Sprintf("%d %.4f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value))
+		enforce.ENFORCE(err)
 	}
 }

@@ -10,7 +10,7 @@ import (
 
 /// OnQueueVisitAsync: Async queue applying function; aggregates message values,
 /// and only injects a visit marker if none exist already.
-func (frame *Framework) OnQueueVisitAsync(g *graph.Graph, sidx uint32, didx uint32, VisitData float64) {
+func (frame *Framework[VertexProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp], sidx uint32, didx uint32, VisitData float64) {
 	target := &g.Vertices[didx]
 
 	//target.Mutex.Lock()
@@ -34,7 +34,7 @@ func (frame *Framework) OnQueueVisitAsync(g *graph.Graph, sidx uint32, didx uint
 }
 
 /// ConvergeAsync: Static focused variant of async convergence.
-func (frame *Framework) ConvergeAsync(g *graph.Graph, feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp]) ConvergeAsync(g *graph.Graph[VertexProp], feederWg *sync.WaitGroup) {
 	info("ConvergeAsync")
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1
@@ -128,7 +128,7 @@ func (frame *Framework) ConvergeAsync(g *graph.Graph, feederWg *sync.WaitGroup) 
 /// If any thread generates new messages they will not vote to quit, update new messages sent,
 /// thus kick out others until cons = prod.
 /// Works because produced >= consumed at all times.
-func (frame *Framework) CheckTermination(g *graph.Graph, tidx uint32) bool {
+func (frame *Framework[VertexProp]) CheckTermination(g *graph.Graph[VertexProp], tidx uint32) bool {
 	VOTES := graph.THREADS + 1
 
 	g.TerminateData[tidx] = int64(g.MsgSend[tidx]) - int64(g.MsgRecv[tidx])
@@ -150,7 +150,7 @@ func (frame *Framework) CheckTermination(g *graph.Graph, tidx uint32) bool {
 }
 
 /// EnsureCompleteness: Debug func to ensure queues are empty an no messages are inflight.
-func (frame *Framework) EnsureCompleteness(g *graph.Graph) {
+func (frame *Framework[VertexProp]) EnsureCompleteness(g *graph.Graph[VertexProp]) {
 	inFlight := int64(0)
 	for v := 0; v < graph.THREADS+1; v++ {
 		inFlight += g.TerminateData[v]
@@ -171,7 +171,7 @@ func (frame *Framework) EnsureCompleteness(g *graph.Graph) {
 }
 
 /// PrintTerminationStatus: Debug func to periodically print termination data and vote status.
-func PrintTerminationStatus(g *graph.Graph, exit *bool) {
+func PrintTerminationStatus[VertexProp any](g *graph.Graph[VertexProp], exit *bool) {
 	time.Sleep(2 * time.Second)
 	for !*exit {
 		chktermData := make([]int64, graph.THREADS+1)

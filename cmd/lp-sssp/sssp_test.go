@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"math/rand"
@@ -14,13 +15,23 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
+func PrintVertexProps(g *graph.Graph[VertexProperty], prefix string) {
+	top := prefix
+	sum := 0.0
+	for vidx := range g.Vertices {
+		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Scratch)
+		sum += g.Vertices[vidx].Property.Value
+	}
+	info(top + " : " + fmt.Sprintf("%.3f", sum))
+}
+
 // Expectation when 1 is src.
 // TODO: Test other sources!
-func testGraphExpect(g *graph.Graph, t *testing.T) {
+func testGraphExpect(g *graph.Graph[VertexProperty], t *testing.T) {
 	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, g.EmptyVal}
 	for i := range expectations {
-		if g.Vertices[g.VertexMap[uint32(i)]].Value != expectations[i] {
-			t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Value, " expected ", expectations[i])
+		if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
+			t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value, " expected ", expectations[i])
 		}
 	}
 }
@@ -29,7 +40,7 @@ func TestAsyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1)
-		g.PrintVertexProps("")
+		PrintVertexProps(g, "")
 		testGraphExpect(g, t)
 	}
 }
@@ -37,7 +48,7 @@ func TestSyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", false, false, false, false, 1)
-		g.PrintVertexProps("")
+		PrintVertexProps(g, "")
 		testGraphExpect(g, t)
 	}
 }
@@ -46,7 +57,7 @@ func TestAsyncDynamic(t *testing.T) {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, true, false, false, 1)
 		testGraphExpect(g, t)
-		g.PrintVertexProps("")
+		PrintVertexProps(g, "")
 	}
 }
 
@@ -57,8 +68,8 @@ type StructureChange struct {
 	weight float64
 }
 
-func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Graph {
-	frame := framework.Framework{}
+func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Graph[VertexProperty] {
+	frame := framework.Framework[VertexProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -68,7 +79,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph{}
+	g := &graph.Graph[VertexProperty]{}
 	g.SourceInit = true
 	g.SourceInitVal = 1.0
 	g.EmptyVal = math.MaxFloat64
@@ -102,7 +113,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	return g
 }
 
-func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph, g2 *graph.Graph) {
+func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty], g2 *graph.Graph[VertexProperty]) {
 	if len(g1.Vertices) != len(g2.Vertices) {
 		t.Error("vertex count mismatch", len(g1.Vertices), len(g2.Vertices))
 	}
@@ -170,13 +181,13 @@ func TestDynamicCreation(t *testing.T) {
 			g1values := &gDyn.Vertices[vidx]
 			g2values := &gStatic.Vertices[g2idx]
 
-			a[vidx] = g1values.Value
-			b[vidx] = g2values.Value
+			a[vidx] = g1values.Property.Value
+			b[vidx] = g2values.Property.Value
 
-			if !mathutils.FloatEquals(g1values.Value, g2values.Value, allowedVariance) {
-				gStatic.PrintVertexProps("S ")
-				gDyn.PrintVertexProps("D ")
-				t.Error("Value not equal", g1raw, g1values.Value, g2values.Value, "iteration", tcount)
+			if !mathutils.FloatEquals(g1values.Property.Value, g2values.Property.Value, allowedVariance) {
+				PrintVertexProps(gStatic, "S ")
+				PrintVertexProps(gDyn, "D ")
+				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
 				testFail = true
 			}
 		}

@@ -2,11 +2,15 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 
 	_ "net/http/pprof"
 
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 )
@@ -16,12 +20,12 @@ import (
 // For example, for breadth first search, you wouldn't expect a neighbour to be more than
 // one hop away; for graph colouring you wouldn't expect two neighbours to have the same colour,
 // etc. This can codify the desire to ensure correct behaviour.
-func OnCheckCorrectness(g *graph.Graph) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph {
-	frame := framework.Framework{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph[VertexProperty] {
+	frame := framework.Framework[VertexProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -31,7 +35,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph{}
+	g := &graph.Graph[VertexProperty]{}
 
 	// Some potential extra defines here, for if the algorithm has a "point" initialization
 	// or is instead initialized by default behaviour (where every vertex is visited initially)
@@ -50,16 +54,46 @@ func main() {
 	dptr := flag.Bool("d", false, "Dynamic")
 	uptr := flag.Bool("u", false, "Interpret the input graph as undirected (add transpose edges)")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")
+	pptr := flag.Bool("p", false, "Save vertex properties to disk")
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
+	gName := *gptr
 	graph.THREADS = *tptr
 	graph.TARGETRATE = *rptr
+
+	gNameMainT := strings.Split(gName, "/")
+	gNameMain := gNameMainT[len(gNameMainT)-1]
+	gNameMainTD := strings.Split(gNameMain, ".")
+	if len(gNameMainTD) > 1 {
+		gNameMain = gNameMainTD[len(gNameMainTD)-2]
+	} else {
+		gNameMain = gNameMainTD[0]
+	}
+	gNameMain = "results/" + gNameMain
 
 	//runtime.SetMutexProfileFraction(1)
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr, false, *uptr)
+	g := LaunchGraphExecution(gName, *aptr, *dptr, false, *uptr)
 	g.ComputeGraphStats(false, false)
+
+	if *pptr {
+		resName := "static"
+		if *dptr {
+			resName = "dynamic"
+		}
+		WriteVertexProps(g, gNameMain+"-props-"+resName+".txt")
+	}
+}
+
+func WriteVertexProps(g *graph.Graph[VertexProperty], fname string) {
+	f, err := os.Create(fname)
+	enforce.ENFORCE(err)
+	defer f.Close()
+	for vidx := range g.Vertices {
+		_, err := f.WriteString(fmt.Sprintf("%d %.4f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value))
+		enforce.ENFORCE(err)
+	}
 }

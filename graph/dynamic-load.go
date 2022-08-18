@@ -13,16 +13,16 @@ import (
 )
 
 /// SendAdd: Direct add for debugging
-func (g *Graph) SendAdd(srcRaw uint32, dstRaw uint32, weight float64) {
+func (g *Graph[VertexProp]) SendAdd(srcRaw uint32, dstRaw uint32, weight float64) {
 	g.ThreadStructureQ[g.RawIdToThreadIdx(srcRaw)] <- StructureChange{Type: ADD, SrcRaw: srcRaw, DstRaw: dstRaw, Weight: weight}
 }
 
 /// SendDel: Direct delete for debugging
-func (g *Graph) SendDel(srcRaw uint32, dstRaw uint32) {
+func (g *Graph[VertexProp]) SendDel(srcRaw uint32, dstRaw uint32) {
 	g.ThreadStructureQ[g.RawIdToThreadIdx(srcRaw)] <- StructureChange{Type: DEL, SrcRaw: srcRaw, DstRaw: dstRaw}
 }
 
-func (g *Graph) DynamicEdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
+func (g *Graph[VertexProp]) DynamicEdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
 		//info("deq ", qElem.SrcRaw, qElem.DstRaw)
 		g.ThreadStructureQ[g.RawIdToThreadIdx(qElem.SrcRaw)] <- StructureChange{Type: ADD, SrcRaw: qElem.SrcRaw, DstRaw: qElem.DstRaw, Weight: qElem.Weight}
@@ -30,7 +30,7 @@ func (g *Graph) DynamicEdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGrou
 	deqWg.Done()
 }
 
-func (g *Graph) DynamicEdgeEnqueuer(graphName string, undirected bool, wg *sync.WaitGroup, idx uint64, enqCount uint64, result chan uint64) {
+func (g *Graph[VertexProp]) DynamicEdgeEnqueuer(graphName string, undirected bool, wg *sync.WaitGroup, idx uint64, enqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -86,7 +86,7 @@ func (g *Graph) DynamicEdgeEnqueuer(graphName string, undirected bool, wg *sync.
 	wg.Done()
 }
 
-func (g *Graph) LoadGraphDynamic(graphName string, undirected bool, feederWg *sync.WaitGroup) {
+func (g *Graph[VertexProp]) LoadGraphDynamic(graphName string, undirected bool, feederWg *sync.WaitGroup) {
 	// The enqueue count here should actually be just 1 to honour an event log properly.
 	// If order is irrelevant, then we can scrape through it potentially faster with more..
 	// perhaps this should be parameterized.

@@ -6,27 +6,30 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"sort"
 	"strings"
 
 	_ "net/http/pprof"
 
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-func info(args ...interface{}) {
+func info(args ...any) {
 	log.Println("[Pagerank]\t", fmt.Sprint(args...))
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
-func OnCheckCorrectness(g *graph.Graph) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
 	sum := 0.0
 	sumsc := 0.0
 	resid := 0.0
 	for vidx := range g.Vertices {
-		sum += g.Vertices[vidx].Value
-		resid += g.Vertices[vidx].Residual
+		sum += g.Vertices[vidx].Property.Value
+		resid += g.Vertices[vidx].Property.Residual
 		sumsc += g.Vertices[vidx].Scratch
 	}
 	totalAbs := (sum) / float64(len(g.Vertices))
@@ -44,8 +47,56 @@ func OnCheckCorrectness(g *graph.Graph) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool) *graph.Graph {
-	frame := framework.Framework{}
+func OracleComparison(g *graph.Graph[VertexProperty], oracle *graph.Graph[VertexProperty], resultCache *[]float64) {
+	ia := make([]float64, len(g.Vertices))
+	ib := make([]float64, len(g.Vertices))
+	numEdges := uint64(0)
+
+	for v := range g.Vertices {
+		ia[v] = oracle.Vertices[v].Property.Value
+		ib[v] = g.Vertices[v].Property.Value
+		numEdges += uint64(len(g.Vertices[v].OutEdges))
+	}
+
+	// TODO: should be parameterized...
+	const ORACLEEDGES = 28511807
+	const ORACLEVERTICES = 1791489
+
+	if resultCache == nil && numEdges == ORACLEEDGES {
+		*resultCache = make([]float64, len(ia))
+		copy(*resultCache, ia)
+	}
+	if resultCache != nil {
+		copy(ia, *resultCache)
+	}
+	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges, " vertexPct ", (len(g.Vertices)*100)/ORACLEVERTICES, " edgePct ", (numEdges*100)/ORACLEEDGES)
+	graph.ResultCompare(ia, ib)
+
+	iaRank := mathutils.NewIndexedFloat64Slice(ia)
+	ibRank := mathutils.NewIndexedFloat64Slice(ib)
+	sort.Sort(sort.Reverse(iaRank))
+	sort.Sort(sort.Reverse(ibRank))
+
+	topN := 1000
+	topK := 100
+	if len(iaRank.Idx) < topN {
+		topN = len(iaRank.Idx)
+	}
+	if len(iaRank.Idx) < topK {
+		topK = len(iaRank.Idx)
+	}
+	iaRk := make([]int, topK)
+	copy(iaRk, iaRank.Idx[:topK])
+	ibRk := make([]int, topK)
+	copy(ibRk, ibRank.Idx[:topK])
+
+	mRBO6 := mathutils.CalculateRBO(iaRank.Idx[:topN], ibRank.Idx[:topN], 0.6)
+	mRBO9 := mathutils.CalculateRBO(iaRk, ibRk, 0.9)
+	info("top", topN, " RBO6 ", fmt.Sprintf("%.4f", mRBO6*100.0), " top", topK, " RBO9 ", fmt.Sprintf("%.4f", mRBO9*100.0))
+}
+
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool) *graph.Graph[VertexProperty] {
+	frame := framework.Framework[VertexProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -54,8 +105,9 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
+	frame.OracleComparison = OracleComparison
 
-	g := &graph.Graph{}
+	g := &graph.Graph[VertexProperty]{}
 	g.EmptyVal = 0.0
 
 	frame.Launch(g, gName, async, dynamic, oracleRun, false)
@@ -107,6 +159,16 @@ func main() {
 		if *dptr {
 			resName = "dynamic"
 		}
-		g.WriteVertexProps(gNameMain + "-props-" + resName + ".txt")
+		WriteVertexProps(g, gNameMain+"-props-"+resName+".txt")
+	}
+}
+
+func WriteVertexProps(g *graph.Graph[VertexProperty], fname string) {
+	f, err := os.Create(fname)
+	enforce.ENFORCE(err)
+	defer f.Close()
+	for vidx := range g.Vertices {
+		_, err := f.WriteString(fmt.Sprintf("%d %.4f %.4f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Residual))
+		enforce.ENFORCE(err)
 	}
 }
