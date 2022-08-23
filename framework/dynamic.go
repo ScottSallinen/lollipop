@@ -143,7 +143,7 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 	//*/
 }
 
-/// ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
+// ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
 func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp], feederWg *sync.WaitGroup) {
 	info("ConvergeAsyncDynWithRate")
 	var wg sync.WaitGroup
@@ -179,9 +179,9 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 	/*/
 
 	//m1 := time.Now()
-	threadEdges := make([]uint64, graph.THREADS)
+	threadEdges := make([]uint64, graph.THREADS) // number of edges that each thread has processed
 	for te := range threadEdges {
-		threadEdges[te] = 0
+		threadEdges[te] = 0 // TODO: is this unnecessary?
 	}
 
 	for t := 0; t < graph.THREADS; t++ {
@@ -190,17 +190,19 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 			const GscBundleSize = 4096 * 16
 			msgBuffer := make([]graph.Message, MsgBundleSize)
 			gscBuffer := make([]graph.StructureChange, GscBundleSize)
-			strucClosed := false
+			strucClosed := false // true indicates the StructureChanges channel is closed
 			infoTimer := time.Now()
 			for {
+				// Process a batch of StructureChanges
 				if !strucClosed && !haltFlag {
 					//m2 := time.Since(m1)
 					m2 := g.Watch.Elapsed()
 					targetEdgeCount := m2.Seconds() * (float64(graph.TARGETRATE) / float64(graph.THREADS))
-					incEdgeCount := uint64(targetEdgeCount) - threadEdges[tidx]
+					incEdgeCount := uint64(targetEdgeCount) - threadEdges[tidx] // number of edges to process in this round
 
-					ec := uint64(0)
+					ec := uint64(0) // edge count
 				fillLoop:
+					// Read a batch of StructureChanges
 					for ; ec < incEdgeCount && ec < GscBundleSize; ec++ {
 						select {
 						case msg, ok := <-g.ThreadStructureQ[tidx]:
@@ -222,7 +224,7 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 						threadEdges[tidx] += uint64(ec)
 
 						allEdgeCount := uint64(0)
-						for te := range threadEdges {
+						for te := range threadEdges { // TODO: is locking required here?
 							allEdgeCount += threadEdges[te]
 							//if allEdgeCount > 18838563 {
 							//	haltFlag = true
@@ -246,6 +248,7 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 					}
 				}
 
+				// Process a batch of messages from the MessageQ
 				algCount := 0
 			algLoop:
 				for ; algCount < MsgBundleSize; algCount++ {
@@ -263,6 +266,7 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 					for i := 0; i < algCount; i++ {
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
+						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
 						if msg.Val != g.EmptyVal {
 							frame.MessageAggregator(target, msg.Val)
 						}
