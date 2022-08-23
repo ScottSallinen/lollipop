@@ -19,6 +19,7 @@ type RawEdge struct {
 	Weight float64
 }
 
+// EdgeDequeuer reads edges from queuechan and update the graph structure correspondingly
 func (g *Graph[VertexProp]) EdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
 		srcIdx := g.VertexMap[uint32(qElem.SrcRaw)]
@@ -29,6 +30,7 @@ func (g *Graph[VertexProp]) EdgeDequeuer(queuechan chan RawEdge, deqWg *sync.Wai
 	deqWg.Done()
 }
 
+// EdgeEnqueuer reads edges in the file and writes them to queuechans
 func EdgeEnqueuer(queuechans []chan RawEdge, graphName string, undirected bool, wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
@@ -79,15 +81,17 @@ func (g *Graph[VertexProp]) LoadVertexMap(graphName string) {
 	vmap := graphName + ".vmap"
 	file, err := os.Open(vmap)
 	if err != nil {
+		// The file does not exist
 		g.BuildMap(graphName)
 
-		// write
+		// write the VertexMap
 		newFile, err := os.Create(vmap)
 		enforce.ENFORCE(err)
 		defer newFile.Close()
 		err = gob.NewEncoder(newFile).Encode(g.VertexMap)
 		enforce.ENFORCE(err)
 	} else {
+		// The file exists, load the VertexMap stored in the file
 		defer file.Close()
 		g.VertexMap = make(map[uint32]uint32)
 		err = gob.NewDecoder(file).Decode(&g.VertexMap)
@@ -99,6 +103,7 @@ func (g *Graph[VertexProp]) LoadVertexMap(graphName string) {
 	}
 }
 
+// BuildMap reads all edges stored in the file and constructs the VertexMap for all vertices found
 func (g *Graph[VertexProp]) BuildMap(graphName string) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
@@ -140,6 +145,8 @@ func (g *Graph[VertexProp]) BuildMap(graphName string) {
 	close(work)
 }
 
+// LoadGraphStatic loads the graph store in the file. The graph structure is updated to reflect the complete graph
+// before returning.
 func (g *Graph[VertexProp]) LoadGraphStatic(graphName string, undirected bool) {
 	deqCount := mathutils.MaxUint64(uint64(THREADS), 1)
 	enqCount := mathutils.MaxUint64(uint64(THREADS/2), 1)

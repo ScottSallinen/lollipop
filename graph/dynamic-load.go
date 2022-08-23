@@ -12,16 +12,20 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-/// SendAdd: Direct add for debugging
+// / SendAdd: Direct add for debugging
 func (g *Graph[VertexProp]) SendAdd(srcRaw uint32, dstRaw uint32, weight float64) {
 	g.ThreadStructureQ[g.RawIdToThreadIdx(srcRaw)] <- StructureChange{Type: ADD, SrcRaw: srcRaw, DstRaw: dstRaw, Weight: weight}
 }
 
-/// SendDel: Direct delete for debugging
+// / SendDel: Direct delete for debugging
 func (g *Graph[VertexProp]) SendDel(srcRaw uint32, dstRaw uint32) {
 	g.ThreadStructureQ[g.RawIdToThreadIdx(srcRaw)] <- StructureChange{Type: DEL, SrcRaw: srcRaw, DstRaw: dstRaw}
 }
 
+// DynamicEdgeDequeuer reads all edges in queuechan writes corresponding StructureChange to the ThreadStructureQ of the
+// source vertex's thread
+//
+// Note: this is currently unused
 func (g *Graph[VertexProp]) DynamicEdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
 		//info("deq ", qElem.SrcRaw, qElem.DstRaw)
@@ -30,6 +34,8 @@ func (g *Graph[VertexProp]) DynamicEdgeDequeuer(queuechan chan RawEdge, deqWg *s
 	deqWg.Done()
 }
 
+// DynamicEdgeEnqueuer reads edges in the file and writes corresponding StructureChange to the ThreadStructureQ of the
+// source vertex's thread
 func (g *Graph[VertexProp]) DynamicEdgeEnqueuer(graphName string, undirected bool, wg *sync.WaitGroup, idx uint64, enqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
@@ -86,6 +92,8 @@ func (g *Graph[VertexProp]) DynamicEdgeEnqueuer(graphName string, undirected boo
 	wg.Done()
 }
 
+// LoadGraphDynamic starts multiple DynamicEdgeEnqueuer to read edges stored in the file. When it returns, all edges
+// are read.
 func (g *Graph[VertexProp]) LoadGraphDynamic(graphName string, undirected bool, feederWg *sync.WaitGroup) {
 	// The enqueue count here should actually be just 1 to honour an event log properly.
 	// If order is irrelevant, then we can scrape through it potentially faster with more..
