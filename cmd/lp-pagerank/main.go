@@ -23,7 +23,7 @@ func info(args ...any) {
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
-func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	sum := 0.0
 	sumsc := 0.0
 	resid := 0.0
@@ -47,7 +47,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
 	return nil
 }
 
-func OracleComparison(g *graph.Graph[VertexProperty], oracle *graph.Graph[VertexProperty], resultCache *[]float64) {
+func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty], oracle *graph.Graph[VertexProperty, EdgeProperty], resultCache *[]float64) {
 	ia := make([]float64, len(g.Vertices))
 	ib := make([]float64, len(g.Vertices))
 	numEdges := uint64(0)
@@ -95,8 +95,8 @@ func OracleComparison(g *graph.Graph[VertexProperty], oracle *graph.Graph[Vertex
 	info("top", topN, " RBO6 ", fmt.Sprintf("%.4f", mRBO6*100.0), " top", topK, " RBO9 ", fmt.Sprintf("%.4f", mRBO9*100.0))
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool) *graph.Graph[VertexProperty] {
-	frame := framework.Framework[VertexProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool) *graph.Graph[VertexProperty, EdgeProperty] {
+	frame := framework.Framework[VertexProperty, EdgeProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -107,7 +107,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.OracleComparison = OracleComparison
 
-	g := &graph.Graph[VertexProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.EmptyVal = 0.0
 
 	frame.Launch(g, gName, async, dynamic, oracleRun, false)
@@ -163,7 +163,7 @@ func main() {
 	}
 }
 
-func WriteVertexProps(g *graph.Graph[VertexProperty], fname string) {
+func WriteVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], fname string) {
 	f, err := os.Create(fname)
 	enforce.ENFORCE(err)
 	defer f.Close()

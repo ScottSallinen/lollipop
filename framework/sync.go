@@ -6,14 +6,14 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func (frame *Framework[VertexProp]) OnQueueVisitSync(g *graph.Graph[VertexProp], sidx uint32, didx uint32, VisitData float64) {
+func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitSync(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64) {
 	target := &g.Vertices[didx]
 	//target.Mutex.Lock()
 	frame.MessageAggregator(target, VisitData)
 	//target.Mutex.Unlock()
 }
 
-func (frame *Framework[VertexProp]) ConvergeSync(g *graph.Graph[VertexProp], wg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp]) ConvergeSync(g *graph.Graph[VertexProp, EdgeProp], wg *sync.WaitGroup) {
 	info("ConvergeSync")
 	if g.SourceInit {
 		sidx := g.VertexMap[g.SourceVertex]

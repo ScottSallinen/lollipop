@@ -19,13 +19,13 @@ var TARGETRATE = float64(0)
 var DEBUG = false
 
 // Graph t
-type Graph[VertexProp any] struct {
+type Graph[VertexProp, EdgeProp any] struct {
 	Mutex             sync.RWMutex
 	VertexMap         map[uint32]uint32 // Raw to internal
-	Vertices          []Vertex[VertexProp]
-	OnQueueVisit      OnQueueVisitFunc[VertexProp]
-	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc[VertexProp]
-	AlgConverge       ConvergeFunc[VertexProp]
+	Vertices          []Vertex[VertexProp, EdgeProp]
+	OnQueueVisit      OnQueueVisitFunc[VertexProp, EdgeProp]
+	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc[VertexProp, EdgeProp]
+	AlgConverge       ConvergeFunc[VertexProp, EdgeProp]
 	MessageQ          []chan Message
 	ThreadStructureQ  []chan StructureChange
 	MsgSend           []uint32 // number of messages sent by each thread
@@ -63,9 +63,9 @@ type StructureChange struct {
 	Weight float64
 }
 
-type OnQueueVisitFunc[VertexProp any] func(g *Graph[VertexProp], sidx uint32, didx uint32, VisitData float64)
-type OnQueueEdgeAddRevFunc[VertexProp any] func(g *Graph[VertexProp], sidx uint32, didx uint32, VisitData float64)
-type ConvergeFunc[VertexProp any] func(g *Graph[VertexProp], wg *sync.WaitGroup)
+type OnQueueVisitFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
+type OnQueueEdgeAddRevFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
+type ConvergeFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], wg *sync.WaitGroup)
 
 // Note: for now we have fake edge weights where the weight is just 1.
 // This can be adjusted in the future by just adjusting the constructor
@@ -74,15 +74,17 @@ type ConvergeFunc[VertexProp any] func(g *Graph[VertexProp], wg *sync.WaitGroup)
 // do this dynamically would be nice.
 // Will also need to think about a better way to have templated edge types
 // if we are exploring edges with timestamps.
-type Edge struct {
+type Edge[EdgeProp any] struct {
 	Target uint32
 	//Weight float64
+	Property EdgeProp
 }
 
-func NewEdge(target uint32, weight float64) Edge {
-	return Edge{target}
+func NewEdge[EdgeProp any](target uint32, weight float64) Edge[EdgeProp] {
+	return Edge[EdgeProp]{Target: target}
 }
-func (*Edge) GetWeight() float64 {
+
+func (*Edge[EdgeProp]) GetWeight() float64 {
 	return 1.0
 }
 
@@ -92,8 +94,8 @@ type InEdge struct {
 	Weight float64
 }
 
-func (e *Edge) Reset() {
-	*e = Edge{}
+func (e *Edge[EdgeProp]) Reset() {
+	*e = Edge[EdgeProp]{}
 }
 
 func (e *InEdge) Reset() {
@@ -101,17 +103,17 @@ func (e *InEdge) Reset() {
 }
 
 // Vertex Main type defining a vertex in a graph. Contains necessary per-vertex information for structure and identification.
-type Vertex[VertexProp any] struct {
-	Id       uint32     // Raw (external) ID of a vertex, reflecting the external original identifier of a vertex, NOT the internal [0, N] index.
-	Scratch  float64    // Common scratchpad / accumulator, also used to track activity.
-	OutEdges []Edge     // Main outgoing edgelist.
-	InEdges  []InEdge   // Incoming edges (currently unused).
-	Mutex    sync.Mutex // Mutex for thread synchroniziation, if needed.
-	Property VertexProp // Generic property type, can be variable per algorithm.
+type Vertex[VertexProp, EdgeProp any] struct {
+	Id       uint32           // Raw (external) ID of a vertex, reflecting the external original identifier of a vertex, NOT the internal [0, N] index.
+	Scratch  float64          // Common scratchpad / accumulator, also used to track activity.
+	OutEdges []Edge[EdgeProp] // Main outgoing edgelist.
+	InEdges  []InEdge         // Incoming edges (currently unused).
+	Mutex    sync.Mutex       // Mutex for thread synchroniziation, if needed.
+	Property VertexProp       // Generic property type, can be variable per algorithm.
 }
 
-func (v *Vertex[VertexProp]) Reset() {
-	*v = Vertex[VertexProp]{}
+func (v *Vertex[VertexProp, EdgeProp]) Reset() {
+	*v = Vertex[VertexProp, EdgeProp]{}
 	for eidx := range v.OutEdges {
 		v.OutEdges[eidx].Reset()
 	}
@@ -120,22 +122,22 @@ func (v *Vertex[VertexProp]) Reset() {
 	}
 }
 
-func (v *Vertex[VertexProp]) ToThreadIdx() uint32 {
+func (v *Vertex[VertexProp, EdgeProp]) ToThreadIdx() uint32 {
 	return v.Id % uint32(THREADS)
 }
 
-func (g *Graph[VertexProp]) RawIdToThreadIdx(RawId uint32) uint32 {
+func (g *Graph[VertexProp, EdgeProp]) RawIdToThreadIdx(RawId uint32) uint32 {
 	return RawId % uint32(THREADS)
 }
 
-func (g *Graph[VertexProp]) Reset() {
+func (g *Graph[VertexProp, EdgeProp]) Reset() {
 	for vidx := range g.Vertices {
 		g.Vertices[vidx].Reset()
 	}
 }
 
 // ComputeInEdges update all vertices' InEdges to match the edges stored in OutEdges lists
-func (g *Graph[VertexProp]) ComputeInEdges() {
+func (g *Graph[VertexProp, EdgeProp]) ComputeInEdges() {
 	for vidx := range g.Vertices {
 		for eidx := range g.Vertices[vidx].OutEdges {
 			target := int(g.Vertices[vidx].OutEdges[eidx].Target)
@@ -146,7 +148,7 @@ func (g *Graph[VertexProp]) ComputeInEdges() {
 }
 
 // ComputeGraphStats prints some statistics of the graph
-func (g *Graph[VertexProp]) ComputeGraphStats(inDeg bool, outDeg bool) {
+func (g *Graph[VertexProp, EdgeProp]) ComputeGraphStats(inDeg bool, outDeg bool) {
 	maxOutDegree := uint64(0)
 	maxInDegree := uint64(0)
 	listInDegree := []int{}
@@ -212,7 +214,7 @@ func ResultCompare(a []float64, b []float64) float64 {
 	return largestDiff
 }
 
-func (g *Graph[VertexProp]) PrintStructure() {
+func (g *Graph[VertexProp, EdgeProp]) PrintStructure() {
 	log.Println(g.VertexMap)
 	for vidx := range g.Vertices {
 		pr := fmt.Sprintf("%d", g.Vertices[vidx].Id)
@@ -224,7 +226,7 @@ func (g *Graph[VertexProp]) PrintStructure() {
 	}
 }
 
-func (g *Graph[VertexProp]) PrintVertexInEdgeSum(prefix string) {
+func (g *Graph[VertexProp, EdgeProp]) PrintVertexInEdgeSum(prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {

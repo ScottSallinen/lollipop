@@ -20,12 +20,12 @@ type RawEdge struct {
 }
 
 // EdgeDequeuer reads edges from queuechan and update the graph structure correspondingly
-func (g *Graph[VertexProp]) EdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
+func (g *Graph[VertexProp, EdgeProp]) EdgeDequeuer(queuechan chan RawEdge, deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
 		srcIdx := g.VertexMap[uint32(qElem.SrcRaw)]
 		dstIdx := g.VertexMap[uint32(qElem.DstRaw)]
 
-		g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, NewEdge(uint32(dstIdx), qElem.Weight))
+		g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, NewEdge[EdgeProp](uint32(dstIdx), qElem.Weight))
 	}
 	deqWg.Done()
 }
@@ -77,7 +77,7 @@ func EdgeEnqueuer(queuechans []chan RawEdge, graphName string, undirected bool, 
 	wg.Done()
 }
 
-func (g *Graph[VertexProp]) LoadVertexMap(graphName string) {
+func (g *Graph[VertexProp, EdgeProp]) LoadVertexMap(graphName string) {
 	vmap := graphName + ".vmap"
 	file, err := os.Open(vmap)
 	if err != nil {
@@ -96,15 +96,15 @@ func (g *Graph[VertexProp]) LoadVertexMap(graphName string) {
 		g.VertexMap = make(map[uint32]uint32)
 		err = gob.NewDecoder(file).Decode(&g.VertexMap)
 		enforce.ENFORCE(err)
-		g.Vertices = make([]Vertex[VertexProp], len(g.VertexMap))
+		g.Vertices = make([]Vertex[VertexProp, EdgeProp], len(g.VertexMap))
 		for k, v := range g.VertexMap {
-			g.Vertices[v] = Vertex[VertexProp]{Id: k}
+			g.Vertices[v] = Vertex[VertexProp, EdgeProp]{Id: k}
 		}
 	}
 }
 
 // BuildMap reads all edges stored in the file and constructs the VertexMap for all vertices found
-func (g *Graph[VertexProp]) BuildMap(graphName string) {
+func (g *Graph[VertexProp, EdgeProp]) BuildMap(graphName string) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -117,12 +117,12 @@ func (g *Graph[VertexProp]) BuildMap(graphName string) {
 			if _, ok := g.VertexMap[uint32(srcRaw)]; !ok {
 				sidx := uint32(len(g.VertexMap))
 				g.VertexMap[uint32(srcRaw)] = sidx
-				g.Vertices = append(g.Vertices, Vertex[VertexProp]{Id: uint32(srcRaw)})
+				g.Vertices = append(g.Vertices, Vertex[VertexProp, EdgeProp]{Id: uint32(srcRaw)})
 			}
 			if _, ok := g.VertexMap[uint32(dstRaw)]; !ok {
 				didx := uint32(len(g.VertexMap))
 				g.VertexMap[uint32(dstRaw)] = didx
-				g.Vertices = append(g.Vertices, Vertex[VertexProp]{Id: uint32(dstRaw)})
+				g.Vertices = append(g.Vertices, Vertex[VertexProp, EdgeProp]{Id: uint32(dstRaw)})
 			}
 		}
 	}(work)
@@ -147,7 +147,7 @@ func (g *Graph[VertexProp]) BuildMap(graphName string) {
 
 // LoadGraphStatic loads the graph store in the file. The graph structure is updated to reflect the complete graph
 // before returning.
-func (g *Graph[VertexProp]) LoadGraphStatic(graphName string, undirected bool) {
+func (g *Graph[VertexProp, EdgeProp]) LoadGraphStatic(graphName string, undirected bool) {
 	deqCount := mathutils.MaxUint64(uint64(THREADS), 1)
 	enqCount := mathutils.MaxUint64(uint64(THREADS/2), 1)
 

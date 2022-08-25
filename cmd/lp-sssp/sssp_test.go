@@ -15,7 +15,7 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-func PrintVertexProps(g *graph.Graph[VertexProperty], prefix string) {
+func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
@@ -27,7 +27,7 @@ func PrintVertexProps(g *graph.Graph[VertexProperty], prefix string) {
 
 // Expectation when 1 is src.
 // TODO: Test other sources!
-func testGraphExpect(g *graph.Graph[VertexProperty], t *testing.T) {
+func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty], t *testing.T) {
 	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, g.EmptyVal}
 	for i := range expectations {
 		if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
@@ -68,8 +68,8 @@ type StructureChange struct {
 	weight float64
 }
 
-func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Graph[VertexProperty] {
-	frame := framework.Framework[VertexProperty]{}
+func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty] {
+	frame := framework.Framework[VertexProperty, EdgeProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -79,7 +79,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph[VertexProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.SourceInit = true
 	g.SourceInitVal = 1.0
 	g.EmptyVal = math.MaxFloat64
@@ -113,7 +113,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	return g
 }
 
-func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty], g2 *graph.Graph[VertexProperty]) {
+func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, EdgeProperty], g2 *graph.Graph[VertexProperty, EdgeProperty]) {
 	if len(g1.Vertices) != len(g2.Vertices) {
 		t.Error("vertex count mismatch", len(g1.Vertices), len(g2.Vertices))
 	}

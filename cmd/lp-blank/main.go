@@ -20,12 +20,12 @@ import (
 // For example, for breadth first search, you wouldn't expect a neighbour to be more than
 // one hop away; for graph colouring you wouldn't expect two neighbours to have the same colour,
 // etc. This can codify the desire to ensure correct behaviour.
-func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph[VertexProperty] {
-	frame := framework.Framework[VertexProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph[VertexProperty, EdgeProperty] {
+	frame := framework.Framework[VertexProperty, EdgeProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -35,7 +35,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph[VertexProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 
 	// Some potential extra defines here, for if the algorithm has a "point" initialization
 	// or is instead initialized by default behaviour (where every vertex is visited initially)
@@ -88,7 +88,7 @@ func main() {
 	}
 }
 
-func WriteVertexProps(g *graph.Graph[VertexProperty], fname string) {
+func WriteVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], fname string) {
 	f, err := os.Create(fname)
 	enforce.ENFORCE(err)
 	defer f.Close()

@@ -21,7 +21,7 @@ func info(args ...any) {
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
-func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	maxValue := 0.0
 	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
 	for vidx := range g.Vertices {
@@ -46,7 +46,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
 	return nil
 }
 
-func OracleComparison(g *graph.Graph[VertexProperty], oracle *graph.Graph[VertexProperty], resultCache *[]float64) {
+func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty], oracle *graph.Graph[VertexProperty, EdgeProperty], resultCache *[]float64) {
 	ia := make([]float64, len(g.Vertices))
 	ib := make([]float64, len(g.Vertices))
 	numEdges := uint64(0)
@@ -72,8 +72,8 @@ func OracleComparison(g *graph.Graph[VertexProperty], oracle *graph.Graph[Vertex
 	graph.ResultCompare(ia, ib)
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32) *graph.Graph[VertexProperty] {
-	frame := framework.Framework[VertexProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty] {
+	frame := framework.Framework[VertexProperty, EdgeProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -84,7 +84,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.OracleComparison = OracleComparison
 
-	g := &graph.Graph[VertexProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.SourceInit = true
 	g.SourceInitVal = 1.0
 	g.EmptyVal = math.MaxFloat64
@@ -142,7 +142,7 @@ func main() {
 	}
 }
 
-func WriteVertexProps(g *graph.Graph[VertexProperty], fname string) {
+func WriteVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], fname string) {
 	f, err := os.Create(fname)
 	enforce.ENFORCE(err)
 	defer f.Close()
