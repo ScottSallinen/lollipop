@@ -144,13 +144,22 @@ func OnVisitVertex(g *graph.Graph[VertexProperty], vidx uint32, data float64) in
 	return 0
 }
 
+// OnFinish: Called at the end of the algorithm to finalize anything necessary.
+// For pagerank, we use this opportunity to resolve the issue of Sink Vertices.
+// The description of the code can be found in the following paper;
+// "No More Leaky PageRank", S. Sallinen, M. Ripeanu, published in IA^3
+// https://people.ece.ubc.ca/matei/papers/ia3-2021.pdf
+//
+// A minor modification has been made since the publication of the paper,
+// we no longer need to track latent values within a sink during processing, as it can actually be computed at the end
+// with simply the computation g.Vertices[vidx].Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 func OnFinish(g *graph.Graph[VertexProperty]) error {
-	/// Fix all sink node latent values
+	// Fix all sink node latent values
 	numSinks := 0       /// Number of sink nodes.
 	globalLatent := 0.0 /// Total latent values from sinks.
 	nonSinkSum := 0.0   /// The total accumulated value in the non-sink graph.
 
-	/// One pass over all vertices -- compute some global totals.
+	// One pass over all vertices -- compute some global totals.
 	for vidx := range g.Vertices {
 		// New: absorb any leftovers of residual
 		//*/
@@ -161,7 +170,7 @@ func OnFinish(g *graph.Graph[VertexProperty]) error {
 		g.Vertices[vidx].Scratch = 0.0
 		//*/
 
-		if len(g.Vertices[vidx].OutEdges) == 0 { /// Sink vertex
+		if len(g.Vertices[vidx].OutEdges) == 0 { // Sink vertex
 			globalLatent += g.Vertices[vidx].Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 			numSinks++
 		} else {
@@ -169,9 +178,9 @@ func OnFinish(g *graph.Graph[VertexProperty]) error {
 		}
 	}
 
-	/// Note: the amount latent here was already pre-dampened, so the retainment percent must be computed by the raw mass, so we undampen for that calculation (multiply by 1/d).
-	/// The subtraction of 1.0*sinks is because we discount each sink node's contribution of 1u of mass from the amount latent.
-	/// We divide by the size of the non-sink graph for the final retainment percent.
+	// Note: the amount latent here was already pre-dampened, so the retainment percent must be computed by the raw mass, so we undampen for that calculation (multiply by 1/d).
+	// The subtraction of 1.0*sinks is because we discount each sink node's contribution of 1u of mass from the amount latent.
+	// We divide by the size of the non-sink graph for the final retainment percent.
 	retainSumPct := ((globalLatent * (1.0 / DAMPINGFACTOR)) - 1.0*float64(numSinks)) / float64((len(g.Vertices) - numSinks))
 
 	SinkQuota := float64(1.0) / float64(len(g.Vertices)-1)
@@ -179,20 +188,20 @@ func OnFinish(g *graph.Graph[VertexProperty]) error {
 
 	geometricLatentSum := globalLatent / (1.0 - DAMPINGFACTOR*(SinkQuota*(float64(numSinks-1))+(NormalQuota*retainSumPct)))
 
-	/// One pass over all vertices -- make adjustment based on sink/non-sink status.
+	// One pass over all vertices -- make adjustment based on sink/non-sink status.
 	for vidx := range g.Vertices {
 		var toAbsorb float64
-		if len(g.Vertices[vidx].OutEdges) != 0 { /// All vertices that are NOT a sink node
+		if len(g.Vertices[vidx].OutEdges) != 0 { // All vertices that are NOT a sink node
 			toAbsorb = (NormalQuota) * (geometricLatentSum * (1.0 - retainSumPct)) * (g.Vertices[vidx].Property.Value / nonSinkSum)
-		} else { /// All vertices that are a sink node
-			/// Relative 'power' of this sink compared to others determines its retainment. Note: we undampen for this ratio as well.
+		} else { // All vertices that are a sink node
+			// Relative 'power' of this sink compared to others determines its retainment. Note: we undampen for this ratio as well.
 			vLatent := g.Vertices[vidx].Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 			relativeSinkPowerPct := (vLatent*(1.0/DAMPINGFACTOR) - 1.0) / ((globalLatent * (1.0 / DAMPINGFACTOR)) - float64(numSinks)*1.0)
 			toAbsorb = (1.0 - DAMPINGFACTOR) * (SinkQuota) * (geometricLatentSum) * (1.0 - vLatent/globalLatent)
 			toAbsorb += (1.0 - DAMPINGFACTOR) * (NormalQuota) * (geometricLatentSum) * (retainSumPct) * (relativeSinkPowerPct)
 		}
 		g.Vertices[vidx].Property.Value += toAbsorb
-		//g.Vertices[vidx].Value /= float64(len(g.Vertices)) /// If we want to normalize here
+		// g.Vertices[vidx].Value /= float64(len(g.Vertices)) // If we want to normalize here
 	}
 
 	return nil
