@@ -27,17 +27,15 @@ func ENFORCE(query interface{}, args ...interface{}) {
 				panic(t)
 			}
 		}
-	case nil:
-		break
+	case string:
+		{
+			log.Println("ENFORCE:", query.(string), args)
+			panic(t)
+		}
 	default:
-		log.Println("ENFORCE: Unknown query of type", fmt.Sprintf("%T", t), "-", t, "-", args)
+		log.Println("ENFORCE: incorrect usage of enforce with type: ", fmt.Sprintf("%T", t), "-", t, "-", args)
 		panic(t)
 	}
-}
-
-func FAIL(args ...interface{}) {
-	log.Println("ENFORCE:", args)
-	panic(0)
 }
 
 // checkCompiler Enforces a 64bit machine due to assumptions about sizeof(int).
