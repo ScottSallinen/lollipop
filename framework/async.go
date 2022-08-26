@@ -24,8 +24,10 @@ func (frame *Framework[VertexProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp]
 	//target.Mutex.Unlock()
 
 	// Having multiple visits for the same vertex in the queue at the same time is not ideal but possible. It is
-	// difficult to avoid this without some cost. We just rely on the algorithm's OnInitVertex function to report
-	// "no work to do" to avoid sending soon-to-be-discard message.
+	// difficult to avoid this without some cost. We just rely on the algorithm's MessageAggregator function to report
+	// "no work to do" to do it's best to avoid reporting new (and not useful) queue entries.
+	// The MessageAggregator can be designed in such a way to ensure uniqueness of a notification;
+	// For example, return true only on the transition from zero to non-zero, and not on further increments to a value.
 	if doSendMessage {
 		select {
 		case g.MessageQ[target.ToThreadIdx()] <- graph.Message{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: g.EmptyVal}:
@@ -39,7 +41,7 @@ func (frame *Framework[VertexProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp]
 
 /// ConvergeAsync: Static focused variant of async convergence.
 func (frame *Framework[VertexProp]) ConvergeAsync(g *graph.Graph[VertexProp], feederWg *sync.WaitGroup) {
-	// TODO: feederWg not used?
+	// Note: feederWg not used -- only in the function to match the template ConvergeFunc.
 	info("ConvergeAsync")
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1

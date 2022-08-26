@@ -224,7 +224,7 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 						threadEdges[tidx] += uint64(ec)
 
 						allEdgeCount := uint64(0)
-						for te := range threadEdges { // TODO: is locking required here?
+						for te := range threadEdges { // No need to lock, as we do not care for a consistent view, only approximate
 							allEdgeCount += threadEdges[te]
 							//if allEdgeCount > 18838563 {
 							//	haltFlag = true

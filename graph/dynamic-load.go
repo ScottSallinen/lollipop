@@ -12,12 +12,12 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-// / SendAdd: Direct add for debugging
+// SendAdd: Direct add for debugging
 func (g *Graph[VertexProp]) SendAdd(srcRaw uint32, dstRaw uint32, weight float64) {
 	g.ThreadStructureQ[g.RawIdToThreadIdx(srcRaw)] <- StructureChange{Type: ADD, SrcRaw: srcRaw, DstRaw: dstRaw, Weight: weight}
 }
 
-// / SendDel: Direct delete for debugging
+// SendDel: Direct delete for debugging
 func (g *Graph[VertexProp]) SendDel(srcRaw uint32, dstRaw uint32) {
 	g.ThreadStructureQ[g.RawIdToThreadIdx(srcRaw)] <- StructureChange{Type: DEL, SrcRaw: srcRaw, DstRaw: dstRaw}
 }
