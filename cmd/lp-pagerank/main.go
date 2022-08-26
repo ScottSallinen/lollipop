@@ -6,14 +6,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
 
 	_ "net/http/pprof"
 
-	"github.com/ScottSallinen/lollipop/enforce"
+	"github.com/ScottSallinen/lollipop/cmd/common"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
@@ -144,19 +143,9 @@ func main() {
 	pptr := flag.Bool("p", false, "Save vertex properties to disk")
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
-	gName := *gptr
+
 	graph.THREADS = *tptr
 	graph.TARGETRATE = *rptr
-
-	gNameMainT := strings.Split(gName, "/")
-	gNameMain := gNameMainT[len(gNameMainT)-1]
-	gNameMainTD := strings.Split(gNameMain, ".")
-	if len(gNameMainTD) > 1 {
-		gNameMain = gNameMainTD[len(gNameMainTD)-2]
-	} else {
-		gNameMain = gNameMainTD[0]
-	}
-	gNameMain = "results/" + gNameMain
 
 	//debug.SetGCPercent(-1)
 	//runtime.SetMutexProfileFraction(1)
@@ -165,25 +154,12 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr, *fptr, *uptr)
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, *optr, *fptr, *uptr)
 
 	g.ComputeGraphStats(false, false)
 
 	if *pptr {
-		resName := "static"
-		if *dptr {
-			resName = "dynamic"
-		}
-		WriteVertexProps(g, gNameMain+"-props-"+resName+".txt")
-	}
-}
-
-func WriteVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], fname string) {
-	f, err := os.Create(fname)
-	enforce.ENFORCE(err)
-	defer f.Close()
-	for vidx := range g.Vertices {
-		_, err := f.WriteString(fmt.Sprintf("%d %.4f %.4f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Residual))
-		enforce.ENFORCE(err)
+		graphName := common.ExtractGraphName(*gptr)
+		common.WriteVertexProps(g, graphName, *dptr)
 	}
 }

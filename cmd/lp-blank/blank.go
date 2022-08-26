@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
@@ -10,6 +12,11 @@ type VertexProperty struct {
 }
 
 type EdgeProperty struct{}
+
+// Defines how the VertexProperty is printed
+func (p *VertexProperty) String() string {
+	return fmt.Sprintf("%.4f", p.Value)
+}
 
 // When multiple messages are for a vertex, how should we aggregate the info?
 // At a basic level, we typically wish to lock the target, perform a function

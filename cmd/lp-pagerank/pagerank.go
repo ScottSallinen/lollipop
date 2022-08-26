@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
@@ -19,7 +20,11 @@ type VertexProperty struct {
 
 type EdgeProperty struct{}
 
-func MessageAggregator(target, source *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
+func (p *VertexProperty) String() string {
+	return fmt.Sprintf("%.4f %.4f", p.Value, p.Residual)
+}
+
+func MessageAggregator(target, source *graph.Vertex[VertexProperty], data float64) (newInfo bool) {
 	/*
 		target.Mutex.Lock()
 		tmp := target.Scratch
