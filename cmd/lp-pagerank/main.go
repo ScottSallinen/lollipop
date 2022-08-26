@@ -13,6 +13,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/ScottSallinen/lollipop/cmd/common"
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"

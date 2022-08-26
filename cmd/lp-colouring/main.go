@@ -51,12 +51,17 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	// Check correctness
 	for vi := range g.Vertices {
 		v := &g.Vertices[vi]
-		if v.Property.Colour == EmptyColour {
+		colour := v.Property.Colour
+		degree := uint32(len(v.OutEdges))
+		if colour == EmptyColour {
 			return fmt.Errorf("vertex %d is not coloured", v.Id)
+		}
+		if colour > degree {
+			return fmt.Errorf("vertex %d has a colour (%d) that is larger than its own degree (%d)", v.Id, colour, degree)
 		}
 		for ei := range v.OutEdges {
 			target := &g.Vertices[v.OutEdges[ei].Destination]
-			if v.Property.Colour == target.Property.Colour {
+			if colour == target.Property.Colour {
 				//g.PrintStructure()
 				//g.PrintVertexProperty("OnCheckCorrectness ")
 				return fmt.Errorf("an edge exists between Vertex %d and Vertex %d which have the same colour %d", v.Id, target.Id, v.Property.Colour)

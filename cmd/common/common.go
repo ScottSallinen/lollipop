@@ -56,7 +56,7 @@ func InjectDeletesRetainFinalStructure[EdgeProp any](sc []graph.StructureChange[
 	return returnSC
 }
 
-func WriteVertexProps[VertexProp any](g *graph.Graph[VertexProp], graphName string, dynamic bool) {
+func WriteVertexProps[VertexProp, EdgeProp any](g *graph.Graph[VertexProp, EdgeProp], graphName string, dynamic bool) {
 	var resName string
 	if dynamic {
 		resName = "dynamic"
