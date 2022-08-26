@@ -1,9 +1,12 @@
 package common
 
 import (
+	"fmt"
 	"math/rand"
+	"os"
 	"strings"
 
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
@@ -51,4 +54,23 @@ func InjectDeletesRetainFinalStructure[EdgeProp any](sc []graph.StructureChange[
 		}
 	}
 	return returnSC
+}
+
+func WriteVertexProps[VertexProp any](g *graph.Graph[VertexProp], graphName string, dynamic bool) {
+	var resName string
+	if dynamic {
+		resName = "dynamic"
+	} else {
+		resName = "static"
+	}
+	filename := "results/" + graphName + "-props-" + resName + ".txt"
+
+	f, err := os.Create(filename)
+	enforce.ENFORCE(err)
+	defer f.Close()
+
+	for vidx := range g.Vertices {
+		_, err := f.WriteString(fmt.Sprintf("%d - %v\n", g.Vertices[vidx].Id, &g.Vertices[vidx].Property))
+		enforce.ENFORCE(err)
+	}
 }

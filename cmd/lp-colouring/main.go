@@ -7,10 +7,12 @@ import (
 	"log"
 	"math"
 	"net/http"
+
 	_ "net/http/pprof"
 	"strconv"
 	"strings"
 
+	"github.com/ScottSallinen/lollipop/cmd/common"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 )
@@ -93,6 +95,7 @@ func main() {
 	aptr := flag.Bool("a", false, "Use async")
 	dptr := flag.Bool("d", false, "Dynamic")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")
+	pptr := flag.Bool("p", false, "Save vertex properties to disk")
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
 
@@ -107,4 +110,9 @@ func main() {
 	g := LaunchGraphExecution(*gptr, *aptr, *dptr)
 
 	g.ComputeGraphStats(false, false)
+
+	if *pptr {
+		graphName := common.ExtractGraphName(*gptr)
+		common.WriteVertexProps(g, graphName, *dptr)
+	}
 }
