@@ -1,6 +1,7 @@
 package enforce
 
 import (
+	"fmt"
 	"log"
 	"math"
 )
@@ -26,6 +27,14 @@ func ENFORCE(query interface{}, args ...interface{}) {
 				panic(t)
 			}
 		}
+	case string:
+		{
+			log.Println("ENFORCE:", query.(string), args)
+			panic(t)
+		}
+	default:
+		log.Println("ENFORCE: incorrect usage of enforce with type: ", fmt.Sprintf("%T", t), "-", t, "-", args)
+		panic(t)
 	}
 }
 
