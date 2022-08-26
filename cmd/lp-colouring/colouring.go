@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/kelindar/bitmap"
 )
 
 const EmptyColour = math.MaxUint32
@@ -37,22 +38,10 @@ func comparePriority(p1, p2 uint32, id1, id2 uint32) bool {
 	return p1 > p2 || (p1 == p2 && id1 > id2)
 }
 
-// findFirstUnused finds the smallest unused colour, modifies colours, O(n)
-func findFirstUnused(colours []uint32) (firstUnused uint32) {
-	// There must be an available colour <= length
-	// similar to https://leetcode.com/problems/first-missing-positive/
-	length := uint32(len(colours))
-	for i := range colours {
-		for colours[i] < length && colours[i] != colours[colours[i]] {
-			colours[i], colours[colours[i]] = colours[colours[i]], colours[i]
-		}
-	}
-	for i, colour := range colours {
-		if uint32(i) != colour {
-			return uint32(i)
-		}
-	}
-	return length
+// findFirstUnused finds the smallest unused index.
+func findFirstUnused(coloursIndexed bitmap.Bitmap) (firstUnused uint32) {
+	firstUnused, _ = coloursIndexed.MinZero()
+	return firstUnused
 }
 
 func MessageAggregator(target, source *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
@@ -152,21 +141,20 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32, da
 		return 0
 	}
 
-	// len(v.OutEdges) is only an approximated size, as the reverse edge might not have been added yet
-	colours := make([]uint32, 0, len(v.OutEdges))
+	// It's okay if there's newer data in the map here -- we'll let the bitmap grow.
+	var coloursIndexed bitmap.Bitmap
 	v.Property.NbrColours.Range(func(key any, value any) bool {
-		colour := value.(uint32)
-		colours = append(colours, colour)
+		coloursIndexed.Set(value.(uint32)) // this bitmap grows as needed
 		return true
 	})
 
 	var newColour uint32
 	if v.Property.Colour == EmptyColour {
-		newColour = findFirstUnused(colours)
+		newColour = findFirstUnused(coloursIndexed)
 	} else {
 		// Dynamic graph
 		// There are more efficient ways to do this, if we have more information about the new neighbour
-		newColour = findFirstUnused(colours)
+		newColour = findFirstUnused(coloursIndexed)
 		if newColour == v.Property.Colour {
 			return 0
 		}

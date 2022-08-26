@@ -10,6 +10,7 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/common"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/kelindar/bitmap"
 )
 
 func TestSyncStatic(t *testing.T) {
@@ -29,7 +30,7 @@ func TestAsyncStatic(t *testing.T) {
 }
 
 func TestAsyncDynamic(t *testing.T) {
-	for ti := 0; ti < 10000; ti++ {
+	for ti := 0; ti < 100; ti++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, true)
 		g.PrintVertexProperty("Dynamic colours: ")
@@ -39,14 +40,14 @@ func TestAsyncDynamic(t *testing.T) {
 func TestAsyncDynamicWithDelete(t *testing.T) {
 	for ti := 0; ti < 100; ti++ {
 		rawStructureChanges := []graph.StructureChange[EdgeProperty]{
-			{graph.ADD, 1, 4, EdgeProperty{}},
-			{graph.ADD, 2, 0, EdgeProperty{}},
-			{graph.ADD, 2, 1, EdgeProperty{}},
-			{graph.ADD, 3, 0, EdgeProperty{}},
-			{graph.ADD, 4, 2, EdgeProperty{}},
-			{graph.ADD, 4, 3, EdgeProperty{}},
-			{graph.ADD, 4, 5, EdgeProperty{}},
-			{graph.ADD, 6, 2, EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{}},
 		}
 
 		adjustedStructureChanges := common.InjectDeletesRetainFinalStructure(rawStructureChanges, 0.33)
@@ -58,12 +59,45 @@ func TestAsyncDynamicWithDelete(t *testing.T) {
 	}
 }
 
+func fillBitmap(toFill []uint32) bitmap.Bitmap {
+	var bm bitmap.Bitmap
+	for _, j := range toFill {
+		bm.Set(j)
+	}
+	return bm
+}
+
 func TestFindFirstUnused(t *testing.T) {
-	assertEqual(t, uint32(0), findFirstUnused([]uint32{}), "[]")
-	assertEqual(t, uint32(1), findFirstUnused([]uint32{0}), "[0]")
-	assertEqual(t, uint32(0), findFirstUnused([]uint32{1}), "[1]")
-	assertEqual(t, uint32(2), findFirstUnused([]uint32{0, 1}), "[0, 1]")
-	assertEqual(t, uint32(1), findFirstUnused([]uint32{0, 2}), "[0, 2]")
+	nbrsTests := [][]uint32{
+		{},
+		{0},
+		{1},
+		{0, 1},
+		{1, 0},
+		{0, 2},
+		{0, 1, 2, 3},
+		{1, 2, 3},
+		{2, 4, 1, 0},
+		{12, 0, 2, 2, 2, 3, 0, 1},
+		{7, 4, 0, 2, 2, 5, 3, 0, 1, 5, 8},
+	}
+	nbrsTestsAns := []uint32{
+		0,
+		1,
+		0,
+		2,
+		2,
+		1,
+		4,
+		0,
+		3,
+		4,
+		6,
+	}
+
+	for test := range nbrsTests {
+		assertEqual(t, nbrsTestsAns[test], findFirstUnused(fillBitmap(nbrsTests[test])), fmt.Sprintf("%d:", test))
+	}
 }
 
 func assertEqual(t *testing.T, expected any, actual any, prefix string) {

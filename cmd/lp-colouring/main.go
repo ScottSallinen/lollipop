@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"github.com/ScottSallinen/lollipop/enforce"
@@ -51,14 +50,14 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	for vi := range g.Vertices {
 		v := &g.Vertices[vi]
 		if v.Property.Colour == EmptyColour {
-			return errors.New(fmt.Sprintf("Vertex %d is not coloured", v.Id))
+			return fmt.Errorf("vertex %d is not coloured", v.Id)
 		}
 		for ei := range v.OutEdges {
 			target := &g.Vertices[v.OutEdges[ei].Destination]
 			if v.Property.Colour == target.Property.Colour {
 				//g.PrintStructure()
 				//g.PrintVertexProperty("OnCheckCorrectness ")
-				return errors.New(fmt.Sprintf("An edge exists between Vertex %d and Vertex %d which have the same colour %d", v.Id, target.Id, v.Property.Colour))
+				return fmt.Errorf("an edge exists between Vertex %d and Vertex %d which have the same colour %d", v.Id, target.Id, v.Property.Colour)
 			}
 		}
 	}
