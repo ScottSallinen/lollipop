@@ -180,9 +180,6 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 
 	//m1 := time.Now()
 	threadEdges := make([]uint64, graph.THREADS) // number of edges that each thread has processed
-	for te := range threadEdges {
-		threadEdges[te] = 0 // TODO: is this unnecessary?
-	}
 
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
