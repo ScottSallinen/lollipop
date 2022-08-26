@@ -40,7 +40,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeSync(g *graph.Graph[Vertex
 				for j := start; j < end; j++ {
 					target := &g.Vertices[j]
 					active := atomic.SwapInt32(&target.IsActive, 0) == 1
-					if target.Scratch != g.EmptyVal || active || iteration == 0 {
+					if active || iteration == 0 {
 						//target.Mutex.Lock()
 						msgVal := frame.AggregateRetrieve(target)
 						//target.Mutex.Unlock()
