@@ -23,18 +23,25 @@ func (frame *Framework[VertexProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp]
 	//}
 	//target.Mutex.Unlock()
 
+	// Having multiple visits for the same vertex in the queue at the same time is not ideal but possible. It is
+	// difficult to avoid this without some cost. We just rely on the algorithm's MessageAggregator function to report
+	// "no work to do" to do it's best to avoid reporting new (and not useful) queue entries.
+	// The MessageAggregator can be designed in such a way to ensure uniqueness of a notification;
+	// For example, return true only on the transition from zero to non-zero, and not on further increments to a value.
 	if doSendMessage {
 		select {
 		case g.MessageQ[target.ToThreadIdx()] <- graph.Message{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: g.EmptyVal}:
 		default:
 			enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
 		}
+		// must be called by the source vertex's thread
 		g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
 	}
 }
 
 /// ConvergeAsync: Static focused variant of async convergence.
 func (frame *Framework[VertexProp]) ConvergeAsync(g *graph.Graph[VertexProp], feederWg *sync.WaitGroup) {
+	// Note: feederWg not used -- only in the function to match the template ConvergeFunc.
 	info("ConvergeAsync")
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1
@@ -47,6 +54,7 @@ func (frame *Framework[VertexProp]) ConvergeAsync(g *graph.Graph[VertexProp], fe
 	}
 
 	g.TerminateData[VOTES-1] = int64(len(g.Vertices)) // overestimate so we don't accidentally terminate early
+	// Send initial visit message(s)
 	go func() {
 		if !g.SourceInit { // Target all vertices: send an initial (empty) visit message.
 			for vidx := range g.Vertices {
@@ -85,6 +93,7 @@ func (frame *Framework[VertexProp]) ConvergeAsync(g *graph.Graph[VertexProp], fe
 				//g.Mutex.RLock() // If we want to lock for oracle comparisons
 				msgCounter := 0
 				//msgBuffer := msgBuffer[:MsgBundleSize]
+				// read a batch of messages
 			fillLoop:
 				for ; msgCounter < MsgBundleSize; msgCounter++ {
 					select {
@@ -96,11 +105,14 @@ func (frame *Framework[VertexProp]) ConvergeAsync(g *graph.Graph[VertexProp], fe
 				}
 				//msgBuffer = msgBuffer[:msgCounter]
 
+				// consume messages read
 				if msgCounter != 0 {
 					g.TerminateVote[tidx] = -1
 					for i := 0; i < msgCounter; i++ {
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
+						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
+						// Non-empty value can only come from the initial visit message
 						if msg.Val != g.EmptyVal {
 							frame.MessageAggregator(target, msg.Val)
 						}

@@ -28,8 +28,8 @@ type Graph[VertexProp any] struct {
 	AlgConverge       ConvergeFunc[VertexProp]
 	MessageQ          []chan Message
 	ThreadStructureQ  []chan StructureChange
-	MsgSend           []uint32
-	MsgRecv           []uint32
+	MsgSend           []uint32 // number of messages sent by each thread
+	MsgRecv           []uint32 // number of messages received by each thread
 	TerminateVote     []int
 	TerminateData     []int64
 	Watch             mathutils.Watch
@@ -134,7 +134,7 @@ func (g *Graph[VertexProp]) Reset() {
 	}
 }
 
-// ComputeInEdges t
+// ComputeInEdges update all vertices' InEdges to match the edges stored in OutEdges lists
 func (g *Graph[VertexProp]) ComputeInEdges() {
 	for vidx := range g.Vertices {
 		for eidx := range g.Vertices[vidx].OutEdges {
@@ -145,6 +145,7 @@ func (g *Graph[VertexProp]) ComputeInEdges() {
 	info("Computed inbound edges.")
 }
 
+// ComputeGraphStats prints some statistics of the graph
 func (g *Graph[VertexProp]) ComputeGraphStats(inDeg bool, outDeg bool) {
 	maxOutDegree := uint64(0)
 	maxInDegree := uint64(0)
