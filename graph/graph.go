@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"sort"
 	"sync"
 
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
@@ -240,4 +242,23 @@ func (g *Graph[VertexProp, EdgeProp]) PrintVertexInEdgeSum(prefix string) {
 		top += fmt.Sprintf("%.3f", localsum) + " "
 	}
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
+}
+
+func (g *Graph[VertexProp, EdgeProp]) WriteVertexProps(graphName string, dynamic bool) {
+	var resName string
+	if dynamic {
+		resName = "dynamic"
+	} else {
+		resName = "static"
+	}
+	filename := "results/" + graphName + "-props-" + resName + ".txt"
+
+	f, err := os.Create(filename)
+	enforce.ENFORCE(err)
+	defer f.Close()
+
+	for vidx := range g.Vertices {
+		_, err := f.WriteString(fmt.Sprintf("%d - %v\n", g.Vertices[vidx].Id, &g.Vertices[vidx].Property))
+		enforce.ENFORCE(err)
+	}
 }

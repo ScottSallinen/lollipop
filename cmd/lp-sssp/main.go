@@ -11,7 +11,6 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/ScottSallinen/lollipop/cmd/common"
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
@@ -146,7 +145,7 @@ func main() {
 	g.ComputeGraphStats(false, false)
 
 	if *pptr {
-		graphName := common.ExtractGraphName(*gptr)
-		common.WriteVertexProps(g, graphName, *dptr)
+		graphName := framework.ExtractGraphName(*gptr)
+		g.WriteVertexProps(graphName, *dptr)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ScottSallinen/lollipop/cmd/common"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/kelindar/bitmap"
@@ -50,7 +49,7 @@ func TestAsyncDynamicWithDelete(t *testing.T) {
 			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{}},
 		}
 
-		adjustedStructureChanges := common.InjectDeletesRetainFinalStructure(rawStructureChanges, 0.33)
+		adjustedStructureChanges := framework.InjectDeletesRetainFinalStructure(rawStructureChanges, 0.33)
 
 		g := DynamicGraphExecutionFromSCUndirected(adjustedStructureChanges)
 
