@@ -44,18 +44,17 @@ func findFirstUnused(coloursIndexed bitmap.Bitmap) (firstUnused uint32) {
 	return firstUnused
 }
 
-func MessageAggregator(target, source *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
+func MessageAggregator(dst, src *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
 	colour := uint32(data)
-	// info(fmt.Sprintf("MessageAggregator target.Id=%v source.Id=%v data=%v colour=%v", target.Id, source.Id, data, colour))
-	target.Property.NbrColours.Store(source.Id, colour)
+	dst.Property.NbrColours.Store(src.Id, colour)
 
-	if atomic.LoadInt64(&target.Property.WaitCount) > 0 {
-		newWaitCount := atomic.AddInt64(&target.Property.WaitCount, -1)
+	if atomic.LoadInt64(&dst.Property.WaitCount) > 0 {
+		newWaitCount := atomic.AddInt64(&dst.Property.WaitCount, -1)
 		return newWaitCount <= 0 // newWaitCount might go below 0
 	}
 
 	// If we have priority, there is no need to update check our colour
-	if comparePriority(hash(target.Id), hash(source.Id), target.Id, source.Id) {
+	if comparePriority(hash(dst.Id), hash(src.Id), dst.Id, src.Id) {
 		return false
 	}
 

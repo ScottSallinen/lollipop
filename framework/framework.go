@@ -36,7 +36,7 @@ type OnFinishFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, Edge
 type OnCheckCorrectnessFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp]) error
 type OnEdgeAddFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didxStart int, VisitData float64)
 type OnEdgeDelFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
-type MessageAggregatorFunc[VertexProp, EdgeProp any] func(target, source *graph.Vertex[VertexProp, EdgeProp], VisitData float64) (newInfo bool)
+type MessageAggregatorFunc[VertexProp, EdgeProp any] func(dst, src *graph.Vertex[VertexProp, EdgeProp], VisitData float64) (newInfo bool)
 type AggregateRetrieveFunc[VertexProp, EdgeProp any] func(g *graph.Vertex[VertexProp, EdgeProp]) (data float64)
 type OracleComparison[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], oracle *graph.Graph[VertexProp, EdgeProp], resultCache *[]float64)
 type EdgeParserFunc[EdgeProp any] graph.EdgeParserFunc[EdgeProp]

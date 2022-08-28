@@ -24,7 +24,7 @@ func (p *VertexProperty) String() string {
 	return fmt.Sprintf("%.4f %.4f", p.Value, p.Residual)
 }
 
-func MessageAggregator(target, source *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
+func MessageAggregator(dst, src *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
 	/*
 		target.Mutex.Lock()
 		tmp := target.Scratch
@@ -32,7 +32,7 @@ func MessageAggregator(target, source *graph.Vertex[VertexProperty, EdgeProperty
 		target.Mutex.Unlock()
 		return tmp == 0.0
 	*/
-	old := mathutils.AtomicAddFloat64(&target.Scratch, data)
+	old := mathutils.AtomicAddFloat64(&dst.Scratch, data)
 	return old == 0.0
 }
 
