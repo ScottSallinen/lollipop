@@ -32,6 +32,9 @@ func ENFORCE(query interface{}, args ...interface{}) {
 			log.Println("ENFORCE:", query.(string), args)
 			panic(t)
 		}
+	case nil:
+		// Allow nil to pass since we sometimes do enforce.ENFORCE(err) to ensure there is no error
+		break
 	default:
 		log.Println("ENFORCE: incorrect usage of enforce with type: ", fmt.Sprintf("%T", t), "-", t, "-", args)
 		panic(t)
