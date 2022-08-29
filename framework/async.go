@@ -14,7 +14,7 @@ func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitAsync(g *graph.Graph[V
 	target := &g.Vertices[didx]
 
 	//target.Mutex.Lock()
-	doSendMessage := frame.MessageAggregator(target, &g.Vertices[sidx], VisitData)
+	doSendMessage := frame.MessageAggregator(target, didx, sidx, VisitData)
 
 	// Old direct way of doing things with locks here rather than in the algorithm.
 	//if !target.Active {
@@ -114,7 +114,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[Verte
 						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
 						// Non-empty value can only come from the initial visit message
 						if msg.Val != g.EmptyVal {
-							frame.MessageAggregator(target, &g.Vertices[msg.Sidx], msg.Val)
+							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)
 

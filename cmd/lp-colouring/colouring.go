@@ -44,9 +44,9 @@ func findFirstUnused(coloursIndexed bitmap.Bitmap) (firstUnused uint32) {
 	return firstUnused
 }
 
-func MessageAggregator(dst, src *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
+func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data float64) (newInfo bool) {
 	colour := uint32(data)
-	dst.Property.NbrColours.Store(src.Id, colour)
+	dst.Property.NbrColours.Store(sidx, colour)
 
 	if atomic.LoadInt64(&dst.Property.WaitCount) > 0 {
 		newWaitCount := atomic.AddInt64(&dst.Property.WaitCount, -1)
@@ -54,7 +54,7 @@ func MessageAggregator(dst, src *graph.Vertex[VertexProperty, EdgeProperty], dat
 	}
 
 	// If we have priority, there is no need to update check our colour
-	if comparePriority(hash(dst.Id), hash(src.Id), dst.Id, src.Id) {
+	if comparePriority(hash(didx), hash(sidx), didx, sidx) {
 		return false
 	}
 
@@ -72,13 +72,12 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 	v.Property.Colour = EmptyColour
 
 	// Initialize WaitCount
-	myPriority := hash(v.Id)
+	myPriority := hash(vidx)
 	waitCount := int64(0)
 	for i := range v.OutEdges {
 		edge := &v.OutEdges[i]
-		targetId := g.Vertices[edge.Destination].Id // we need to access the target ID to get the priority
-		edgePriority := hash(targetId)
-		if comparePriority(edgePriority, myPriority, targetId, v.Id) {
+		edgePriority := hash(edge.Destination)
+		if comparePriority(edgePriority, myPriority, edge.Destination, vidx) {
 			// no need to lock
 			waitCount++
 		}
@@ -88,23 +87,23 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 
 func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxStart int, data float64) {
 	source := &g.Vertices[sidx]
-	sourcePriority := hash(source.Id)
+	sourcePriority := hash(sidx)
 
-	for dstIndex := didxStart; dstIndex < len(source.OutEdges); dstIndex++ {
-		dstId := g.Vertices[dstIndex].Id // we need to access the target ID to get the priority
-		targetPriority := hash(dstId)
+	nEdges := uint32(len(source.OutEdges))
+	for ei := uint32(didxStart); ei < nEdges; ei++ {
+		dstIndex := source.OutEdges[ei].Destination
+		dstPriority := hash(dstIndex)
 		// If we have priority, tell the other vertex to check their colour
-		if comparePriority(sourcePriority, targetPriority, source.Id, dstId) {
-			g.OnQueueVisit(g, sidx, uint32(dstIndex), float64(source.Property.Colour))
+		if comparePriority(sourcePriority, dstPriority, sidx, dstIndex) {
+			g.OnQueueVisit(g, sidx, dstIndex, float64(source.Property.Colour))
 		}
 	}
 }
 
 func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didx uint32, data float64) {
 	source := &g.Vertices[sidx]
-	destinationId := g.Vertices[didx].Id
 
-	destinationColour, ok := source.Property.NbrColours.Load(destinationId)
+	destinationColour, ok := source.Property.NbrColours.Load(didx)
 	if !ok {
 		return
 	}

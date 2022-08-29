@@ -20,7 +20,7 @@ func (p *VertexProperty) String() string {
 	return fmt.Sprintf("%.4f", p.Value)
 }
 
-func MessageAggregator(dst, src *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
+func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data float64) (newInfo bool) {
 	dst.Mutex.Lock()
 	tmp := dst.Scratch
 	dst.Scratch = math.Min(dst.Scratch, data)

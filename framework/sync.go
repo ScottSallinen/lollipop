@@ -10,7 +10,7 @@ import (
 func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitSync(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64) {
 	target := &g.Vertices[didx]
 	//target.Mutex.Lock()
-	newInfo := frame.MessageAggregator(target, &g.Vertices[sidx], VisitData)
+	newInfo := frame.MessageAggregator(target, didx, sidx, VisitData)
 	//target.Mutex.Unlock()
 	if newInfo {
 		atomic.StoreInt32(&target.IsActive, 1)
