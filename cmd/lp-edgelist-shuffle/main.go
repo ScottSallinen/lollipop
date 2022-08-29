@@ -6,6 +6,8 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,28 +16,44 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
+// TODO: handle edge properties
+
+type EdgeProperty struct{}
+
 func info(args ...interface{}) {
 	log.Println("[Shuffler]\t", fmt.Sprint(args...))
 }
 
-func EdgeDequeuer(queuechan chan graph.RawEdge, edgelist *[]graph.RawEdge, deqWg *sync.WaitGroup) {
+func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
+	stringFields := strings.Fields(lineText)
+
+	sflen := len(stringFields)
+	enforce.ENFORCE(sflen == 2 || sflen == 3)
+
+	src, _ := strconv.Atoi(stringFields[0])
+	dst, _ := strconv.Atoi(stringFields[1])
+
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
+}
+
+func EdgeDequeuer(queuechan chan graph.RawEdge[EdgeProperty], edgelist *[]graph.RawEdge[EdgeProperty], deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
-		*edgelist = append(*edgelist, graph.RawEdge{SrcRaw: uint32(qElem.SrcRaw), DstRaw: uint32(qElem.DstRaw), Weight: qElem.Weight})
+		*edgelist = append(*edgelist, graph.RawEdge[EdgeProperty]{SrcRaw: uint32(qElem.SrcRaw), DstRaw: uint32(qElem.DstRaw), EdgeProperty: EdgeProperty{}})
 	}
 	deqWg.Done()
 }
 
-func LoadEdgeList(graphName string, threads int) (finallist []graph.RawEdge) {
+func LoadEdgeList(graphName string, threads int) (finallist []graph.RawEdge[EdgeProperty]) {
 	qCount := mathutils.MaxUint64(uint64(threads), 1)
 	m1 := time.Now()
 
-	edgelists := make([][]graph.RawEdge, threads)
+	edgelists := make([][]graph.RawEdge[EdgeProperty], threads)
 
-	queuechans := make([]chan graph.RawEdge, qCount)
+	queuechans := make([]chan graph.RawEdge[EdgeProperty], qCount)
 	var deqWg sync.WaitGroup
 	deqWg.Add(int(qCount))
 	for i := uint64(0); i < qCount; i++ {
-		queuechans[i] = make(chan graph.RawEdge, 4096)
+		queuechans[i] = make(chan graph.RawEdge[EdgeProperty], 4096)
 		go EdgeDequeuer(queuechans[i], &edgelists[i], &deqWg)
 	}
 
@@ -43,7 +61,7 @@ func LoadEdgeList(graphName string, threads int) (finallist []graph.RawEdge) {
 	var enqWg sync.WaitGroup
 	enqWg.Add(int(qCount))
 	for i := uint64(0); i < qCount; i++ {
-		go graph.EdgeEnqueuer(queuechans, graphName, false, &enqWg, i, qCount, qCount, resultchan)
+		go graph.EdgeEnqueuer(queuechans, graphName, false, EdgeParser, &enqWg, i, qCount, qCount, resultchan)
 	}
 	enqWg.Wait()
 	for i := uint64(0); i < qCount; i++ {

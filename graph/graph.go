@@ -27,7 +27,7 @@ type Graph[VertexProp, EdgeProp any] struct {
 	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc[VertexProp, EdgeProp]
 	AlgConverge       ConvergeFunc[VertexProp, EdgeProp]
 	MessageQ          []chan Message
-	ThreadStructureQ  []chan StructureChange
+	ThreadStructureQ  []chan StructureChange[EdgeProp]
 	MsgSend           []uint32 // number of messages sent by each thread
 	MsgRecv           []uint32 // number of messages received by each thread
 	TerminateVote     []int
@@ -56,16 +56,17 @@ type Message struct {
 	Val  float64
 }
 
-type StructureChange struct {
-	Type   VisitType // add or del
-	SrcRaw uint32
-	DstRaw uint32
-	Weight float64
+type StructureChange[EdgeProp any] struct {
+	Type         VisitType // add or del
+	SrcRaw       uint32
+	DstRaw       uint32
+	EdgeProperty EdgeProp
 }
 
 type OnQueueVisitFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
 type OnQueueEdgeAddRevFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
 type ConvergeFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], wg *sync.WaitGroup)
+type EdgeParserFunc[EdgeProp any] func(lineText string) RawEdge[EdgeProp]
 
 // Note: for now we have fake edge weights where the weight is just 1.
 // This can be adjusted in the future by just adjusting the constructor
@@ -76,12 +77,11 @@ type ConvergeFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp],
 // if we are exploring edges with timestamps.
 type Edge[EdgeProp any] struct {
 	Target uint32
-	//Weight float64
 	Property EdgeProp
 }
 
-func NewEdge[EdgeProp any](target uint32, weight float64) Edge[EdgeProp] {
-	return Edge[EdgeProp]{Target: target}
+func NewEdge[EdgeProp any](target uint32, property *EdgeProp) Edge[EdgeProp] {
+	return Edge[EdgeProp]{target, *property}
 }
 
 func (*Edge[EdgeProp]) GetWeight() float64 {

@@ -97,8 +97,8 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	for _, v := range sc {
 		switch v.change {
 		case graph.ADD:
-			g.SendAdd(v.srcRaw, v.dstRaw, v.weight)
-			info("add ", v.srcRaw, v.dstRaw, v.weight)
+			g.SendAdd(v.srcRaw, v.dstRaw, EdgeProperty{})
+			info("add ", v.srcRaw, v.dstRaw)
 		case graph.DEL:
 			g.SendDel(v.srcRaw, v.dstRaw)
 			info("del ", v.srcRaw, v.dstRaw)

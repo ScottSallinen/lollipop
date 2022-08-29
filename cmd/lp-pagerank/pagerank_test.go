@@ -74,7 +74,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph[VertexProper
 	for _, v := range sc {
 		switch v.change {
 		case graph.ADD:
-			g.SendAdd(v.srcRaw, v.dstRaw, 0.0)
+			g.SendAdd(v.srcRaw, v.dstRaw, EdgeProperty{})
 			info("add ", v.srcRaw, v.dstRaw)
 		case graph.DEL:
 			g.SendDel(v.srcRaw, v.dstRaw)

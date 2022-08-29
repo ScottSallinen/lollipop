@@ -9,10 +9,10 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp], tidx uint32, changes []graph.StructureChange) {
+func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
 	hasChangedIdMapping := false
 	newVid := make(map[uint32]bool, len(changes)*2)
-	miniGraph := make(map[uint32][]graph.StructureChange, len(changes))
+	miniGraph := make(map[uint32][]graph.StructureChange[EdgeProp], len(changes))
 
 	// First pass: read lock the graph (no changes, just need consistent view).
 	g.Mutex.RLock()
@@ -73,7 +73,7 @@ func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Gra
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
 					didxMap[didx] = len(src.OutEdges)
-					src.OutEdges = append(src.OutEdges, graph.NewEdge[EdgeProp](didx, change.Weight))
+					src.OutEdges = append(src.OutEdges, graph.NewEdge[EdgeProp](didx, &change.EdgeProperty))
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
@@ -186,7 +186,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.
 			const MsgBundleSize = 256
 			const GscBundleSize = 4096 * 16
 			msgBuffer := make([]graph.Message, MsgBundleSize)
-			gscBuffer := make([]graph.StructureChange, GscBundleSize)
+			gscBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
 			strucClosed := false // true indicates the StructureChanges channel is closed
 			infoTimer := time.Now()
 			for {

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	_ "net/http/pprof"
@@ -18,6 +19,18 @@ import (
 
 func info(args ...any) {
 	log.Println("[SSSP]\t", fmt.Sprint(args...))
+}
+
+func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
+	stringFields := strings.Fields(lineText)
+
+	sflen := len(stringFields)
+	enforce.ENFORCE(sflen == 2 || sflen == 3)
+
+	src, _ := strconv.Atoi(stringFields[0])
+	dst, _ := strconv.Atoi(stringFields[1])
+
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
@@ -83,6 +96,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.OracleComparison = OracleComparison
+	frame.EdgeParser = EdgeParser
 
 	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.SourceInit = true

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	_ "net/http/pprof"
@@ -14,6 +15,14 @@ import (
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 )
+
+// Function which defines how to convert a line of text into an edge
+func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
+	stringFields := strings.Fields(lineText)
+	src, _ := strconv.Atoi(stringFields[0])
+	dst, _ := strconv.Atoi(stringFields[1])
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
+}
 
 // This function is mostly optional, but is a good way to describe
 // an algorithm that can check for correctness of a result (outside just the go tests)
@@ -34,6 +43,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
+	frame.EdgeParser = EdgeParser
 
 	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 

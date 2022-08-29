@@ -26,6 +26,7 @@ type Framework[VertexProp, EdgeProp any] struct {
 	MessageAggregator  MessageAggregatorFunc[VertexProp, EdgeProp]
 	AggregateRetrieve  AggregateRetrieveFunc[VertexProp, EdgeProp]
 	OracleComparison   OracleComparison[VertexProp, EdgeProp]
+	EdgeParser         EdgeParserFunc[EdgeProp]
 }
 
 type OnInitVertexFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], vidx uint32)
@@ -37,6 +38,7 @@ type OnEdgeDelFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, Edg
 type MessageAggregatorFunc[VertexProp, EdgeProp any] func(g *graph.Vertex[VertexProp, EdgeProp], VisitData float64) (newInfo bool)
 type AggregateRetrieveFunc[VertexProp, EdgeProp any] func(g *graph.Vertex[VertexProp, EdgeProp]) (data float64)
 type OracleComparison[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], oracle *graph.Graph[VertexProp, EdgeProp], resultCache *[]float64)
+type EdgeParserFunc[EdgeProp any] graph.EdgeParserFunc[EdgeProp]
 
 func (frame *Framework[VertexProp, EdgeProp]) Init(g *graph.Graph[VertexProp, EdgeProp], async bool, dynamic bool) {
 	//info("Started.")
@@ -46,7 +48,7 @@ func (frame *Framework[VertexProp, EdgeProp]) Init(g *graph.Graph[VertexProp, Ed
 			g.VertexMap = make(map[uint32]uint32, 4*4096)
 		}
 		g.MessageQ = make([]chan graph.Message, graph.THREADS)
-		g.ThreadStructureQ = make([]chan graph.StructureChange, graph.THREADS)
+		g.ThreadStructureQ = make([]chan graph.StructureChange[EdgeProp], graph.THREADS)
 		g.MsgSend = make([]uint32, graph.THREADS+1)
 		g.MsgRecv = make([]uint32, graph.THREADS+1)
 		g.TerminateVote = make([]int, graph.THREADS+1)
@@ -55,7 +57,7 @@ func (frame *Framework[VertexProp, EdgeProp]) Init(g *graph.Graph[VertexProp, Ed
 			if dynamic {
 				// TODO: Need a better way to manipulate channel size for dynamic. Maybe request approx vertex count from user?
 				g.MessageQ[i] = make(chan graph.Message, (4 * 4096 * 64))
-				g.ThreadStructureQ[i] = make(chan graph.StructureChange, 4*4*4096)
+				g.ThreadStructureQ[i] = make(chan graph.StructureChange[EdgeProp], 4*4*4096)
 			} else {
 				g.MessageQ[i] = make(chan graph.Message, len(g.Vertices)+8)
 			}
@@ -98,7 +100,7 @@ func (frame *Framework[VertexProp, EdgeProp]) Run(g *graph.Graph[VertexProp, Edg
 
 func (frame *Framework[VertexProp, EdgeProp]) Launch(g *graph.Graph[VertexProp, EdgeProp], gName string, async bool, dynamic bool, oracle bool, undirected bool) {
 	if !dynamic {
-		g.LoadGraphStatic(gName, undirected)
+		g.LoadGraphStatic(gName, undirected, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser))
 	}
 
 	frame.Init(g, async, dynamic)
@@ -109,7 +111,7 @@ func (frame *Framework[VertexProp, EdgeProp]) Launch(g *graph.Graph[VertexProp, 
 	frameWait.Add(1)
 
 	if dynamic {
-		go g.LoadGraphDynamic(gName, undirected, &feederWg)
+		go g.LoadGraphDynamic(gName, undirected, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser), &feederWg)
 	}
 
 	if oracle {
