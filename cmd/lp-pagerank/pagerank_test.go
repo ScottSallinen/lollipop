@@ -43,13 +43,7 @@ func TestSyncStatic(t *testing.T) {
 	}
 }
 
-type StructureChange struct {
-	change graph.VisitType
-	srcRaw uint32
-	dstRaw uint32
-}
-
-func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph[VertexProperty, EdgeProperty] {
+func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty] {
 	frame := framework.Framework[VertexProperty, EdgeProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -72,13 +66,13 @@ func DynamicGraphExecutionFromSC(sc []StructureChange) *graph.Graph[VertexProper
 	go frame.Run(g, &feederWg, &frameWait)
 
 	for _, v := range sc {
-		switch v.change {
+		switch v.Type {
 		case graph.ADD:
-			g.SendAdd(v.srcRaw, v.dstRaw, EdgeProperty{})
-			info("add ", v.srcRaw, v.dstRaw)
+			g.SendAdd(v.SrcRaw, v.DstRaw, EdgeProperty{})
+			info("add ", v.SrcRaw, v.DstRaw)
 		case graph.DEL:
-			g.SendDel(v.srcRaw, v.dstRaw)
-			info("del ", v.srcRaw, v.dstRaw)
+			g.SendDel(v.SrcRaw, v.DstRaw)
+			info("del ", v.SrcRaw, v.DstRaw)
 		}
 	}
 
@@ -112,13 +106,6 @@ func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, E
 	}
 }
 
-func shuffleSC(sc []StructureChange) {
-	for i := range sc {
-		j := rand.Intn(i + 1)
-		sc[i], sc[j] = sc[j], sc[i]
-	}
-}
-
 func TestDynamicCreation(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	EPSILON = 0.00001
@@ -131,17 +118,17 @@ func TestDynamicCreation(t *testing.T) {
 
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
 
-		rawTestGraph := []StructureChange{
-			{graph.ADD, 1, 4},
-			{graph.ADD, 2, 0},
-			{graph.ADD, 2, 1},
-			{graph.ADD, 3, 0},
-			{graph.ADD, 4, 2},
-			{graph.ADD, 4, 3},
-			{graph.ADD, 4, 5},
-			{graph.ADD, 6, 2},
+		rawTestGraph := []graph.StructureChange[EdgeProperty]{
+			{graph.ADD, 1, 4, EdgeProperty{}},
+			{graph.ADD, 2, 0, EdgeProperty{}},
+			{graph.ADD, 2, 1, EdgeProperty{}},
+			{graph.ADD, 3, 0, EdgeProperty{}},
+			{graph.ADD, 4, 2, EdgeProperty{}},
+			{graph.ADD, 4, 3, EdgeProperty{}},
+			{graph.ADD, 4, 5, EdgeProperty{}},
+			{graph.ADD, 6, 2, EdgeProperty{}},
 		}
-		shuffleSC(rawTestGraph)
+		framework.ShuffleSC(rawTestGraph)
 
 		gDyn := DynamicGraphExecutionFromSC(rawTestGraph)
 
@@ -186,35 +173,6 @@ func TestDynamicCreation(t *testing.T) {
 	}
 }
 
-func InjectDeletesRetainFinalStructure(sc []StructureChange, chance float64) []StructureChange {
-	availableAdds := make([]StructureChange, len(sc))
-	previousAdds := []StructureChange{}
-	returnSC := []StructureChange{}
-
-	copy(availableAdds, sc)
-	shuffleSC(availableAdds)
-
-	for len(availableAdds) > 0 {
-		if len(previousAdds) > 0 && rand.Float64() < chance {
-			//chance for del
-			shuffleSC(previousAdds)
-			idx := len(previousAdds) - 1
-			injDel := StructureChange{graph.DEL, previousAdds[idx].srcRaw, previousAdds[idx].dstRaw}
-			returnSC = append(returnSC, injDel)
-			availableAdds = append(availableAdds, previousAdds[idx])
-			previousAdds = previousAdds[:idx]
-		} else {
-			shuffleSC(availableAdds)
-			idx := len(availableAdds) - 1
-			returnSC = append(returnSC, availableAdds[idx])
-			previousAdds = append(previousAdds, availableAdds[idx])
-			availableAdds = availableAdds[:idx]
-		}
-	}
-	log.Println(returnSC)
-	return returnSC
-}
-
 func TestDynamicWithDelete(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	EPSILON = 0.00001
@@ -225,18 +183,18 @@ func TestDynamicWithDelete(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 
-		rawTestGraph := []StructureChange{
-			{graph.ADD, 1, 4},
-			{graph.ADD, 2, 0},
-			{graph.ADD, 2, 1},
-			{graph.ADD, 3, 0},
-			{graph.ADD, 4, 2},
-			{graph.ADD, 4, 3},
-			{graph.ADD, 4, 5},
-			{graph.ADD, 6, 2},
+		rawTestGraph := []graph.StructureChange[EdgeProperty]{
+			{graph.ADD, 1, 4, EdgeProperty{}},
+			{graph.ADD, 2, 0, EdgeProperty{}},
+			{graph.ADD, 2, 1, EdgeProperty{}},
+			{graph.ADD, 3, 0, EdgeProperty{}},
+			{graph.ADD, 4, 2, EdgeProperty{}},
+			{graph.ADD, 4, 3, EdgeProperty{}},
+			{graph.ADD, 4, 5, EdgeProperty{}},
+			{graph.ADD, 6, 2, EdgeProperty{}},
 		}
 
-		adjustedGraph := InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)
+		adjustedGraph := framework.InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)
 
 		gDyn := DynamicGraphExecutionFromSC(adjustedGraph)
 
