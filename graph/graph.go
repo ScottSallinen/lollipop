@@ -76,12 +76,14 @@ type EdgeParserFunc[EdgeProp any] func(lineText string) RawEdge[EdgeProp]
 // Will also need to think about a better way to have templated edge types
 // if we are exploring edges with timestamps.
 type Edge[EdgeProp any] struct {
-	Target uint32
+	// The order of Property and Target here matters. Currently, each Edge[struct{}] takes 4 bytes of
+	// memory, but if we re-order these two fields, the size becomes 8 bytes.
 	Property EdgeProp
+	Target   uint32
 }
 
 func NewEdge[EdgeProp any](target uint32, property *EdgeProp) Edge[EdgeProp] {
-	return Edge[EdgeProp]{target, *property}
+	return Edge[EdgeProp]{*property, target}
 }
 
 func (*Edge[EdgeProp]) GetWeight() float64 {
