@@ -24,7 +24,7 @@ func (g *Graph[VertexProp, EdgeProp]) EdgeDequeuer(queuechan chan RawEdge[EdgePr
 		srcIdx := g.VertexMap[uint32(qElem.SrcRaw)]
 		dstIdx := g.VertexMap[uint32(qElem.DstRaw)]
 
-		g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, NewEdge[EdgeProp](uint32(dstIdx), &qElem.EdgeProperty))
+		g.Vertices[srcIdx].OutEdges = append(g.Vertices[srcIdx].OutEdges, NewEdge(uint32(dstIdx), &qElem.EdgeProperty))
 	}
 	deqWg.Done()
 }

@@ -61,14 +61,7 @@ func TestAsyncDynamic(t *testing.T) {
 	}
 }
 
-type StructureChange struct {
-	change graph.VisitType
-	srcRaw uint32
-	dstRaw uint32
-	weight float64
-}
-
-func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty] {
+func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty] {
 	frame := framework.Framework[VertexProperty, EdgeProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -95,13 +88,13 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	go frame.Run(g, &feederWg, &frameWait)
 
 	for _, v := range sc {
-		switch v.change {
+		switch v.Type {
 		case graph.ADD:
-			g.SendAdd(v.srcRaw, v.dstRaw, EdgeProperty{})
-			info("add ", v.srcRaw, v.dstRaw)
+			g.SendAdd(v.SrcRaw, v.DstRaw, v.EdgeProperty)
+			info("add ", v.SrcRaw, v.DstRaw)
 		case graph.DEL:
-			g.SendDel(v.srcRaw, v.dstRaw)
-			info("del ", v.srcRaw, v.dstRaw)
+			g.SendDel(v.SrcRaw, v.DstRaw)
+			info("del ", v.SrcRaw, v.DstRaw)
 		}
 	}
 
@@ -135,7 +128,7 @@ func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, E
 	}
 }
 
-func shuffleSC(sc []StructureChange) {
+func shuffleSC(sc []graph.StructureChange[EdgeProperty]) {
 	for i := range sc {
 		j := rand.Intn(i + 1)
 		sc[i], sc[j] = sc[j], sc[i]
@@ -153,15 +146,15 @@ func TestDynamicCreation(t *testing.T) {
 
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
 
-		rawTestGraph := []StructureChange{
-			{graph.ADD, 1, 4, 1.0},
-			{graph.ADD, 2, 0, 1.0},
-			{graph.ADD, 2, 1, 1.0},
-			{graph.ADD, 3, 0, 1.0},
-			{graph.ADD, 4, 2, 1.0},
-			{graph.ADD, 4, 3, 1.0},
-			{graph.ADD, 4, 5, 1.0},
-			{graph.ADD, 6, 2, 1.0},
+		rawTestGraph := []graph.StructureChange[EdgeProperty]{
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{1.0}},
 		}
 		shuffleSC(rawTestGraph)
 

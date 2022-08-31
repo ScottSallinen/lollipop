@@ -73,7 +73,7 @@ func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Gra
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
 					didxMap[didx] = len(src.OutEdges)
-					src.OutEdges = append(src.OutEdges, graph.NewEdge[EdgeProp](didx, &change.EdgeProperty))
+					src.OutEdges = append(src.OutEdges, graph.NewEdge(didx, &change.EdgeProperty))
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
@@ -92,7 +92,7 @@ func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Gra
 				didx := g.VertexMap[change.DstRaw]
 				/// Delete edge.. naively find target and swap last element with the hole.
 				for k, v := range src.OutEdges {
-					if v.Target == didx {
+					if v.Destination == didx {
 						src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
 						break
 					}

@@ -30,7 +30,14 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 	src, _ := strconv.Atoi(stringFields[0])
 	dst, _ := strconv.Atoi(stringFields[1])
 
-	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
+	weight := 1.0
+	var err error
+	if sflen >= 3 {
+		weight, err = strconv.ParseFloat(stringFields[2], 32)
+		enforce.ENFORCE(err, "Text file parse error: weight not floats?")
+	}
+
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{Weight: weight}}
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
@@ -50,8 +57,8 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 
 		} else {
 			for eidx := range g.Vertices[vidx].OutEdges {
-				target := g.Vertices[vidx].OutEdges[eidx].Target
-				enforce.ENFORCE(g.Vertices[target].Property.Value <= (ourValue + g.Vertices[vidx].OutEdges[eidx].GetWeight()))
+				target := g.Vertices[vidx].OutEdges[eidx].Destination
+				enforce.ENFORCE(g.Vertices[target].Property.Value <= (ourValue + g.Vertices[vidx].OutEdges[eidx].Property.Weight))
 			}
 		}
 	}

@@ -68,32 +68,22 @@ type OnQueueEdgeAddRevFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, E
 type ConvergeFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], wg *sync.WaitGroup)
 type EdgeParserFunc[EdgeProp any] func(lineText string) RawEdge[EdgeProp]
 
-// Note: for now we have fake edge weights where the weight is just 1.
-// This can be adjusted in the future by just adjusting the constructor
-// and retrieval process here. But the edge weight consumes a lot of memory
-// for large graphs and should ideally be optional. A better way to
-// do this dynamically would be nice.
-// Will also need to think about a better way to have templated edge types
-// if we are exploring edges with timestamps.
+// Edge: Basic edge type for a graph, with a user-defined property; can be empty struct{}
+// Note the order of Property and Destination here matters. Currently, each Edge[struct{}] takes 4 bytes of
+// memory, but if we re-order these two fields, the size becomes 8 bytes.
 type Edge[EdgeProp any] struct {
-	// The order of Property and Target here matters. Currently, each Edge[struct{}] takes 4 bytes of
-	// memory, but if we re-order these two fields, the size becomes 8 bytes.
-	Property EdgeProp
-	Target   uint32
+	Property    EdgeProp
+	Destination uint32
 }
 
-func NewEdge[EdgeProp any](target uint32, property *EdgeProp) Edge[EdgeProp] {
-	return Edge[EdgeProp]{*property, target}
+func NewEdge[EdgeProp any](Destination uint32, property *EdgeProp) Edge[EdgeProp] {
+	return Edge[EdgeProp]{*property, Destination}
 }
 
-func (*Edge[EdgeProp]) GetWeight() float64 {
-	return 1.0
-}
-
-// Edge t
+// InEdge: TODO, this is very outdated.
 type InEdge struct {
-	Target uint32
-	Weight float64
+	Destination uint32
+	Weight      float64
 }
 
 func (e *Edge[EdgeProp]) Reset() {
@@ -142,7 +132,7 @@ func (g *Graph[VertexProp, EdgeProp]) Reset() {
 func (g *Graph[VertexProp, EdgeProp]) ComputeInEdges() {
 	for vidx := range g.Vertices {
 		for eidx := range g.Vertices[vidx].OutEdges {
-			target := int(g.Vertices[vidx].OutEdges[eidx].Target)
+			target := int(g.Vertices[vidx].OutEdges[eidx].Destination)
 			g.Vertices[target].InEdges = append(g.Vertices[target].InEdges, InEdge{uint32(vidx), 0.0})
 		}
 	}
@@ -222,7 +212,7 @@ func (g *Graph[VertexProp, EdgeProp]) PrintStructure() {
 		pr := fmt.Sprintf("%d", g.Vertices[vidx].Id)
 		el := ""
 		for _, e := range g.Vertices[vidx].OutEdges {
-			el += fmt.Sprintf("%d, ", g.Vertices[e.Target].Id)
+			el += fmt.Sprintf("%d, ", g.Vertices[e.Destination].Id)
 		}
 		log.Println(pr + ": " + el)
 	}

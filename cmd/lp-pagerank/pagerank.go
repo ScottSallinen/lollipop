@@ -67,7 +67,7 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs 
 		distDelta := distNew - distOld
 
 		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Target
+			target := src.OutEdges[eidx].Destination
 			if _, in := didxs[target]; in {
 				/// Do nothing, this only goes to old edges
 			} else {
@@ -93,7 +93,7 @@ func OnEdgeAddBasic(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, d
 		distDelta := distNew - distOld
 
 		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Target
+			target := src.OutEdges[eidx].Destination
 			if target != didx { /// Only old edges
 				g.OnQueueVisit(g, sidx, target, distDelta)
 			}
@@ -114,7 +114,7 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didx u
 		distDelta := distNew - distOld
 
 		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Target
+			target := src.OutEdges[eidx].Destination
 			g.OnQueueVisit(g, sidx, target, distDelta)
 		}
 	}
@@ -137,7 +137,7 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32, da
 		if len(vertex.OutEdges) > 0 {
 			distribute := toDistribute / float64(len(vertex.OutEdges))
 			for eidx := range vertex.OutEdges {
-				target := vertex.OutEdges[eidx].Target
+				target := vertex.OutEdges[eidx].Destination
 				g.OnQueueVisit(g, vidx, target, distribute)
 			}
 		}
