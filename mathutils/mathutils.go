@@ -3,6 +3,7 @@ package mathutils
 import (
 	"math"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 	//"golang.org/x/exp/constraints"
@@ -105,4 +106,24 @@ func NewIndexedFloat64Slice(n []float64) *IndexedFloat64Slice {
 		s.Idx[i] = i
 	}
 	return s
+}
+
+func BatchParallelFor(size int, threads int, applicator func(int, int)) {
+	var wg sync.WaitGroup
+	wg.Add(threads)
+	batch := size / threads
+	for t := 0; t < threads; t++ {
+		go func(tidx int) {
+			defer wg.Done()
+			start := tidx * batch
+			end := (tidx + 1) * batch
+			if tidx == (threads - 1) {
+				end = size
+			}
+			for j := start; j < end; j++ {
+				applicator(j, tidx)
+			}
+		}(t)
+	}
+	wg.Wait()
 }

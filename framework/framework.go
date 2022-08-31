@@ -8,6 +8,7 @@ import (
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 var resultCache []float64
@@ -71,9 +72,9 @@ func (frame *Framework[VertexProp]) Init(g *graph.Graph[VertexProp], async bool,
 	}
 
 	//m0 := time.Now()
-	for vidx := range g.Vertices {
-		frame.OnInitVertex(g, uint32(vidx))
-	}
+	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(idx int, tidx int) {
+		frame.OnInitVertex(g, uint32(idx))
+	})
 	//t0 := time.Since(m0)
 	//info("Initialized(ms) ", t0.Milliseconds())
 }
