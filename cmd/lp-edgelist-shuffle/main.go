@@ -1,67 +1,74 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
-
-// TODO: handle edge properties
-
-type EdgeProperty struct{}
 
 func info(args ...interface{}) {
 	log.Println("[Shuffler]\t", fmt.Sprint(args...))
 }
 
-func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
-	stringFields := strings.Fields(lineText)
-
-	sflen := len(stringFields)
-	enforce.ENFORCE(sflen == 2 || sflen == 3)
-
-	src, _ := strconv.Atoi(stringFields[0])
-	dst, _ := strconv.Atoi(stringFields[1])
-
-	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
-}
-
-func EdgeDequeuer(queuechan chan graph.RawEdge[EdgeProperty], edgelist *[]graph.RawEdge[EdgeProperty], deqWg *sync.WaitGroup) {
+func LineDequeuer(queuechan chan string, lineList *[]string, deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
-		*edgelist = append(*edgelist, graph.RawEdge[EdgeProperty]{SrcRaw: uint32(qElem.SrcRaw), DstRaw: uint32(qElem.DstRaw), EdgeProperty: EdgeProperty{}})
+		*lineList = append(*lineList, qElem)
 	}
 	deqWg.Done()
 }
 
-func LoadEdgeList(graphName string, threads int) (finallist []graph.RawEdge[EdgeProperty]) {
+func LineEnqueuer(queuechans []chan string, graphName string, undirected bool, wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
+	file, err := os.Open(graphName)
+	enforce.ENFORCE(err)
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lines := uint64(0)
+	mLines := uint64(0)
+	for scanner.Scan() {
+		lines++
+		if lines%enqCount != idx {
+			continue
+		}
+		mLines++
+		lineText := scanner.Text()
+		if strings.HasPrefix(lineText, "#") {
+			continue
+		}
+		queuechans[lines%deqCount] <- lineText
+	}
+	result <- mLines
+	wg.Done()
+}
+
+func LoadlineList(graphName string, threads int) (finallist []string) {
 	qCount := mathutils.MaxUint64(uint64(threads), 1)
 	m1 := time.Now()
 
-	edgelists := make([][]graph.RawEdge[EdgeProperty], threads)
+	lineLists := make([][]string, threads)
 
-	queuechans := make([]chan graph.RawEdge[EdgeProperty], qCount)
+	queuechans := make([]chan string, qCount)
 	var deqWg sync.WaitGroup
 	deqWg.Add(int(qCount))
 	for i := uint64(0); i < qCount; i++ {
-		queuechans[i] = make(chan graph.RawEdge[EdgeProperty], 4096)
-		go EdgeDequeuer(queuechans[i], &edgelists[i], &deqWg)
+		queuechans[i] = make(chan string, 4096)
+		go LineDequeuer(queuechans[i], &lineLists[i], &deqWg)
 	}
 
 	resultchan := make(chan uint64, qCount)
 	var enqWg sync.WaitGroup
 	enqWg.Add(int(qCount))
 	for i := uint64(0); i < qCount; i++ {
-		go graph.EdgeEnqueuer(queuechans, graphName, false, EdgeParser, &enqWg, i, qCount, qCount, resultchan)
+		go LineEnqueuer(queuechans, graphName, false, &enqWg, i, qCount, qCount, resultchan)
 	}
 	enqWg.Wait()
 	for i := uint64(0); i < qCount; i++ {
@@ -75,11 +82,11 @@ func LoadEdgeList(graphName string, threads int) (finallist []graph.RawEdge[Edge
 	deqWg.Wait()
 
 	t1 := time.Since(m1)
-	info("Read ", lines, " edges in (ms) ", t1.Milliseconds())
+	info("Read ", lines, " lines in (ms) ", t1.Milliseconds())
 
-	for i := range edgelists {
-		info(i, ":", len(edgelists[i]))
-		finallist = append(finallist, edgelists[i]...)
+	for i := range lineLists {
+		info(i, ":", len(lineLists[i]))
+		finallist = append(finallist, lineLists[i]...)
 	}
 	return finallist
 }
@@ -89,19 +96,18 @@ func main() {
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
 
-	edgelist := LoadEdgeList(*gptr, *tptr)
+	lineList := LoadlineList(*gptr, *tptr)
 
 	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(edgelist), func(i, j int) { edgelist[i], edgelist[j] = edgelist[j], edgelist[i] })
+	rand.Shuffle(len(lineList), func(i, j int) { lineList[i], lineList[j] = lineList[j], lineList[i] })
 
-	info("Edges:", len(edgelist))
+	info("Lines:", len(lineList))
 
 	f, err := os.Create(*gptr + ".shuffled")
 	enforce.ENFORCE(err)
 	defer f.Close()
-	for edge := range edgelist {
-		// todo: weight?
-		_, err := f.WriteString(fmt.Sprintf("%d %d\n", edgelist[edge].SrcRaw, edgelist[edge].DstRaw))
+	for line := range lineList {
+		_, err := f.WriteString(fmt.Sprintf("%s\n", lineList[line]))
 		enforce.ENFORCE(err)
 	}
 }
