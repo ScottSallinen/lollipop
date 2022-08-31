@@ -10,7 +10,7 @@ import (
 
 /// OnQueueVisitAsync: Async queue applying function; aggregates message values,
 /// and only injects a visit marker if none exist already.
-func (frame *Framework[VertexProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp], sidx uint32, didx uint32, VisitData float64) {
+func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64) {
 	target := &g.Vertices[didx]
 
 	//target.Mutex.Lock()
@@ -40,7 +40,7 @@ func (frame *Framework[VertexProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp]
 }
 
 /// ConvergeAsync: Static focused variant of async convergence.
-func (frame *Framework[VertexProp]) ConvergeAsync(g *graph.Graph[VertexProp], feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[VertexProp, EdgeProp], feederWg *sync.WaitGroup) {
 	// Note: feederWg not used -- only in the function to match the template ConvergeFunc.
 	info("ConvergeAsync")
 	var wg sync.WaitGroup
@@ -140,7 +140,7 @@ func (frame *Framework[VertexProp]) ConvergeAsync(g *graph.Graph[VertexProp], fe
 /// If any thread generates new messages they will not vote to quit, update new messages sent,
 /// thus kick out others until cons = prod.
 /// Works because produced >= consumed at all times.
-func (frame *Framework[VertexProp]) CheckTermination(g *graph.Graph[VertexProp], tidx uint32) bool {
+func (frame *Framework[VertexProp, EdgeProp]) CheckTermination(g *graph.Graph[VertexProp, EdgeProp], tidx uint32) bool {
 	VOTES := graph.THREADS + 1
 
 	g.TerminateData[tidx] = int64(g.MsgSend[tidx]) - int64(g.MsgRecv[tidx])
@@ -162,7 +162,7 @@ func (frame *Framework[VertexProp]) CheckTermination(g *graph.Graph[VertexProp],
 }
 
 /// EnsureCompleteness: Debug func to ensure queues are empty an no messages are inflight.
-func (frame *Framework[VertexProp]) EnsureCompleteness(g *graph.Graph[VertexProp]) {
+func (frame *Framework[VertexProp, EdgeProp]) EnsureCompleteness(g *graph.Graph[VertexProp, EdgeProp]) {
 	inFlight := int64(0)
 	for v := 0; v < graph.THREADS+1; v++ {
 		inFlight += g.TerminateData[v]
@@ -183,7 +183,7 @@ func (frame *Framework[VertexProp]) EnsureCompleteness(g *graph.Graph[VertexProp
 }
 
 /// PrintTerminationStatus: Debug func to periodically print termination data and vote status.
-func PrintTerminationStatus[VertexProp any](g *graph.Graph[VertexProp], exit *bool) {
+func PrintTerminationStatus[VertexProp, EdgeProp any](g *graph.Graph[VertexProp, EdgeProp], exit *bool) {
 	time.Sleep(2 * time.Second)
 	for !*exit {
 		chktermData := make([]int64, graph.THREADS+1)

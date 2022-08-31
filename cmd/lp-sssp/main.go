@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	_ "net/http/pprof"
@@ -20,8 +21,27 @@ func info(args ...any) {
 	log.Println("[SSSP]\t", fmt.Sprint(args...))
 }
 
+func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
+	stringFields := strings.Fields(lineText)
+
+	sflen := len(stringFields)
+	enforce.ENFORCE(sflen == 2 || sflen == 3)
+
+	src, _ := strconv.Atoi(stringFields[0])
+	dst, _ := strconv.Atoi(stringFields[1])
+
+	weight := 1.0
+	var err error
+	if sflen >= 3 {
+		weight, err = strconv.ParseFloat(stringFields[2], 32)
+		enforce.ENFORCE(err, "Text file parse error: weight not floats?")
+	}
+
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{Weight: weight}}
+}
+
 // OnCheckCorrectness: Performs some sanity checks for correctness.
-func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	maxValue := 0.0
 	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
 	for vidx := range g.Vertices {
@@ -37,8 +57,8 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
 
 		} else {
 			for eidx := range g.Vertices[vidx].OutEdges {
-				target := g.Vertices[vidx].OutEdges[eidx].Target
-				enforce.ENFORCE(g.Vertices[target].Property.Value <= (ourValue + g.Vertices[vidx].OutEdges[eidx].GetWeight()))
+				target := g.Vertices[vidx].OutEdges[eidx].Destination
+				enforce.ENFORCE(g.Vertices[target].Property.Value <= (ourValue + g.Vertices[vidx].OutEdges[eidx].Property.Weight))
 			}
 		}
 	}
@@ -46,7 +66,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
 	return nil
 }
 
-func OracleComparison(g *graph.Graph[VertexProperty], oracle *graph.Graph[VertexProperty], resultCache *[]float64) {
+func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty], oracle *graph.Graph[VertexProperty, EdgeProperty], resultCache *[]float64) {
 	ia := make([]float64, len(g.Vertices))
 	ib := make([]float64, len(g.Vertices))
 	numEdges := uint64(0)
@@ -72,8 +92,8 @@ func OracleComparison(g *graph.Graph[VertexProperty], oracle *graph.Graph[Vertex
 	graph.ResultCompare(ia, ib)
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32) *graph.Graph[VertexProperty] {
-	frame := framework.Framework[VertexProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty] {
+	frame := framework.Framework[VertexProperty, EdgeProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -83,8 +103,9 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.OracleComparison = OracleComparison
+	frame.EdgeParser = EdgeParser
 
-	g := &graph.Graph[VertexProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.SourceInit = true
 	g.SourceInitVal = 1.0
 	g.EmptyVal = math.MaxFloat64
@@ -142,7 +163,7 @@ func main() {
 	}
 }
 
-func WriteVertexProps(g *graph.Graph[VertexProperty], fname string) {
+func WriteVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], fname string) {
 	f, err := os.Create(fname)
 	enforce.ENFORCE(err)
 	defer f.Close()

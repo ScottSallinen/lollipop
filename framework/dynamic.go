@@ -9,10 +9,10 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexProp], tidx uint32, changes []graph.StructureChange) {
+func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
 	hasChangedIdMapping := false
 	newVid := make(map[uint32]bool, len(changes)*2)
-	miniGraph := make(map[uint32][]graph.StructureChange, len(changes))
+	miniGraph := make(map[uint32][]graph.StructureChange[EdgeProp], len(changes))
 
 	// First pass: read lock the graph (no changes, just need consistent view).
 	g.Mutex.RLock()
@@ -44,7 +44,7 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 				// First, create vertex.
 				vidx := uint32(len(g.VertexMap))
 				g.VertexMap[uint32(IdRaw)] = vidx
-				g.Vertices = append(g.Vertices, graph.Vertex[VertexProp]{Id: IdRaw})
+				g.Vertices = append(g.Vertices, graph.Vertex[VertexProp, EdgeProp]{Id: IdRaw})
 				frame.OnInitVertex(g, vidx)
 				// Next, visit the newly created vertex if needed.
 				if g.SourceInit && IdRaw == g.SourceVertex { // Only visit targetted vertex.
@@ -73,7 +73,7 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
 					didxMap[didx] = len(src.OutEdges)
-					src.OutEdges = append(src.OutEdges, graph.NewEdge(didx, change.Weight))
+					src.OutEdges = append(src.OutEdges, graph.NewEdge(didx, &change.EdgeProperty))
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
@@ -92,7 +92,7 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 				didx := g.VertexMap[change.DstRaw]
 				/// Delete edge.. naively find target and swap last element with the hole.
 				for k, v := range src.OutEdges {
-					if v.Target == didx {
+					if v.Destination == didx {
 						src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
 						break
 					}
@@ -144,7 +144,7 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 }
 
 // ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
-func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp], feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp, EdgeProp], feederWg *sync.WaitGroup) {
 	info("ConvergeAsyncDynWithRate")
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1
@@ -186,7 +186,7 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 			const MsgBundleSize = 256
 			const GscBundleSize = 4096 * 16
 			msgBuffer := make([]graph.Message, MsgBundleSize)
-			gscBuffer := make([]graph.StructureChange, GscBundleSize)
+			gscBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
 			strucClosed := false // true indicates the StructureChanges channel is closed
 			infoTimer := time.Now()
 			for {
