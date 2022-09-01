@@ -94,40 +94,40 @@ func (g *Graph[VertexProp, EdgeProp]) LoadVertexMap(graphName string, edgeParser
 
 // BuildMap reads all edges stored in the file and constructs the VertexMap for all vertices found
 func (g *Graph[VertexProp, EdgeProp]) BuildMap(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
-	file, err := os.Open(graphName)
-	enforce.ENFORCE(err)
-	defer file.Close()
-
 	work := make(chan RawEdge[EdgeProp], 256)
-	go func(mWork chan RawEdge[EdgeProp]) {
-		for elem := range mWork {
-			srcRaw := elem.SrcRaw
-			dstRaw := elem.DstRaw
-			if _, ok := g.VertexMap[uint32(srcRaw)]; !ok {
-				sidx := uint32(len(g.VertexMap))
-				g.VertexMap[uint32(srcRaw)] = sidx
-				g.Vertices = append(g.Vertices, Vertex[VertexProp, EdgeProp]{Id: uint32(srcRaw)})
+	go func() {
+		file, err := os.Open(graphName)
+		enforce.ENFORCE(err)
+		defer file.Close()
+		
+		scanner := bufio.NewScanner(file)
+		lines := uint32(0)
+		for scanner.Scan() {
+			lines++
+			t := scanner.Text()
+			if strings.HasPrefix(t, "#") {
+				continue
 			}
-			if _, ok := g.VertexMap[uint32(dstRaw)]; !ok {
-				didx := uint32(len(g.VertexMap))
-				g.VertexMap[uint32(dstRaw)] = didx
-				g.Vertices = append(g.Vertices, Vertex[VertexProp, EdgeProp]{Id: uint32(dstRaw)})
-			}
+			rawEdge := edgeParser(t)
+			work <- RawEdge[EdgeProp]{rawEdge.SrcRaw, rawEdge.DstRaw, rawEdge.EdgeProperty}
 		}
-	}(work)
+		close(work)
+	}()
 
-	scanner := bufio.NewScanner(file)
-	lines := uint32(0)
-	for scanner.Scan() {
-		lines++
-		t := scanner.Text()
-		if strings.HasPrefix(t, "#") {
-			continue
+	for elem := range work {
+		srcRaw := elem.SrcRaw
+		dstRaw := elem.DstRaw
+		if _, ok := g.VertexMap[srcRaw]; !ok {
+			sidx := uint32(len(g.VertexMap))
+			g.VertexMap[srcRaw] = sidx
+			g.Vertices = append(g.Vertices, Vertex[VertexProp, EdgeProp]{Id: srcRaw})
 		}
-		rawEdge := edgeParser(t)
-		work <- RawEdge[EdgeProp]{rawEdge.SrcRaw, rawEdge.DstRaw, rawEdge.EdgeProperty}
+		if _, ok := g.VertexMap[dstRaw]; !ok {
+			didx := uint32(len(g.VertexMap))
+			g.VertexMap[dstRaw] = didx
+			g.Vertices = append(g.Vertices, Vertex[VertexProp, EdgeProp]{Id: dstRaw})
+		}
 	}
-	close(work)
 }
 
 // LoadGraphStatic loads the graph store in the file. The graph structure is updated to reflect the complete graph
