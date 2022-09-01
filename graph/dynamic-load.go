@@ -35,7 +35,7 @@ func (g *Graph[VertexProp, EdgeProp]) DynamicEdgeDequeuer(queuechan chan RawEdge
 
 // DynamicEdgeEnqueuer reads edges in the file and writes corresponding StructureChange to the ThreadStructureQ of the
 // source vertex's thread
-func (g *Graph[VertexProp, EdgeProp]) DynamicEdgeEnqueuer(graphName string, undirected bool, edgeParser EdgeParserFunc[EdgeProp], wg *sync.WaitGroup, idx uint64, enqCount uint64, result chan uint64) {
+func (g *Graph[VertexProp, EdgeProp]) DynamicEdgeEnqueuer(graphName string, edgeParser EdgeParserFunc[EdgeProp], wg *sync.WaitGroup, idx uint64, enqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -67,16 +67,14 @@ func (g *Graph[VertexProp, EdgeProp]) DynamicEdgeEnqueuer(graphName string, undi
 			weight := 1.0
 		*/
 
-		// TODO: Deal with multi-graphs :)
-		//if src == dst {
-		//	continue
-		//}
+		// TODO: Option to remove self reference edges?
+		// if rawEdge.SrcRaw == rawEdge.DstRaw {
+		//   continue
+		// }
 
-		g.ThreadStructureQ[g.RawIdToThreadIdx(rawEdge.SrcRaw)] <-
-			StructureChange[EdgeProp]{Type: ADD, SrcRaw: rawEdge.SrcRaw, DstRaw: rawEdge.DstRaw, EdgeProperty: rawEdge.EdgeProperty}
-		if undirected {
-			g.ThreadStructureQ[g.RawIdToThreadIdx(rawEdge.DstRaw)] <-
-				StructureChange[EdgeProp]{Type: ADD, SrcRaw: rawEdge.DstRaw, DstRaw: rawEdge.SrcRaw, EdgeProperty: rawEdge.EdgeProperty}
+		g.ThreadStructureQ[g.RawIdToThreadIdx(rawEdge.SrcRaw)] <- StructureChange[EdgeProp]{Type: ADD, SrcRaw: rawEdge.SrcRaw, DstRaw: rawEdge.DstRaw, EdgeProperty: rawEdge.EdgeProperty}
+		if g.Undirected {
+			g.ThreadStructureQ[g.RawIdToThreadIdx(rawEdge.DstRaw)] <- StructureChange[EdgeProp]{Type: ADD, SrcRaw: rawEdge.DstRaw, DstRaw: rawEdge.SrcRaw, EdgeProperty: rawEdge.EdgeProperty}
 		}
 	}
 	result <- mLines
@@ -85,7 +83,7 @@ func (g *Graph[VertexProp, EdgeProp]) DynamicEdgeEnqueuer(graphName string, undi
 
 // LoadGraphDynamic starts multiple DynamicEdgeEnqueuer to read edges stored in the file. When it returns, all edges
 // are read.
-func (g *Graph[VertexProp, EdgeProp]) LoadGraphDynamic(graphName string, undirected bool, edgeParser EdgeParserFunc[EdgeProp], feederWg *sync.WaitGroup) {
+func (g *Graph[VertexProp, EdgeProp]) LoadGraphDynamic(graphName string, edgeParser EdgeParserFunc[EdgeProp], feederWg *sync.WaitGroup) {
 	// The enqueue count here should actually be just 1 to honour an event log properly.
 	// If order is irrelevant, then we can scrape through it potentially faster with more..
 	// perhaps this should be parameterized.
@@ -100,7 +98,7 @@ func (g *Graph[VertexProp, EdgeProp]) LoadGraphDynamic(graphName string, undirec
 	var enqWg sync.WaitGroup
 	enqWg.Add(int(enqCount))
 	for i := uint64(0); i < enqCount; i++ {
-		go g.DynamicEdgeEnqueuer(graphName, undirected, edgeParser, &enqWg, i, enqCount, resultchan)
+		go g.DynamicEdgeEnqueuer(graphName, edgeParser, &enqWg, i, enqCount, resultchan)
 	}
 	enqWg.Wait()
 

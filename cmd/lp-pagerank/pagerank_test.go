@@ -27,19 +27,19 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], prefix strin
 func TestAsyncDynamic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", true, true, false, false)
+		LaunchGraphExecution("../../data/test.txt", true, true, false, false, false)
 	}
 }
 func TestAsyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", true, false, false, false)
+		LaunchGraphExecution("../../data/test.txt", true, false, false, false, false)
 	}
 }
 func TestSyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 100; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", false, false, false, false)
+		LaunchGraphExecution("../../data/test.txt", false, false, false, false, false)
 	}
 }
 
@@ -145,7 +145,7 @@ func TestDynamicCreation(t *testing.T) {
 
 		gDyn := DynamicGraphExecutionFromSC(rawTestGraph)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true)
+		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, false)
 
 		a := make([]float64, len(gDyn.Vertices))
 		b := make([]float64, len(gStatic.Vertices))
@@ -240,7 +240,7 @@ func TestDynamicWithDelete(t *testing.T) {
 
 		gDyn := DynamicGraphExecutionFromSC(adjustedGraph)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true)
+		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, false)
 
 		CheckGraphStructureEquality(t, gDyn, gStatic)
 

@@ -67,12 +67,14 @@ func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Gra
 		changeIdx := 0
 		for changeIdx < len(miniGraph[vRaw]) {
 			// First: gather any consecutive edge ADDs. This is because we wish to aggregate them.
-			didxMap := make(map[uint32]int, len(miniGraph[vRaw]))
+			didxMap := make(map[uint32][]int, len(miniGraph[vRaw]))
+			didxCount := 0
 			for ; changeIdx < len(miniGraph[vRaw]); changeIdx++ {
 				change := miniGraph[vRaw][changeIdx]
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
-					didxMap[didx] = len(src.OutEdges)
+					didxMap[didx] = append(didxMap[didx], len(src.OutEdges))
+					didxCount++
 					src.OutEdges = append(src.OutEdges, graph.NewEdge(didx, &change.EdgeProperty))
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
@@ -82,7 +84,7 @@ func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Gra
 			// From the gathered set of consecutive adds, apply them.
 			if len(didxMap) > 0 {
 				val := frame.AggregateRetrieve(src)
-				frame.OnEdgeAdd(g, sidx, didxMap, val)
+				frame.OnEdgeAdd(g, sidx, didxMap, didxCount, val)
 			}
 
 			// If we didn't finish, it means we hit a delete. Address it here.

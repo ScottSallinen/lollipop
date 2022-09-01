@@ -92,7 +92,7 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty], oracle *grap
 	graph.ResultCompare(ia, ib)
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty] {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32, undirected bool) *graph.Graph[VertexProperty, EdgeProperty] {
 	frame := framework.Framework[VertexProperty, EdgeProperty]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -111,7 +111,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	g.EmptyVal = math.MaxFloat64
 	g.SourceVertex = rawSrc
 
-	frame.Launch(g, gName, async, dynamic, oracleRun, false)
+	frame.Launch(g, gName, async, dynamic, oracleRun, undirected)
 
 	if oracleFin {
 		frame.CompareToOracle(g)
@@ -125,6 +125,7 @@ func main() {
 	aptr := flag.Bool("a", false, "Use async")
 	dptr := flag.Bool("d", false, "Dynamic")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")
+	uptr := flag.Bool("u", false, "Interpret the input graph as undirected (add transpose edges)")
 	optr := flag.Bool("o", false, "Compare to oracle results during runtime")
 	fptr := flag.Bool("f", false, "Compare to oracle results (computed via async) upon finishing the initial algorithm.")
 	pptr := flag.Bool("p", false, "Save vertex properties to disk")
@@ -150,7 +151,7 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr, *fptr, uint32(*iptr))
+	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr, *fptr, uint32(*iptr), *uptr)
 
 	g.ComputeGraphStats(false, false)
 

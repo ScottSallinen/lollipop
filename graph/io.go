@@ -30,7 +30,7 @@ func (g *Graph[VertexProp, EdgeProp]) EdgeDequeuer(queuechan chan RawEdge[EdgePr
 }
 
 // EdgeEnqueuer reads edges in the file and writes them to queuechans
-func EdgeEnqueuer[EdgeProp any](queuechans []chan RawEdge[EdgeProp], graphName string, undirected bool, edgeParser EdgeParserFunc[EdgeProp], wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
+func (g *Graph[VertexProp, EdgeProp]) EdgeEnqueuer(queuechans []chan RawEdge[EdgeProp], graphName string, edgeParser EdgeParserFunc[EdgeProp], wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -52,14 +52,14 @@ func EdgeEnqueuer[EdgeProp any](queuechans []chan RawEdge[EdgeProp], graphName s
 		}
 		rawEdge := edgeParser(lineText)
 
-		// TODO: Deal with multi-graphs :)
-		//if src == dst {
-		//	continue
-		//}
+		// TODO: Option to remove self reference edges?
+		// if rawEdge.SrcRaw == rawEdge.DstRaw {
+		// 	continue
+		// }
 
 		queuechans[uint64(rawEdge.SrcRaw)%deqCount] <- rawEdge
-		if undirected {
-			queuechans[uint64(rawEdge.DstRaw)%deqCount] <- rawEdge
+		if g.Undirected {
+			queuechans[uint64(rawEdge.DstRaw)%deqCount] <- RawEdge[EdgeProp]{SrcRaw: rawEdge.DstRaw, DstRaw: rawEdge.SrcRaw, EdgeProperty: rawEdge.EdgeProperty}
 		}
 	}
 	result <- mLines
@@ -132,7 +132,7 @@ func (g *Graph[VertexProp, EdgeProp]) BuildMap(graphName string, edgeParser Edge
 
 // LoadGraphStatic loads the graph store in the file. The graph structure is updated to reflect the complete graph
 // before returning.
-func (g *Graph[VertexProp, EdgeProp]) LoadGraphStatic(graphName string, undirected bool, edgeParser EdgeParserFunc[EdgeProp]) {
+func (g *Graph[VertexProp, EdgeProp]) LoadGraphStatic(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
 	deqCount := mathutils.MaxUint64(uint64(THREADS), 1)
 	enqCount := mathutils.MaxUint64(uint64(THREADS/2), 1)
 
@@ -156,7 +156,7 @@ func (g *Graph[VertexProp, EdgeProp]) LoadGraphStatic(graphName string, undirect
 	var enqWg sync.WaitGroup
 	enqWg.Add(int(enqCount))
 	for i := uint64(0); i < enqCount; i++ {
-		go EdgeEnqueuer(queuechans, graphName, undirected, edgeParser, &enqWg, i, enqCount, deqCount, resultchan)
+		go g.EdgeEnqueuer(queuechans, graphName, edgeParser, &enqWg, i, enqCount, deqCount, resultchan)
 	}
 	enqWg.Wait()
 	for i := uint64(0); i < deqCount; i++ {

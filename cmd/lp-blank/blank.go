@@ -29,10 +29,10 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 	g.Vertices[vidx].Property.Value = 0.0
 }
 
-// The function that is called when a group of edges are added to a vertex.
+// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
-// The input didxs argument is a map of the new edge didx (target) to the raw index in the vertice's edge list.
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs map[uint32]int, data float64) {
+// Note: didxs maps an new edge destination to the index in the edge array. May contain multiple edges with the same destination (hence multiple edge array indices).
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs map[uint32][]int, didxsCount int, data float64) {
 
 }
 

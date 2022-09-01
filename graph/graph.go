@@ -28,6 +28,7 @@ type Graph[VertexProp, EdgeProp any] struct {
 	AlgConverge       ConvergeFunc[VertexProp, EdgeProp]
 	MessageQ          []chan Message
 	ThreadStructureQ  []chan StructureChange[EdgeProp]
+	Undirected        bool     // Declares if the graph should be treated as undirected (e.g. for construction)
 	MsgSend           []uint32 // number of messages sent by each thread
 	MsgRecv           []uint32 // number of messages received by each thread
 	TerminateVote     []int

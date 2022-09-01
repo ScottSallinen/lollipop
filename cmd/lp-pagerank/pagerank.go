@@ -49,8 +49,10 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 	g.Vertices[vidx].Scratch = 0.0
 }
 
-// OnEdgeAdd is the complex version which merges a Visit call.
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs map[uint32]int, data float64) {
+// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
+// The view here is **post** addition (the edges are already appended to the edge list)
+// Note: didxs maps an new edge destination to the index in the edge array. May contain multiple edges with the same destination (hence multiple edge array indices).
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs map[uint32][]int, didxsCount int, data float64) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -61,15 +63,27 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs 
 	src.Property.Residual = 0.0
 	distribute := toDistribute / float64(len(src.OutEdges))
 
-	if len(src.OutEdges) > 1 { /// Not just our first edge
-		distOld := distAllPrev / (float64(len(src.OutEdges) - len(didxs)))
+	if len(src.OutEdges) > 1 { // Not just our first edge
+		distOld := distAllPrev / (float64(len(src.OutEdges) - didxsCount))
 		distNew := distAllPrev / (float64(len(src.OutEdges)))
 		distDelta := distNew - distOld
 
 		for eidx := range src.OutEdges {
 			target := src.OutEdges[eidx].Destination
+			skip := false
+			// Check if the edge exists already.
+			// Note: for multi-graph, we must check index, not just destination.
+			// If we disable multigraph, this can be simplified.
 			if _, in := didxs[target]; in {
-				/// Do nothing, this only goes to old edges
+				for _, newEidx := range didxs[target] {
+					if newEidx == eidx { // Only skip existing edge.
+						skip = true
+						break
+					}
+				}
+			}
+			if skip {
+				// Do nothing, this only goes to old edges
 			} else {
 				g.OnQueueVisit(g, sidx, target, distDelta+distribute)
 			}
@@ -78,7 +92,9 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs 
 	distNewEdge := distAllPrev / (float64(len(src.OutEdges)))
 
 	for didx := range didxs {
-		g.OnQueueVisit(g, sidx, didx, distNewEdge+distribute)
+		for range didxs[didx] {
+			g.OnQueueVisit(g, sidx, didx, distNewEdge+distribute)
+		}
 	}
 }
 

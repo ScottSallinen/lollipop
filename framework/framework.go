@@ -34,7 +34,7 @@ type OnInitVertexFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, 
 type OnVisitVertexFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], vidx uint32, data float64) int
 type OnFinishFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp]) error
 type OnCheckCorrectnessFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp]) error
-type OnEdgeAddFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didxs map[uint32]int, VisitData float64)
+type OnEdgeAddFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didxs map[uint32][]int, didxsCount int, VisitData float64)
 type OnEdgeDelFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
 type MessageAggregatorFunc[VertexProp, EdgeProp any] func(g *graph.Vertex[VertexProp, EdgeProp], VisitData float64) (newInfo bool)
 type AggregateRetrieveFunc[VertexProp, EdgeProp any] func(g *graph.Vertex[VertexProp, EdgeProp]) (data float64)
@@ -100,8 +100,9 @@ func (frame *Framework[VertexProp, EdgeProp]) Run(g *graph.Graph[VertexProp, Edg
 }
 
 func (frame *Framework[VertexProp, EdgeProp]) Launch(g *graph.Graph[VertexProp, EdgeProp], gName string, async bool, dynamic bool, oracle bool, undirected bool) {
+	g.Undirected = undirected
 	if !dynamic {
-		g.LoadGraphStatic(gName, undirected, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser))
+		g.LoadGraphStatic(gName, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser))
 	}
 
 	frame.Init(g, async, dynamic)
@@ -112,7 +113,7 @@ func (frame *Framework[VertexProp, EdgeProp]) Launch(g *graph.Graph[VertexProp, 
 	frameWait.Add(1)
 
 	if dynamic {
-		go g.LoadGraphDynamic(gName, undirected, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser), &feederWg)
+		go g.LoadGraphDynamic(gName, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser), &feederWg)
 	}
 
 	if oracle {
@@ -150,6 +151,7 @@ func (originalFrame *Framework[VertexProp, EdgeProp]) CompareToOracle(g *graph.G
 	newFrame.AggregateRetrieve = originalFrame.AggregateRetrieve
 
 	altG := &graph.Graph[VertexProp, EdgeProp]{}
+	altG.Undirected = g.Undirected
 	altG.EmptyVal = g.EmptyVal
 	altG.SourceInit = g.SourceInit
 	altG.SourceInitVal = g.SourceInitVal
