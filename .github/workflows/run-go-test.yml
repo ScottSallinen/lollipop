@@ -26,7 +26,6 @@ jobs:
       - run: echo "Triggered by a ${{ github.event_name }}"
       - run: echo "Running on ${{ runner.os }}"
       - run: echo "Branch is ${{ github.ref }}"
-      - run: echo "Branch is ${{ github.ref }}"
       - run: echo "Go version is $(go version)"
 
       - name: Build
