@@ -31,8 +31,8 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
-// Note: didxs maps an new edge destination to the index in the edge array. May contain multiple edges with the same destination (hence multiple edge array indices).
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs map[uint32][]int, didxsCount int, data float64) {
+// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxStart int, data float64) {
 
 }
 

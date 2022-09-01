@@ -39,17 +39,17 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
-// Note: didxs maps an new edge destination to the index in the edge array. May contain multiple edges with the same destination (hence multiple edge array indices).
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs map[uint32][]int, didxsCount int, data float64) {
+// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxStart int, data float64) {
 	if OnVisitVertex(g, sidx, data) > 0 {
 		// do nothing, we had messaged all edges
 	} else {
 		src := &g.Vertices[sidx]
 		if src.Property.Value < g.EmptyVal { // Only useful if we are connected
-			for didx, eidxs := range didxs {
-				for _, eidx := range eidxs {
-					g.OnQueueVisit(g, sidx, didx, src.Property.Value+src.OutEdges[eidx].Property.Weight)
-				}
+			// Message only new edges.
+			for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
+				target := src.OutEdges[eidx].Destination
+				g.OnQueueVisit(g, sidx, target, src.Property.Value+src.OutEdges[eidx].Property.Weight)
 			}
 		}
 	}

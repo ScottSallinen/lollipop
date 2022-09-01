@@ -34,7 +34,7 @@ type OnInitVertexFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, 
 type OnVisitVertexFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], vidx uint32, data float64) int
 type OnFinishFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp]) error
 type OnCheckCorrectnessFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp]) error
-type OnEdgeAddFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didxs map[uint32][]int, didxsCount int, VisitData float64)
+type OnEdgeAddFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didxStart int, VisitData float64)
 type OnEdgeDelFunc[VertexProp, EdgeProp any] func(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
 type MessageAggregatorFunc[VertexProp, EdgeProp any] func(g *graph.Vertex[VertexProp, EdgeProp], VisitData float64) (newInfo bool)
 type AggregateRetrieveFunc[VertexProp, EdgeProp any] func(g *graph.Vertex[VertexProp, EdgeProp]) (data float64)

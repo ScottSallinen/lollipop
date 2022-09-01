@@ -51,8 +51,8 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
-// Note: didxs maps an new edge destination to the index in the edge array. May contain multiple edges with the same destination (hence multiple edge array indices).
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs map[uint32][]int, didxsCount int, data float64) {
+// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxStart int, data float64) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -64,37 +64,22 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxs 
 	distribute := toDistribute / float64(len(src.OutEdges))
 
 	if len(src.OutEdges) > 1 { // Not just our first edge
-		distOld := distAllPrev / (float64(len(src.OutEdges) - didxsCount))
-		distNew := distAllPrev / (float64(len(src.OutEdges)))
+		distOld := distAllPrev / (float64(didxStart))         // Previous edge count
+		distNew := distAllPrev / (float64(len(src.OutEdges))) // Current (new) edge count
 		distDelta := distNew - distOld
 
-		for eidx := range src.OutEdges {
+		// Previously existing edges [0, new) get this adjustment.
+		for eidx := 0; eidx < didxStart; eidx++ {
 			target := src.OutEdges[eidx].Destination
-			skip := false
-			// Check if the edge exists already.
-			// Note: for multi-graph, we must check index, not just destination.
-			// If we disable multigraph, this can be simplified.
-			if _, in := didxs[target]; in {
-				for _, newEidx := range didxs[target] {
-					if newEidx == eidx { // Only skip existing edge.
-						skip = true
-						break
-					}
-				}
-			}
-			if skip {
-				// Do nothing, this only goes to old edges
-			} else {
-				g.OnQueueVisit(g, sidx, target, distDelta+distribute)
-			}
+			g.OnQueueVisit(g, sidx, target, distDelta+distribute)
 		}
 	}
 	distNewEdge := distAllPrev / (float64(len(src.OutEdges)))
 
-	for didx := range didxs {
-		for range didxs[didx] {
-			g.OnQueueVisit(g, sidx, didx, distNewEdge+distribute)
-		}
+	// New edges [new, len) get this adjustment
+	for didx := didxStart; didx < len(src.OutEdges); didx++ {
+		target := src.OutEdges[didx].Destination
+		g.OnQueueVisit(g, sidx, target, distNewEdge+distribute)
 	}
 }
 
