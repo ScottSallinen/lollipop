@@ -9,7 +9,8 @@ import (
 )
 
 type VertexProperty struct {
-	Value float64
+	Value   float64
+	Scratch float64 // Intermediary accumulator
 }
 
 type EdgeProperty struct {
@@ -22,9 +23,9 @@ func (p *VertexProperty) String() string {
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data float64) (newInfo bool) {
 	dst.Mutex.Lock()
-	tmp := dst.Scratch
-	dst.Scratch = math.Min(dst.Scratch, data)
-	newInfo = tmp != dst.Scratch
+	tmp := dst.Property.Scratch
+	dst.Property.Scratch = math.Min(dst.Property.Scratch, data)
+	newInfo = tmp != dst.Property.Scratch
 	dst.Mutex.Unlock()
 	return newInfo
 }
@@ -32,14 +33,14 @@ func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, si
 func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) float64 {
 	// We can leave Scratch alone, since we are monotonicly decreasing.
 	target.Mutex.Lock()
-	tmp := target.Scratch
+	tmp := target.Property.Scratch
 	target.Mutex.Unlock()
 	return tmp
 }
 
 func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 	g.Vertices[vidx].Property.Value = g.EmptyVal
-	g.Vertices[vidx].Scratch = g.EmptyVal
+	g.Vertices[vidx].Property.Scratch = g.EmptyVal
 }
 
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).

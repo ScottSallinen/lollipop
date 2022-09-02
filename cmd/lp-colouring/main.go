@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ScottSallinen/lollipop/enforce"
 	"log"
 	"math"
 	"net/http"
+
+	"github.com/ScottSallinen/lollipop/enforce"
 
 	_ "net/http/pprof"
 	"strconv"
@@ -87,6 +88,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[V
 
 	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.SourceInit = false
+	g.InitVal = 0
 	g.EmptyVal = math.MaxFloat64
 
 	frame.Launch(g, gName, async, dynamic, false, true)

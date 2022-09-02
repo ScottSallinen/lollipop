@@ -50,7 +50,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 		}
 
 		if g.Vertices[vidx].Id == g.SourceVertex {
-			enforce.ENFORCE(ourValue == g.SourceInitVal, ourValue)
+			enforce.ENFORCE(ourValue == g.InitVal, ourValue)
 		}
 		if ourValue == g.EmptyVal { // we were never visted
 
@@ -106,7 +106,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 
 	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.SourceInit = true
-	g.SourceInitVal = 1.0
+	g.InitVal = 1.0
 	g.EmptyVal = math.MaxFloat64
 	g.SourceVertex = rawSrc
 

@@ -37,8 +37,8 @@ type Graph[VertexProp, EdgeProp any] struct {
 	TerminateData     []int64
 	Watch             mathutils.Watch
 	EmptyVal          float64 // Value used to represent "empty" or "no work to do"
-	SourceInitVal     float64 // Value to begin at source vertex
-	SourceInit        bool    // A specific source vertex starts the algorithm.
+	InitVal           float64 // Value to initialize, given either to single source (if SourceInit) or all vertices.
+	SourceInit        bool    // Flag to adjust such that a single specific source vertex starts the algorithm, and will recieve InitVal.
 	SourceVertex      uint32  // Raw ID of source vertex, if applicable.
 }
 
@@ -99,13 +99,12 @@ func (e *InEdge) Reset() {
 
 // Vertex Main type defining a vertex in a graph. Contains necessary per-vertex information for structure and identification.
 type Vertex[VertexProp, EdgeProp any] struct {
+	Property VertexProp       // Generic property type, can be variable per algorithm.
 	Id       uint32           // Raw (external) ID of a vertex, reflecting the external original identifier of a vertex, NOT the internal [0, N] index.
-	Scratch  float64          // Common scratchpad / accumulator, also used to track activity.
 	OutEdges []Edge[EdgeProp] // Main outgoing edgelist.
 	InEdges  []InEdge         // Incoming edges (currently unused).
 	Mutex    sync.Mutex       // Mutex for thread synchroniziation, if needed.
-	Property VertexProp       // Generic property type, can be variable per algorithm.
-	IsActive int32      // Indicates if the vertex awaits a visit in ConvergeSync
+	IsActive int32            // Indicates if the vertex awaits a visit in ConvergeSync
 }
 
 func (v *Vertex[VertexProp, EdgeProp]) Reset() {

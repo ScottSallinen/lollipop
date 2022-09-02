@@ -156,7 +156,7 @@ func (originalFrame *Framework[VertexProp, EdgeProp]) CompareToOracle(g *graph.G
 	altG.Undirected = g.Undirected
 	altG.EmptyVal = g.EmptyVal
 	altG.SourceInit = g.SourceInit
-	altG.SourceInitVal = g.SourceInitVal
+	altG.InitVal = g.InitVal
 	altG.SourceVertex = g.SourceVertex
 
 	altG.VertexMap = g.VertexMap // ok to shallow copy, we do not edit.
@@ -167,7 +167,6 @@ func (originalFrame *Framework[VertexProp, EdgeProp]) CompareToOracle(g *graph.G
 		altG.Vertices[v].OutEdges = g.Vertices[v].OutEdges
 		numEdges += uint64(len(g.Vertices[v].OutEdges))
 		gVertexStash[v].Id = g.Vertices[v].Id
-		gVertexStash[v].Scratch = g.Vertices[v].Scratch
 		gVertexStash[v].Property = g.Vertices[v].Property
 	}
 
@@ -189,7 +188,6 @@ func (originalFrame *Framework[VertexProp, EdgeProp]) CompareToOracle(g *graph.G
 
 	for v := range g.Vertices {
 		// Resetting the effect of the "early finish"
-		g.Vertices[v].Scratch = gVertexStash[v].Scratch
 		g.Vertices[v].Property = gVertexStash[v].Property
 	}
 

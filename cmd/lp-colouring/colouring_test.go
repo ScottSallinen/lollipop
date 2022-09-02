@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"reflect"
 	"sync"
@@ -122,6 +123,9 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 	frame.AggregateRetrieve = AggregateRetrieve
 
 	g := &graph.Graph[VertexProperty, EdgeProperty]{}
+	g.SourceInit = false
+	g.InitVal = 0
+	g.EmptyVal = math.MaxFloat64
 
 	frame.Init(g, true, true)
 

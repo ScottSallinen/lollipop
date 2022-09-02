@@ -16,6 +16,7 @@ var EPSILON = float64(0.001)
 type VertexProperty struct {
 	Residual float64
 	Value    float64
+	Scratch  float64 // Intermediary accumulator
 }
 
 type EdgeProperty struct{}
@@ -32,7 +33,7 @@ func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, si
 		target.Mutex.Unlock()
 		return tmp == 0.0
 	*/
-	old := mathutils.AtomicAddFloat64(&dst.Scratch, data)
+	old := mathutils.AtomicAddFloat64(&dst.Property.Scratch, data)
 	return old == 0.0
 }
 
@@ -44,14 +45,14 @@ func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) float
 		target.Mutex.Unlock()
 		return tmp
 	*/
-	old := mathutils.AtomicSwapFloat64(&target.Scratch, 0.0)
+	old := mathutils.AtomicSwapFloat64(&target.Property.Scratch, 0.0)
 	return old
 }
 
 func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
-	g.Vertices[vidx].Property.Residual = INITMASS
+	g.Vertices[vidx].Property.Residual = 0.0
 	g.Vertices[vidx].Property.Value = 0.0
-	g.Vertices[vidx].Scratch = 0.0
+	g.Vertices[vidx].Property.Scratch = 0.0
 }
 
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
@@ -171,11 +172,11 @@ func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	for vidx := range g.Vertices {
 		// New: absorb any leftovers of residual
 		//*/
-		g.Vertices[vidx].Property.Value += (1.0 - DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Scratch)
+		g.Vertices[vidx].Property.Value += (1.0 - DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Property.Scratch)
 		// Ideally we distribute (the residual should be spread among nbrs).
 		// But we must cheat the total sum mass check, so we leave some here (Residual is no longer meaningful, just used for bookkeeping).
-		g.Vertices[vidx].Property.Residual = (DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Scratch)
-		g.Vertices[vidx].Scratch = 0.0
+		g.Vertices[vidx].Property.Residual = (DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Property.Scratch)
+		g.Vertices[vidx].Property.Scratch = 0.0
 		//*/
 
 		if len(g.Vertices[vidx].OutEdges) == 0 { // Sink vertex

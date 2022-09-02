@@ -42,7 +42,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	for vidx := range g.Vertices {
 		sum += g.Vertices[vidx].Property.Value
 		resid += g.Vertices[vidx].Property.Residual
-		sumsc += g.Vertices[vidx].Scratch
+		sumsc += g.Vertices[vidx].Property.Scratch
 	}
 	totalAbs := (sum) / float64(len(g.Vertices))
 	totalResid := (resid) / float64(len(g.Vertices))
@@ -122,6 +122,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 
 	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.EmptyVal = 0.0
+	g.InitVal = INITMASS
 
 	frame.Launch(g, gName, async, dynamic, oracleRun, undirected)
 

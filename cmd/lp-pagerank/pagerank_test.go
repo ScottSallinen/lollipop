@@ -18,7 +18,7 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], prefix strin
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%d:[%.3f,%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Residual, g.Vertices[vidx].Scratch)
+		top += fmt.Sprintf("%d:[%.3f,%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Residual, g.Vertices[vidx].Property.Scratch)
 		sum += g.Vertices[vidx].Property.Value
 	}
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
@@ -55,6 +55,8 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *grap
 	frame.AggregateRetrieve = AggregateRetrieve
 
 	g := &graph.Graph[VertexProperty, EdgeProperty]{}
+	g.EmptyVal = 0.0
+	g.InitVal = INITMASS
 
 	frame.Init(g, true, true)
 
@@ -119,14 +121,14 @@ func TestDynamicCreation(t *testing.T) {
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{graph.ADD, 1, 4, EdgeProperty{}},
-			{graph.ADD, 2, 0, EdgeProperty{}},
-			{graph.ADD, 2, 1, EdgeProperty{}},
-			{graph.ADD, 3, 0, EdgeProperty{}},
-			{graph.ADD, 4, 2, EdgeProperty{}},
-			{graph.ADD, 4, 3, EdgeProperty{}},
-			{graph.ADD, 4, 5, EdgeProperty{}},
-			{graph.ADD, 6, 2, EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{}},
 		}
 		framework.ShuffleSC(rawTestGraph)
 
@@ -184,14 +186,14 @@ func TestDynamicWithDelete(t *testing.T) {
 		graph.THREADS = rand.Intn(8-1) + 1
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{graph.ADD, 1, 4, EdgeProperty{}},
-			{graph.ADD, 2, 0, EdgeProperty{}},
-			{graph.ADD, 2, 1, EdgeProperty{}},
-			{graph.ADD, 3, 0, EdgeProperty{}},
-			{graph.ADD, 4, 2, EdgeProperty{}},
-			{graph.ADD, 4, 3, EdgeProperty{}},
-			{graph.ADD, 4, 5, EdgeProperty{}},
-			{graph.ADD, 6, 2, EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{}},
 		}
 
 		adjustedGraph := framework.InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)

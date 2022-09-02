@@ -108,6 +108,10 @@ func NewIndexedFloat64Slice(n []float64) *IndexedFloat64Slice {
 	return s
 }
 
+// BatchParallelFor will create threads to chunk the size into batches, and
+// execute the function given on each ordinal integer up to size.
+// The applicator func is provided the index in size, and the thread id
+// that is executing the applicator func (useful for accumulator purposes)
 func BatchParallelFor(size int, threads int, applicator func(int, int)) {
 	var wg sync.WaitGroup
 	wg.Add(threads)

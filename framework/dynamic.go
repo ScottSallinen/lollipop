@@ -48,9 +48,9 @@ func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Gra
 				frame.OnInitVertex(g, vidx)
 				// Next, visit the newly created vertex if needed.
 				if g.SourceInit && IdRaw == g.SourceVertex { // Only visit targetted vertex.
-					frame.OnVisitVertex(g, vidx, g.SourceInitVal)
-				} else { // We initial visit all vertices.
-					frame.OnVisitVertex(g, vidx, g.EmptyVal)
+					frame.OnVisitVertex(g, vidx, g.InitVal)
+				} else if !g.SourceInit { // We initial visit all vertices.
+					frame.OnVisitVertex(g, vidx, g.InitVal)
 				}
 			}
 		}

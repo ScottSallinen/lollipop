@@ -46,7 +46,9 @@ func findFirstUnused(coloursIndexed bitmap.Bitmap) (firstUnused uint32) {
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data float64) (newInfo bool) {
 	colour := uint32(data)
-	dst.Property.NbrColours.Store(sidx, colour)
+	if didx != sidx { // Self edges shouldn't refuse us our own colour
+		dst.Property.NbrColours.Store(sidx, colour)
+	}
 
 	if atomic.LoadInt64(&dst.Property.WaitCount) > 0 {
 		newWaitCount := atomic.AddInt64(&dst.Property.WaitCount, -1)
@@ -68,7 +70,6 @@ func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) float
 func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 	v := &g.Vertices[vidx]
 
-	v.Scratch = g.EmptyVal // Set this to empty to prevent sync.go from always visiting the vertex
 	v.Property.Colour = EmptyColour
 
 	// Initialize WaitCount
@@ -85,13 +86,16 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 	atomic.StoreInt64(&v.Property.WaitCount, waitCount)
 }
 
+// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
+// The view here is **post** addition (the edges are already appended to the edge list)
+// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+// For colouring, data here is unused.
 func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxStart int, data float64) {
 	source := &g.Vertices[sidx]
 	sourcePriority := hash(sidx)
 
-	nEdges := uint32(len(source.OutEdges))
-	for ei := uint32(didxStart); ei < nEdges; ei++ {
-		dstIndex := source.OutEdges[ei].Destination
+	for eidx := didxStart; eidx < len(source.OutEdges); eidx++ {
+		dstIndex := source.OutEdges[eidx].Destination
 		dstPriority := hash(dstIndex)
 		// If we have priority, tell the other vertex to check their colour
 		if comparePriority(sourcePriority, dstPriority, sidx, dstIndex) {

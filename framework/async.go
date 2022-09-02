@@ -6,10 +6,11 @@ import (
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-/// OnQueueVisitAsync: Async queue applying function; aggregates message values,
-/// and only injects a visit marker if none exist already.
+// OnQueueVisitAsync: Async queue applying function; aggregates message values,
+// and only injects a visit marker if none exist already.
 func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64) {
 	target := &g.Vertices[didx]
 
@@ -39,7 +40,7 @@ func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitAsync(g *graph.Graph[V
 	}
 }
 
-/// ConvergeAsync: Static focused variant of async convergence.
+// ConvergeAsync: Static focused variant of async convergence.
 func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[VertexProp, EdgeProp], feederWg *sync.WaitGroup) {
 	// Note: feederWg not used -- only in the function to match the template ConvergeFunc.
 	info("ConvergeAsync")
@@ -56,29 +57,27 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[Verte
 	g.TerminateData[VOTES-1] = int64(len(g.Vertices)) // overestimate so we don't accidentally terminate early
 	// Send initial visit message(s)
 	go func() {
-		if !g.SourceInit { // Target all vertices: send an initial (empty) visit message.
-			for vidx := range g.Vertices {
+		if !g.SourceInit { // Target all vertices: send the algorithm defined initial visit value as a message.
+			acc := make([]uint32, graph.THREADS)
+			mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vidx int, tidx int) {
 				trg := &g.Vertices[vidx]
-				//if !trg.Active {
-				//trg.Mutex.Lock()
-				//if !trg.Active {
-				if trg.Scratch == g.EmptyVal {
+				newinfo := frame.MessageAggregator(trg, uint32(vidx), uint32(vidx), g.InitVal)
+				if newinfo {
 					g.MessageQ[trg.ToThreadIdx()] <- graph.Message{Sidx: uint32(vidx), Didx: uint32(vidx), Val: g.EmptyVal}
-					g.MsgSend[VOTES-1] += 1
+					acc[tidx] += 1
 				}
-				//trg.Active = true
-				//}
-				//trg.Mutex.Unlock()
-				//}
+			})
+			for _, v := range acc {
+				g.MsgSend[VOTES-1] += v
 			}
-		} else { // Target specific vertex: send an initial visit message.
+		} else { // Target specific vertex: send the algorithm defined initial visit value as a message.
 			sidx := g.VertexMap[g.SourceVertex]
-			//trg := &g.Vertices[sidx]
-			//trg.Mutex.Lock()
-			g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message{Sidx: sidx, Didx: sidx, Val: g.SourceInitVal}
-			g.MsgSend[VOTES-1] += 1
-			//g.Vertices[sidx].Active = true
-			//trg.Mutex.Unlock()
+			trg := &g.Vertices[sidx]
+			newinfo := frame.MessageAggregator(trg, sidx, sidx, g.InitVal)
+			if newinfo {
+				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message{Sidx: sidx, Didx: sidx, Val: g.EmptyVal}
+				g.MsgSend[VOTES-1] += 1
+			}
 		}
 		g.TerminateVote[VOTES-1] = 1
 		g.TerminateData[VOTES-1] = int64(g.MsgSend[VOTES-1])
@@ -136,10 +135,10 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[Verte
 	frame.EnsureCompleteness(g)
 }
 
-/// CheckTermination: Checks for messages consumed == produced, and if so, votes to quit.
-/// If any thread generates new messages they will not vote to quit, update new messages sent,
-/// thus kick out others until cons = prod.
-/// Works because produced >= consumed at all times.
+// CheckTermination: Checks for messages consumed == produced, and if so, votes to quit.
+// If any thread generates new messages they will not vote to quit, update new messages sent,
+// thus kick out others until cons = prod.
+// Works because produced >= consumed at all times.
 func (frame *Framework[VertexProp, EdgeProp]) CheckTermination(g *graph.Graph[VertexProp, EdgeProp], tidx uint32) bool {
 	VOTES := graph.THREADS + 1
 
@@ -161,7 +160,7 @@ func (frame *Framework[VertexProp, EdgeProp]) CheckTermination(g *graph.Graph[Ve
 	return false
 }
 
-/// EnsureCompleteness: Debug func to ensure queues are empty an no messages are inflight.
+// EnsureCompleteness: Debug func to ensure queues are empty an no messages are inflight.
 func (frame *Framework[VertexProp, EdgeProp]) EnsureCompleteness(g *graph.Graph[VertexProp, EdgeProp]) {
 	inFlight := int64(0)
 	for v := 0; v < graph.THREADS+1; v++ {
@@ -182,7 +181,7 @@ func (frame *Framework[VertexProp, EdgeProp]) EnsureCompleteness(g *graph.Graph[
 	}
 }
 
-/// PrintTerminationStatus: Debug func to periodically print termination data and vote status.
+// PrintTerminationStatus: Debug func to periodically print termination data and vote status.
 func PrintTerminationStatus[VertexProp, EdgeProp any](g *graph.Graph[VertexProp, EdgeProp], exit *bool) {
 	time.Sleep(2 * time.Second)
 	for !*exit {

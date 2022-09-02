@@ -19,7 +19,7 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], prefix strin
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Scratch)
+		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Scratch)
 		sum += g.Vertices[vidx].Property.Value
 	}
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
@@ -74,7 +74,7 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSr
 
 	g := &graph.Graph[VertexProperty, EdgeProperty]{}
 	g.SourceInit = true
-	g.SourceInitVal = 1.0
+	g.InitVal = 1.0
 	g.EmptyVal = math.MaxFloat64
 	g.SourceVertex = rawSrc
 
