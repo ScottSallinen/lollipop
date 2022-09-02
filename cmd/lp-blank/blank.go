@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
@@ -11,10 +13,15 @@ type VertexProperty struct {
 
 type EdgeProperty struct{}
 
+// Defines how the VertexProperty is printed
+func (p *VertexProperty) String() string {
+	return fmt.Sprintf("%.4f", p.Value)
+}
+
 // When multiple messages are for a vertex, how should we aggregate the info?
 // At a basic level, we typically wish to lock the target, perform a function
 // on the vertex's scratch data, and then unlock.
-func MessageAggregator(target *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
+func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data float64) (newInfo bool) {
 	return false
 }
 

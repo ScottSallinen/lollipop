@@ -264,7 +264,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.
 						target := &g.Vertices[msg.Didx]
 						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
 						if msg.Val != g.EmptyVal {
-							frame.MessageAggregator(target, msg.Val)
+							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)
 

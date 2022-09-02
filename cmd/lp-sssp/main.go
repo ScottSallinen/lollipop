@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -136,16 +135,6 @@ func main() {
 	graph.THREADS = *tptr
 	graph.TARGETRATE = *rptr
 
-	gNameMainT := strings.Split(gName, "/")
-	gNameMain := gNameMainT[len(gNameMainT)-1]
-	gNameMainTD := strings.Split(gNameMain, ".")
-	if len(gNameMainTD) > 1 {
-		gNameMain = gNameMainTD[len(gNameMainTD)-2]
-	} else {
-		gNameMain = gNameMainTD[0]
-	}
-	gNameMain = "results/" + gNameMain
-
 	//runtime.SetMutexProfileFraction(1)
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
@@ -156,20 +145,7 @@ func main() {
 	g.ComputeGraphStats(false, false)
 
 	if *pptr {
-		resName := "static"
-		if *dptr {
-			resName = "dynamic"
-		}
-		WriteVertexProps(g, gNameMain+"-props-"+resName+".txt")
-	}
-}
-
-func WriteVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], fname string) {
-	f, err := os.Create(fname)
-	enforce.ENFORCE(err)
-	defer f.Close()
-	for vidx := range g.Vertices {
-		_, err := f.WriteString(fmt.Sprintf("%d %.4f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value))
-		enforce.ENFORCE(err)
+		graphName := framework.ExtractGraphName(*gptr)
+		g.WriteVertexProps(graphName, *dptr)
 	}
 }

@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"sort"
 	"sync"
 
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
@@ -103,6 +105,7 @@ type Vertex[VertexProp, EdgeProp any] struct {
 	InEdges  []InEdge         // Incoming edges (currently unused).
 	Mutex    sync.Mutex       // Mutex for thread synchroniziation, if needed.
 	Property VertexProp       // Generic property type, can be variable per algorithm.
+	IsActive int32      // Indicates if the vertex awaits a visit in ConvergeSync
 }
 
 func (v *Vertex[VertexProp, EdgeProp]) Reset() {
@@ -219,6 +222,14 @@ func (g *Graph[VertexProp, EdgeProp]) PrintStructure() {
 	}
 }
 
+func (g *Graph[VertexProp, EdgeProp]) PrintVertexProperty(prefix string) {
+	message := prefix
+	for vi := range g.Vertices {
+		message += fmt.Sprintf("%d:%v, ", g.Vertices[vi].Id, &g.Vertices[vi].Property)
+	}
+	info(message)
+}
+
 func (g *Graph[VertexProp, EdgeProp]) PrintVertexInEdgeSum(prefix string) {
 	top := prefix
 	sum := 0.0
@@ -231,4 +242,23 @@ func (g *Graph[VertexProp, EdgeProp]) PrintVertexInEdgeSum(prefix string) {
 		top += fmt.Sprintf("%.3f", localsum) + " "
 	}
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
+}
+
+func (g *Graph[VertexProp, EdgeProp]) WriteVertexProps(graphName string, dynamic bool) {
+	var resName string
+	if dynamic {
+		resName = "dynamic"
+	} else {
+		resName = "static"
+	}
+	filename := "results/" + graphName + "-props-" + resName + ".txt"
+
+	f, err := os.Create(filename)
+	enforce.ENFORCE(err)
+	defer f.Close()
+
+	for vidx := range g.Vertices {
+		_, err := f.WriteString(fmt.Sprintf("%d - %v\n", g.Vertices[vidx].Id, &g.Vertices[vidx].Property))
+		enforce.ENFORCE(err)
+	}
 }

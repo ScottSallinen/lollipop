@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/ScottSallinen/lollipop/enforce"
@@ -15,12 +16,16 @@ type EdgeProperty struct {
 	Weight float64
 }
 
-func MessageAggregator(target *graph.Vertex[VertexProperty, EdgeProperty], data float64) (newInfo bool) {
-	target.Mutex.Lock()
-	tmp := target.Scratch
-	target.Scratch = math.Min(target.Scratch, data)
-	newInfo = tmp != target.Scratch
-	target.Mutex.Unlock()
+func (p *VertexProperty) String() string {
+	return fmt.Sprintf("%.4f", p.Value)
+}
+
+func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data float64) (newInfo bool) {
+	dst.Mutex.Lock()
+	tmp := dst.Scratch
+	dst.Scratch = math.Min(dst.Scratch, data)
+	newInfo = tmp != dst.Scratch
+	dst.Mutex.Unlock()
 	return newInfo
 }
 
