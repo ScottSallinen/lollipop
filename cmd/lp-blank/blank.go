@@ -19,10 +19,6 @@ type EdgeProperty struct{}
 
 type MessageValue float64
 
-func IsMsgEmpty(m MessageValue) bool {
-	return m == EMPTYVAL
-}
-
 // Defines how the VertexProperty is printed
 func (p *VertexProperty) String() string {
 	return fmt.Sprintf("%.4f", p.Value)

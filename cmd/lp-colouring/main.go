@@ -86,7 +86,6 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[V
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.EdgeParser = EdgeParser
-	frame.IsMsgEmpty = IsMsgEmpty
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = false

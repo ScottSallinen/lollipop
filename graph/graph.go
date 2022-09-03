@@ -49,10 +49,12 @@ const (
 	VISIT VisitType = iota
 	ADD
 	DEL
+	VISITEMPTYMSG
 )
 
 type Message[MsgType any] struct {
 	Message MsgType
+	Type    VisitType
 	Sidx    uint32
 	Didx    uint32
 }
