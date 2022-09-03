@@ -41,7 +41,6 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.EdgeParser = EdgeParser
-	frame.IsMsgEmpty = IsMsgEmpty
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 

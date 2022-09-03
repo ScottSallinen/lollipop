@@ -50,6 +50,7 @@ const (
 	ADDREV
 	DEL
 	DELREV
+	VISITEMPTYMSG
 )
 
 type Message[MsgType any] struct {

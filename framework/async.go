@@ -22,13 +22,25 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *grap
 	// For example, return true only on the transition from zero to non-zero, and not on further increments to a value.
 	if doSendMessage {
 		select {
-		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: g.EmptyVal}:
+		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: didx, Val: g.EmptyVal}:
 		default:
 			enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
 		}
 		// must be called by the source vertex's thread
 		g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
 	}
+}
+
+// Example function that would send a real message, to be accumulated on the reciever side (this is how a distributed set up would need to operate)
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsyncMsg(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType) {
+	target := &g.Vertices[didx]
+	select {
+	case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: VisitData}:
+	default:
+		enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
+	}
+	// must be called by the source vertex's thread
+	g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
 }
 
 // ConvergeAsync: Static focused variant of async convergence.
@@ -54,7 +66,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 				trg := &g.Vertices[vidx]
 				newinfo := frame.MessageAggregator(trg, uint32(vidx), uint32(vidx), g.InitVal)
 				if newinfo {
-					g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Sidx: uint32(vidx), Didx: uint32(vidx), Val: g.EmptyVal}
+					g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: uint32(vidx), Didx: uint32(vidx), Val: g.EmptyVal}
 					acc[tidx] += 1
 				}
 			})
@@ -66,7 +78,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 			trg := &g.Vertices[sidx]
 			newinfo := frame.MessageAggregator(trg, sidx, sidx, g.InitVal)
 			if newinfo {
-				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Sidx: sidx, Didx: sidx, Val: g.EmptyVal}
+				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: sidx, Val: g.EmptyVal}
 				g.MsgSend[VOTES-1] += 1
 			}
 		}
@@ -101,8 +113,11 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 					for i := 0; i < msgCounter; i++ {
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
-						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
-						if !frame.IsMsgEmpty(msg.Val) {
+						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
+						// so no need to do so on the reciever side.
+						// This exists here in case the message is sent as a normal visit with a real message,
+						// so here we would be able to accumulate on the reciever side.
+						if msg.Type != graph.VISITEMPTYMSG {
 							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)

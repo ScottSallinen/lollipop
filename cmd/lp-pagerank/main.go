@@ -119,7 +119,6 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.OracleComparison = OracleComparison
 	frame.EdgeParser = EdgeParser
-	frame.IsMsgEmpty = IsMsgEmpty
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.EmptyVal = EMPTYVAL

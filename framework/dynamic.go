@@ -262,22 +262,16 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 					for i := 0; i < algCount; i++ {
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
-						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
-						if !frame.IsMsgEmpty(msg.Val) {
+						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
+						// so no need to do so on the reciever side.
+						// This exists here in case the message is sent as a normal visit with a real message,
+						// so here we would be able to accumulate on the reciever side.
+						if msg.Type != graph.VISITEMPTYMSG {
 							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)
 
-						//switch msg.Type {
-						//case graph.ADD:
-						//	enforce.ENFORCE(false)
-						//case graph.DEL:
-						//	enforce.ENFORCE(false)
-						//case graph.VISIT:
 						frame.OnVisitVertex(g, msg.Didx, val)
-						//default:
-						//	enforce.ENFORCE(false)
-						//}
 					}
 					g.Mutex.RUnlock()
 					g.MsgRecv[tidx] += uint32(algCount)

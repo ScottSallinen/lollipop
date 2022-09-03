@@ -120,7 +120,6 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
-	frame.IsMsgEmpty = IsMsgEmpty
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = false

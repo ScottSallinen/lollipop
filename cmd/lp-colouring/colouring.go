@@ -31,10 +31,6 @@ type EdgeProperty struct{}
 
 type MessageValue uint32
 
-func IsMsgEmpty(m MessageValue) bool {
-	return m == EMPTYVAL
-}
-
 func hash(id uint32) (hash uint32) {
 	// TODO: dummy hash function
 	return id

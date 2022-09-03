@@ -25,10 +25,6 @@ type EdgeProperty struct {
 
 type MessageValue float64
 
-func IsMsgEmpty(m MessageValue) bool {
-	return m == EMPTYVAL
-}
-
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
 	dst.Mutex.Lock()
 	tmp := dst.Property.Scratch

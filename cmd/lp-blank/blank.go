@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
 )
@@ -15,10 +14,6 @@ type VertexProperty struct {
 type EdgeProperty struct{}
 
 type MessageValue float64
-
-func IsMsgEmpty(m MessageValue) bool {
-	return m == math.MaxFloat64
-}
 
 // Defines how the VertexProperty is printed
 func (p *VertexProperty) String() string {
