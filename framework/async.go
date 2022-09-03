@@ -66,7 +66,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 				trg := &g.Vertices[vidx]
 				newinfo := frame.MessageAggregator(trg, uint32(vidx), uint32(vidx), g.InitVal)
 				if newinfo {
-					g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Sidx: uint32(vidx), Didx: uint32(vidx), Message: g.EmptyVal}
+					g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: uint32(vidx), Didx: uint32(vidx), Message: g.EmptyVal}
 					acc[tidx] += 1
 				}
 			})
@@ -78,7 +78,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 			trg := &g.Vertices[sidx]
 			newinfo := frame.MessageAggregator(trg, sidx, sidx, g.InitVal)
 			if newinfo {
-				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Sidx: sidx, Didx: sidx, Message: g.EmptyVal}
+				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: sidx, Message: g.EmptyVal}
 				g.MsgSend[VOTES-1] += 1
 			}
 		}
