@@ -9,7 +9,7 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
 	hasChangedIdMapping := false
 	newVid := make(map[uint32]bool, len(changes)*2)
 	miniGraph := make(map[uint32][]graph.StructureChange[EdgeProp], len(changes))
@@ -143,7 +143,7 @@ func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Gra
 }
 
 // ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
-func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp, EdgeProp], feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp, EdgeProp, MsgType], feederWg *sync.WaitGroup) {
 	info("ConvergeAsyncDynWithRate")
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1
@@ -184,7 +184,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.
 		go func(tidx uint32, wg *sync.WaitGroup) {
 			const MsgBundleSize = 256
 			const GscBundleSize = 4096 * 16
-			msgBuffer := make([]graph.Message, MsgBundleSize)
+			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
 			gscBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
 			strucClosed := false // true indicates the StructureChanges channel is closed
 			infoTimer := time.Now()
@@ -262,22 +262,16 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.
 					for i := 0; i < algCount; i++ {
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
-						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
-						if msg.Val != g.EmptyVal {
+						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
+						// so no need to do so on the reciever side.
+						// This exists here in case the message is sent as a normal visit with a real message,
+						// so here we would be able to accumulate on the reciever side.
+						if msg.Type != graph.VISITEMPTYMSG {
 							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)
 
-						//switch msg.Type {
-						//case graph.ADD:
-						//	enforce.ENFORCE(false)
-						//case graph.DEL:
-						//	enforce.ENFORCE(false)
-						//case graph.VISIT:
 						frame.OnVisitVertex(g, msg.Didx, val)
-						//default:
-						//	enforce.ENFORCE(false)
-						//}
 					}
 					g.Mutex.RUnlock()
 					g.MsgRecv[tidx] += uint32(algCount)

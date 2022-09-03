@@ -35,7 +35,7 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
-func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	sum := 0.0
 	sumsc := 0.0
 	resid := 0.0
@@ -59,7 +59,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	return nil
 }
 
-func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty], oracle *graph.Graph[VertexProperty, EdgeProperty], resultCache *[]float64) {
+func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], oracle *graph.Graph[VertexProperty, EdgeProperty, MessageValue], resultCache *[]float64) {
 	ia := make([]float64, len(g.Vertices))
 	ib := make([]float64, len(g.Vertices))
 	numEdges := uint64(0)
@@ -107,8 +107,8 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty], oracle *grap
 	info("top", topN, " RBO6 ", fmt.Sprintf("%.4f", mRBO6*100.0), " top", topK, " RBO9 ", fmt.Sprintf("%.4f", mRBO9*100.0))
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, undirected bool) *graph.Graph[VertexProperty, EdgeProperty] {
-	frame := framework.Framework[VertexProperty, EdgeProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -120,8 +120,8 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.OracleComparison = OracleComparison
 	frame.EdgeParser = EdgeParser
 
-	g := &graph.Graph[VertexProperty, EdgeProperty]{}
-	g.EmptyVal = 0.0
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
+	g.EmptyVal = EMPTYVAL
 	g.InitVal = INITMASS
 
 	frame.Launch(g, gName, async, dynamic, oracleRun, undirected)

@@ -26,12 +26,12 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 // For example, for breadth first search, you wouldn't expect a neighbour to be more than
 // one hop away; for graph colouring you wouldn't expect two neighbours to have the same colour,
 // etc. This can codify the desire to ensure correct behaviour.
-func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph[VertexProperty, EdgeProperty] {
-	frame := framework.Framework[VertexProperty, EdgeProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -42,13 +42,13 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.EdgeParser = EdgeParser
 
-	g := &graph.Graph[VertexProperty, EdgeProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 
 	// Some potential extra defines here, for if the algorithm has a "point" initialization
 	// or is instead initialized by default behaviour (where every vertex is visited initially)
 	// g.SourceInit = true
 	// g.SourceInitVal = 1.0
-	// g.EmptyVal = math.MaxFloat64
+	// g.EmptyVal = EMPTYVAL
 	// g.SourceVertex = rawSrc
 
 	frame.Launch(g, gName, async, dynamic, oracle, undirected)

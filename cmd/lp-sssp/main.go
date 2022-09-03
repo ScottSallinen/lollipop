@@ -40,19 +40,19 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
-func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	maxValue := 0.0
 	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
 	for vidx := range g.Vertices {
 		ourValue := g.Vertices[vidx].Property.Value
-		if ourValue < g.EmptyVal {
+		if ourValue < EMPTYVAL {
 			maxValue = math.Max(maxValue, ourValue)
 		}
 
 		if g.Vertices[vidx].Id == g.SourceVertex {
-			enforce.ENFORCE(ourValue == g.InitVal, ourValue)
+			enforce.ENFORCE(ourValue == float64(g.InitVal), ourValue)
 		}
-		if ourValue == g.EmptyVal { // we were never visted
+		if ourValue == EMPTYVAL { // we were never visted
 
 		} else {
 			for eidx := range g.Vertices[vidx].OutEdges {
@@ -65,7 +65,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	return nil
 }
 
-func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty], oracle *graph.Graph[VertexProperty, EdgeProperty], resultCache *[]float64) {
+func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], oracle *graph.Graph[VertexProperty, EdgeProperty, MessageValue], resultCache *[]float64) {
 	ia := make([]float64, len(g.Vertices))
 	ib := make([]float64, len(g.Vertices))
 	numEdges := uint64(0)
@@ -91,8 +91,8 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty], oracle *grap
 	graph.ResultCompare(ia, ib)
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32, undirected bool) *graph.Graph[VertexProperty, EdgeProperty] {
-	frame := framework.Framework[VertexProperty, EdgeProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32, undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -104,10 +104,10 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.OracleComparison = OracleComparison
 	frame.EdgeParser = EdgeParser
 
-	g := &graph.Graph[VertexProperty, EdgeProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = true
 	g.InitVal = 1.0
-	g.EmptyVal = math.MaxFloat64
+	g.EmptyVal = EMPTYVAL
 	g.SourceVertex = rawSrc
 
 	frame.Launch(g, gName, async, dynamic, oracleRun, undirected)

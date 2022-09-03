@@ -8,17 +8,15 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitSync(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitSync(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType) {
 	target := &g.Vertices[didx]
-	//target.Mutex.Lock()
 	newInfo := frame.MessageAggregator(target, didx, sidx, VisitData)
-	//target.Mutex.Unlock()
 	if newInfo {
 		atomic.StoreInt32(&target.IsActive, 1)
 	}
 }
 
-func (frame *Framework[VertexProp, EdgeProp]) ConvergeSync(g *graph.Graph[VertexProp, EdgeProp], wg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeSync(g *graph.Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup) {
 	info("ConvergeSync")
 	if g.SourceInit {
 		sidx := g.VertexMap[g.SourceVertex]

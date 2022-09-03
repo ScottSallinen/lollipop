@@ -14,7 +14,7 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], prefix string) {
+func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
@@ -43,8 +43,8 @@ func TestSyncStatic(t *testing.T) {
 	}
 }
 
-func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty] {
-	frame := framework.Framework[VertexProperty, EdgeProperty]{}
+func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -54,8 +54,8 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *grap
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph[VertexProperty, EdgeProperty]{}
-	g.EmptyVal = 0.0
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
+	g.EmptyVal = EMPTYVAL
 	g.InitVal = INITMASS
 
 	frame.Init(g, true, true)
@@ -86,7 +86,7 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *grap
 	return g
 }
 
-func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, EdgeProperty], g2 *graph.Graph[VertexProperty, EdgeProperty]) {
+func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, EdgeProperty, MessageValue], g2 *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
 	if len(g1.Vertices) != len(g2.Vertices) {
 		t.Error("vertex count mismatch", len(g1.Vertices), len(g2.Vertices))
 	}

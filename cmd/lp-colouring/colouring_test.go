@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 	"reflect"
 	"sync"
@@ -111,8 +110,8 @@ func assertEqual(t *testing.T, expected any, actual any, prefix string) {
 	}
 }
 
-func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty] {
-	frame := framework.Framework[VertexProperty, EdgeProperty]{}
+func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -122,10 +121,10 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph[VertexProperty, EdgeProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = false
 	g.InitVal = 0
-	g.EmptyVal = math.MaxFloat64
+	g.EmptyVal = EMPTYVAL
 
 	frame.Init(g, true, true)
 

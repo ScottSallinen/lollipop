@@ -10,15 +10,13 @@ import (
 	"github.com/kelindar/bitmap"
 )
 
-const EmptyColour = math.MaxUint32
+const EMPTYVAL = math.MaxUint32
 
 type VertexProperty struct {
 	NbrColours sync.Map
 	WaitCount  int64
 	Colour     uint32
 }
-
-type EdgeProperty struct{}
 
 func (p *VertexProperty) String() string {
 	s := fmt.Sprintf("{%d,%d,[", p.Colour, p.WaitCount)
@@ -28,6 +26,10 @@ func (p *VertexProperty) String() string {
 	})
 	return s + "]}"
 }
+
+type EdgeProperty struct{}
+
+type MessageValue uint32
 
 func hash(id uint32) (hash uint32) {
 	// TODO: dummy hash function
@@ -44,7 +46,7 @@ func findFirstUnused(coloursIndexed bitmap.Bitmap) (firstUnused uint32) {
 	return firstUnused
 }
 
-func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data float64) (newInfo bool) {
+func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
 	colour := uint32(data)
 	if didx != sidx { // Self edges shouldn't refuse us our own colour
 		dst.Property.NbrColours.Store(sidx, colour)
@@ -63,14 +65,14 @@ func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, si
 	return true
 }
 
-func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) float64 {
+func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
 	return 0
 }
 
-func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
+func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
 	v := &g.Vertices[vidx]
 
-	v.Property.Colour = EmptyColour
+	v.Property.Colour = EMPTYVAL
 
 	// Initialize WaitCount
 	myPriority := hash(vidx)
@@ -90,7 +92,7 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32) {
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
 // For colouring, data here is unused.
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxStart int, data float64) {
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
 	source := &g.Vertices[sidx]
 	sourcePriority := hash(sidx)
 
@@ -99,12 +101,12 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didxSt
 		dstPriority := hash(dstIndex)
 		// If we have priority, tell the other vertex to check their colour
 		if comparePriority(sourcePriority, dstPriority, sidx, dstIndex) {
-			g.OnQueueVisit(g, sidx, dstIndex, float64(source.Property.Colour))
+			g.OnQueueVisit(g, sidx, dstIndex, MessageValue(source.Property.Colour))
 		}
 	}
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didx uint32, data float64) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
 	source := &g.Vertices[sidx]
 
 	destinationColour, ok := source.Property.NbrColours.Load(didx)
@@ -132,11 +134,11 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty], sidx uint32, didx u
 
 	source.Property.Colour = newColour
 	for i := range source.OutEdges {
-		g.OnQueueVisit(g, sidx, source.OutEdges[i].Destination, float64(newColour))
+		g.OnQueueVisit(g, sidx, source.OutEdges[i].Destination, MessageValue(newColour))
 	}
 }
 
-func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32, data float64) int {
+func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
 	v := &g.Vertices[vidx]
 
 	if atomic.LoadInt64(&v.Property.WaitCount) > 0 {
@@ -151,7 +153,7 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32, da
 	})
 
 	var newColour uint32
-	if v.Property.Colour == EmptyColour {
+	if v.Property.Colour == EMPTYVAL {
 		newColour = findFirstUnused(coloursIndexed)
 	} else {
 		// Dynamic graph
@@ -163,11 +165,11 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty], vidx uint32, da
 	}
 	v.Property.Colour = newColour
 	for i := range v.OutEdges {
-		g.OnQueueVisit(g, vidx, v.OutEdges[i].Destination, float64(newColour))
+		g.OnQueueVisit(g, vidx, v.OutEdges[i].Destination, MessageValue(newColour))
 	}
 	return len(v.OutEdges)
 }
 
-func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty]) error {
+func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	return nil
 }

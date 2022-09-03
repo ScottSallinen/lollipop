@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"sync"
 	"testing"
@@ -15,7 +14,7 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], prefix string) {
+func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
@@ -27,8 +26,8 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty], prefix strin
 
 // Expectation when 1 is src.
 // TODO: Test other sources!
-func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty], t *testing.T) {
-	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, g.EmptyVal}
+func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
+	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, EMPTYVAL}
 	for i := range expectations {
 		if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
 			t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value, " expected ", expectations[i])
@@ -61,8 +60,8 @@ func TestAsyncDynamic(t *testing.T) {
 	}
 }
 
-func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty] {
-	frame := framework.Framework[VertexProperty, EdgeProperty]{}
+func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -72,10 +71,10 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSr
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph[VertexProperty, EdgeProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = true
 	g.InitVal = 1.0
-	g.EmptyVal = math.MaxFloat64
+	g.EmptyVal = EMPTYVAL
 	g.SourceVertex = rawSrc
 
 	frame.Init(g, true, true)
@@ -106,7 +105,7 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSr
 	return g
 }
 
-func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, EdgeProperty], g2 *graph.Graph[VertexProperty, EdgeProperty]) {
+func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, EdgeProperty, MessageValue], g2 *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
 	if len(g1.Vertices) != len(g2.Vertices) {
 		t.Error("vertex count mismatch", len(g1.Vertices), len(g2.Vertices))
 	}
