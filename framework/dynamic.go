@@ -9,7 +9,7 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
 	hasChangedIdMapping := false
 	newVid := make(map[uint32]bool, len(changes)*2)
 	miniGraph := make(map[uint32][]graph.StructureChange[EdgeProp], len(changes))
@@ -143,7 +143,7 @@ func (frame *Framework[VertexProp, EdgeProp]) EnactStructureChanges(g *graph.Gra
 }
 
 // ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
-func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp, EdgeProp], feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp, EdgeProp, MsgType], feederWg *sync.WaitGroup) {
 	info("ConvergeAsyncDynWithRate")
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1
@@ -184,7 +184,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.
 		go func(tidx uint32, wg *sync.WaitGroup) {
 			const MsgBundleSize = 256
 			const GscBundleSize = 4096 * 16
-			msgBuffer := make([]graph.Message, MsgBundleSize)
+			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
 			gscBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
 			strucClosed := false // true indicates the StructureChanges channel is closed
 			infoTimer := time.Now()
@@ -263,7 +263,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsyncDynWithRate(g *graph.
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
 						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
-						if msg.Val != g.EmptyVal {
+						if !frame.IsMsgEmpty(msg.Val) {
 							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)

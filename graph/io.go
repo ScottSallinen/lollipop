@@ -19,7 +19,7 @@ type RawEdge[EdgeProp any] struct {
 }
 
 // EdgeDequeuer reads edges from queuechan and update the graph structure correspondingly
-func (g *Graph[VertexProp, EdgeProp]) EdgeDequeuer(queuechan chan RawEdge[EdgeProp], deqWg *sync.WaitGroup) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) EdgeDequeuer(queuechan chan RawEdge[EdgeProp], deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
 		srcIdx := g.VertexMap[uint32(qElem.SrcRaw)]
 		dstIdx := g.VertexMap[uint32(qElem.DstRaw)]
@@ -30,7 +30,7 @@ func (g *Graph[VertexProp, EdgeProp]) EdgeDequeuer(queuechan chan RawEdge[EdgePr
 }
 
 // EdgeEnqueuer reads edges in the file and writes them to queuechans
-func (g *Graph[VertexProp, EdgeProp]) EdgeEnqueuer(queuechans []chan RawEdge[EdgeProp], graphName string, edgeParser EdgeParserFunc[EdgeProp], wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) EdgeEnqueuer(queuechans []chan RawEdge[EdgeProp], graphName string, edgeParser EdgeParserFunc[EdgeProp], wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
 	defer file.Close()
@@ -66,7 +66,7 @@ func (g *Graph[VertexProp, EdgeProp]) EdgeEnqueuer(queuechans []chan RawEdge[Edg
 	wg.Done()
 }
 
-func (g *Graph[VertexProp, EdgeProp]) LoadVertexMap(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) LoadVertexMap(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
 	vmap := graphName + ".vmap"
 	file, err := os.Open(vmap)
 	if err != nil {
@@ -93,13 +93,13 @@ func (g *Graph[VertexProp, EdgeProp]) LoadVertexMap(graphName string, edgeParser
 }
 
 // BuildMap reads all edges stored in the file and constructs the VertexMap for all vertices found
-func (g *Graph[VertexProp, EdgeProp]) BuildMap(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) BuildMap(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
 	work := make(chan RawEdge[EdgeProp], 256)
 	go func() {
 		file, err := os.Open(graphName)
 		enforce.ENFORCE(err)
 		defer file.Close()
-		
+
 		scanner := bufio.NewScanner(file)
 		lines := uint32(0)
 		for scanner.Scan() {
@@ -132,7 +132,7 @@ func (g *Graph[VertexProp, EdgeProp]) BuildMap(graphName string, edgeParser Edge
 
 // LoadGraphStatic loads the graph store in the file. The graph structure is updated to reflect the complete graph
 // before returning.
-func (g *Graph[VertexProp, EdgeProp]) LoadGraphStatic(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) LoadGraphStatic(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
 	deqCount := mathutils.MaxUint64(uint64(THREADS), 1)
 	enqCount := mathutils.MaxUint64(uint64(THREADS/2), 1)
 

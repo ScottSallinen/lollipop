@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 
 	"github.com/ScottSallinen/lollipop/enforce"
@@ -33,7 +32,7 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
 }
 
-func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty]) (maxColour uint32, nColours int) {
+func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) (maxColour uint32, nColours int) {
 	maxColour = uint32(0)
 	allColours := make(map[uint32]bool)
 	for vi := range g.Vertices {
@@ -47,13 +46,13 @@ func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty]) (ma
 	return maxColour, nColours
 }
 
-func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	// Check correctness
 	for vi := range g.Vertices {
 		v := &g.Vertices[vi]
 		colour := v.Property.Colour
 		degree := uint32(len(v.OutEdges))
-		if colour == EmptyColour {
+		if colour == EMPTYVAL {
 			return fmt.Errorf("vertex %d is not coloured", v.Id)
 		}
 		if colour > degree {
@@ -74,8 +73,8 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty]) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[VertexProperty, EdgeProperty] {
-	frame := framework.Framework[VertexProperty, EdgeProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -85,11 +84,12 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[V
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.EdgeParser = EdgeParser
+	frame.IsMsgEmpty = IsMsgEmpty
 
-	g := &graph.Graph[VertexProperty, EdgeProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = false
 	g.InitVal = 0
-	g.EmptyVal = math.MaxFloat64
+	g.EmptyVal = EMPTYVAL
 
 	frame.Launch(g, gName, async, dynamic, false, true)
 

@@ -21,14 +21,14 @@ var TARGETRATE = float64(0)
 var DEBUG = false
 
 // Graph t
-type Graph[VertexProp, EdgeProp any] struct {
+type Graph[VertexProp, EdgeProp, MsgType any] struct {
 	Mutex             sync.RWMutex
 	VertexMap         map[uint32]uint32 // Raw to internal
 	Vertices          []Vertex[VertexProp, EdgeProp]
-	OnQueueVisit      OnQueueVisitFunc[VertexProp, EdgeProp]
-	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc[VertexProp, EdgeProp]
-	AlgConverge       ConvergeFunc[VertexProp, EdgeProp]
-	MessageQ          []chan Message
+	OnQueueVisit      OnQueueVisitFunc[VertexProp, EdgeProp, MsgType]
+	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc[VertexProp, EdgeProp, MsgType]
+	AlgConverge       ConvergeFunc[VertexProp, EdgeProp, MsgType]
+	MessageQ          []chan Message[MsgType]
 	ThreadStructureQ  []chan StructureChange[EdgeProp]
 	Undirected        bool     // Declares if the graph should be treated as undirected (e.g. for construction)
 	MsgSend           []uint32 // number of messages sent by each thread
@@ -36,8 +36,8 @@ type Graph[VertexProp, EdgeProp any] struct {
 	TerminateVote     []int
 	TerminateData     []int64
 	Watch             mathutils.Watch
-	EmptyVal          float64 // Value used to represent "empty" or "no work to do"
-	InitVal           float64 // Value to initialize, given either to single source (if SourceInit) or all vertices.
+	EmptyVal          MsgType // Value used to represent "empty" or "no work to do"
+	InitVal           MsgType // Value to initialize, given either to single source (if SourceInit) or all vertices.
 	SourceInit        bool    // Flag to adjust such that a single specific source vertex starts the algorithm, and will recieve InitVal.
 	SourceVertex      uint32  // Raw ID of source vertex, if applicable.
 }
@@ -52,11 +52,11 @@ const (
 	DELREV
 )
 
-type Message struct {
+type Message[MsgType any] struct {
+	Val  MsgType
 	Type VisitType
 	Sidx uint32
 	Didx uint32
-	Val  float64
 }
 
 type StructureChange[EdgeProp any] struct {
@@ -66,9 +66,9 @@ type StructureChange[EdgeProp any] struct {
 	EdgeProperty EdgeProp
 }
 
-type OnQueueVisitFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
-type OnQueueEdgeAddRevFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64)
-type ConvergeFunc[VertexProp, EdgeProp any] func(g *Graph[VertexProp, EdgeProp], wg *sync.WaitGroup)
+type OnQueueVisitFunc[VertexProp, EdgeProp, MsgType any] func(g *Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
+type OnQueueEdgeAddRevFunc[VertexProp, EdgeProp, MsgType any] func(g *Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
+type ConvergeFunc[VertexProp, EdgeProp, MsgType any] func(g *Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup)
 type EdgeParserFunc[EdgeProp any] func(lineText string) RawEdge[EdgeProp]
 
 // Edge: Basic edge type for a graph, with a user-defined property; can be empty struct{}
@@ -121,18 +121,18 @@ func (v *Vertex[VertexProp, EdgeProp]) ToThreadIdx() uint32 {
 	return v.Id % uint32(THREADS)
 }
 
-func (g *Graph[VertexProp, EdgeProp]) RawIdToThreadIdx(RawId uint32) uint32 {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) RawIdToThreadIdx(RawId uint32) uint32 {
 	return RawId % uint32(THREADS)
 }
 
-func (g *Graph[VertexProp, EdgeProp]) Reset() {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) Reset() {
 	for vidx := range g.Vertices {
 		g.Vertices[vidx].Reset()
 	}
 }
 
 // ComputeInEdges update all vertices' InEdges to match the edges stored in OutEdges lists
-func (g *Graph[VertexProp, EdgeProp]) ComputeInEdges() {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) ComputeInEdges() {
 	for vidx := range g.Vertices {
 		for eidx := range g.Vertices[vidx].OutEdges {
 			target := int(g.Vertices[vidx].OutEdges[eidx].Destination)
@@ -143,7 +143,7 @@ func (g *Graph[VertexProp, EdgeProp]) ComputeInEdges() {
 }
 
 // ComputeGraphStats prints some statistics of the graph
-func (g *Graph[VertexProp, EdgeProp]) ComputeGraphStats(inDeg bool, outDeg bool) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) ComputeGraphStats(inDeg bool, outDeg bool) {
 	maxOutDegree := uint64(0)
 	maxInDegree := uint64(0)
 	listInDegree := []int{}
@@ -209,7 +209,7 @@ func ResultCompare(a []float64, b []float64) float64 {
 	return largestDiff
 }
 
-func (g *Graph[VertexProp, EdgeProp]) PrintStructure() {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) PrintStructure() {
 	log.Println(g.VertexMap)
 	for vidx := range g.Vertices {
 		pr := fmt.Sprintf("%d", g.Vertices[vidx].Id)
@@ -221,7 +221,7 @@ func (g *Graph[VertexProp, EdgeProp]) PrintStructure() {
 	}
 }
 
-func (g *Graph[VertexProp, EdgeProp]) PrintVertexProperty(prefix string) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) PrintVertexProperty(prefix string) {
 	message := prefix
 	for vi := range g.Vertices {
 		message += fmt.Sprintf("%d:%v, ", g.Vertices[vi].Id, &g.Vertices[vi].Property)
@@ -229,7 +229,7 @@ func (g *Graph[VertexProp, EdgeProp]) PrintVertexProperty(prefix string) {
 	info(message)
 }
 
-func (g *Graph[VertexProp, EdgeProp]) PrintVertexInEdgeSum(prefix string) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) PrintVertexInEdgeSum(prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
@@ -243,7 +243,7 @@ func (g *Graph[VertexProp, EdgeProp]) PrintVertexInEdgeSum(prefix string) {
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
 }
 
-func (g *Graph[VertexProp, EdgeProp]) WriteVertexProps(graphName string, dynamic bool) {
+func (g *Graph[VertexProp, EdgeProp, MsgType]) WriteVertexProps(graphName string, dynamic bool) {
 	var resName string
 	if dynamic {
 		resName = "dynamic"

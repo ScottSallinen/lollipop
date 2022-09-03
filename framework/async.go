@@ -11,18 +11,9 @@ import (
 
 // OnQueueVisitAsync: Async queue applying function; aggregates message values,
 // and only injects a visit marker if none exist already.
-func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitAsync(g *graph.Graph[VertexProp, EdgeProp], sidx uint32, didx uint32, VisitData float64) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType) {
 	target := &g.Vertices[didx]
-
-	//target.Mutex.Lock()
 	doSendMessage := frame.MessageAggregator(target, didx, sidx, VisitData)
-
-	// Old direct way of doing things with locks here rather than in the algorithm.
-	//if !target.Active {
-	//	doSendMessage = true
-	//	target.Active = true
-	//}
-	//target.Mutex.Unlock()
 
 	// Having multiple visits for the same vertex in the queue at the same time is not ideal but possible. It is
 	// difficult to avoid this without some cost. We just rely on the algorithm's MessageAggregator function to report
@@ -31,7 +22,7 @@ func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitAsync(g *graph.Graph[V
 	// For example, return true only on the transition from zero to non-zero, and not on further increments to a value.
 	if doSendMessage {
 		select {
-		case g.MessageQ[target.ToThreadIdx()] <- graph.Message{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: g.EmptyVal}:
+		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: g.EmptyVal}:
 		default:
 			enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
 		}
@@ -41,7 +32,7 @@ func (frame *Framework[VertexProp, EdgeProp]) OnQueueVisitAsync(g *graph.Graph[V
 }
 
 // ConvergeAsync: Static focused variant of async convergence.
-func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[VertexProp, EdgeProp], feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Graph[VertexProp, EdgeProp, MsgType], feederWg *sync.WaitGroup) {
 	// Note: feederWg not used -- only in the function to match the template ConvergeFunc.
 	info("ConvergeAsync")
 	var wg sync.WaitGroup
@@ -63,7 +54,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[Verte
 				trg := &g.Vertices[vidx]
 				newinfo := frame.MessageAggregator(trg, uint32(vidx), uint32(vidx), g.InitVal)
 				if newinfo {
-					g.MessageQ[trg.ToThreadIdx()] <- graph.Message{Sidx: uint32(vidx), Didx: uint32(vidx), Val: g.EmptyVal}
+					g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Sidx: uint32(vidx), Didx: uint32(vidx), Val: g.EmptyVal}
 					acc[tidx] += 1
 				}
 			})
@@ -75,7 +66,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[Verte
 			trg := &g.Vertices[sidx]
 			newinfo := frame.MessageAggregator(trg, sidx, sidx, g.InitVal)
 			if newinfo {
-				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message{Sidx: sidx, Didx: sidx, Val: g.EmptyVal}
+				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Sidx: sidx, Didx: sidx, Val: g.EmptyVal}
 				g.MsgSend[VOTES-1] += 1
 			}
 		}
@@ -87,7 +78,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[Verte
 	const MsgBundleSize = 256
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
-			msgBuffer := make([]graph.Message, MsgBundleSize)
+			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
 			for {
 				//g.Mutex.RLock() // If we want to lock for oracle comparisons
 				msgCounter := 0
@@ -111,8 +102,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[Verte
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
 						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
-						// Non-empty value can only come from the initial visit message
-						if msg.Val != g.EmptyVal {
+						if !frame.IsMsgEmpty(msg.Val) {
 							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
 						}
 						val := frame.AggregateRetrieve(target)
@@ -139,7 +129,7 @@ func (frame *Framework[VertexProp, EdgeProp]) ConvergeAsync(g *graph.Graph[Verte
 // If any thread generates new messages they will not vote to quit, update new messages sent,
 // thus kick out others until cons = prod.
 // Works because produced >= consumed at all times.
-func (frame *Framework[VertexProp, EdgeProp]) CheckTermination(g *graph.Graph[VertexProp, EdgeProp], tidx uint32) bool {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) CheckTermination(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32) bool {
 	VOTES := graph.THREADS + 1
 
 	g.TerminateData[tidx] = int64(g.MsgSend[tidx]) - int64(g.MsgRecv[tidx])
@@ -161,7 +151,7 @@ func (frame *Framework[VertexProp, EdgeProp]) CheckTermination(g *graph.Graph[Ve
 }
 
 // EnsureCompleteness: Debug func to ensure queues are empty an no messages are inflight.
-func (frame *Framework[VertexProp, EdgeProp]) EnsureCompleteness(g *graph.Graph[VertexProp, EdgeProp]) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnsureCompleteness(g *graph.Graph[VertexProp, EdgeProp, MsgType]) {
 	inFlight := int64(0)
 	for v := 0; v < graph.THREADS+1; v++ {
 		inFlight += g.TerminateData[v]
@@ -182,7 +172,7 @@ func (frame *Framework[VertexProp, EdgeProp]) EnsureCompleteness(g *graph.Graph[
 }
 
 // PrintTerminationStatus: Debug func to periodically print termination data and vote status.
-func PrintTerminationStatus[VertexProp, EdgeProp any](g *graph.Graph[VertexProp, EdgeProp], exit *bool) {
+func PrintTerminationStatus[VertexProp, EdgeProp, MsgType any](g *graph.Graph[VertexProp, EdgeProp, MsgType], exit *bool) {
 	time.Sleep(2 * time.Second)
 	for !*exit {
 		chktermData := make([]int64, graph.THREADS+1)
