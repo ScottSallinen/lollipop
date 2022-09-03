@@ -54,7 +54,7 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) (RevData []MessageValue) {
 	if OnVisitVertex(g, sidx, data) > 0 {
 		// do nothing, we had messaged all edges
 	} else {
@@ -67,9 +67,23 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 			}
 		}
 	}
+	return nil // No need for rev data
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
+// If g.SendRevMsgs or g.Undirected were enabled, this will be called on the reverse of the edge change.
+// sidx is us, didx is them, HOWEVER the edge that was added was didx->sidx (unless undirected, in which case our matching edge was also deleted)
+// The VisitMsg is pulled from AggregateRetrieve before calling this function (allowing one to merge a visit call here)
+// The SourceMsgs are produced in OnEdgeAdd from didx (one per newly added edge).
+func OnEdgeAddRev(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, VisitMsg MessageValue, SourceMsgs []MessageValue) {
+	OnEdgeAdd(g, sidx, didxStart, VisitMsg)
+}
+
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) (RevData MessageValue) {
+	enforce.ENFORCE(false, "Incremental only algorithm")
+	return EMPTYVAL
+}
+
+func OnEdgeDelRev(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, VisitMsg MessageValue) {
 	enforce.ENFORCE(false, "Incremental only algorithm")
 }
 

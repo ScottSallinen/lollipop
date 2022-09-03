@@ -56,26 +56,12 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) DynamicEdgeEnqueuer(graphName str
 		}
 		rawEdge := edgeParser(lineText)
 
-		/*
-			before, after, ok := strings.Cut(lineText, " ")
-			if !ok {
-				before, after, ok = strings.Cut(lineText, "\t")
-				enforce.ENFORCE(ok)
-			}
-			src, _ := strconv.Atoi(before)
-			dst, _ := strconv.Atoi(after)
-			weight := 1.0
-		*/
-
 		// TODO: Option to remove self reference edges?
 		// if rawEdge.SrcRaw == rawEdge.DstRaw {
 		//   continue
 		// }
 
 		g.ThreadStructureQ[g.RawIdToThreadIdx(rawEdge.SrcRaw)] <- StructureChange[EdgeProp]{Type: ADD, SrcRaw: rawEdge.SrcRaw, DstRaw: rawEdge.DstRaw, EdgeProperty: rawEdge.EdgeProperty}
-		if g.Undirected {
-			g.ThreadStructureQ[g.RawIdToThreadIdx(rawEdge.DstRaw)] <- StructureChange[EdgeProp]{Type: ADD, SrcRaw: rawEdge.DstRaw, DstRaw: rawEdge.SrcRaw, EdgeProperty: rawEdge.EdgeProperty}
-		}
 	}
 	result <- mLines
 	wg.Done()

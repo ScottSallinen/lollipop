@@ -72,7 +72,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				change := miniGraph[vRaw][changeIdx]
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
-					src.OutEdges = append(src.OutEdges, graph.NewEdge(didx, &change.EdgeProperty))
+					src.OutEdges = append(src.OutEdges, graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: didx})
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
@@ -81,7 +81,22 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 			// From the gathered set of consecutive adds, apply them.
 			if len(src.OutEdges) > didxStart {
 				val := frame.AggregateRetrieve(src)
-				frame.OnEdgeAdd(g, sidx, didxStart, val)
+				msgs := frame.OnEdgeAdd(g, sidx, didxStart, val)
+				if g.Undirected || g.SendRevMsgs {
+					for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
+						edge := src.OutEdges[eidx]
+						didx := edge.Destination
+						var msg MsgType
+						if msgs != nil { // Just incase this is not needed/implemented
+							msg = msgs[eidx-didxStart]
+						}
+						// Target dest since we swap s/d for the reverse
+						// TODO: Some consideration needed for edgeproperties here... (should not be shared mem / pointers)
+						g.ReverseMsgQ[g.RawIdToThreadIdx(g.Vertices[didx].Id)] <- graph.RevMessage[MsgType, EdgeProp]{Message: msg, EdgeProperty: edge.Property, Type: graph.ADD, Didx: sidx, Sidx: didx}
+						// These are enqueued messages sent to be processed asynchronously, so we must use our MsgSend / Recv tracking.
+					}
+					g.MsgSend[tidx] += uint32(len(src.OutEdges) - didxStart)
+				}
 			}
 
 			// If we didn't finish, it means we hit a delete. Address it here.
@@ -89,15 +104,21 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				change := miniGraph[vRaw][changeIdx]
 				enforce.ENFORCE(change.Type == graph.DEL)
 				didx := g.VertexMap[change.DstRaw]
+				var prop EdgeProp
 				/// Delete edge.. naively find target and swap last element with the hole.
 				for k, v := range src.OutEdges {
 					if v.Destination == didx {
+						prop = src.OutEdges[k].Property
 						src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
 						break
 					}
 				}
 				src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-				frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
+				msg := frame.OnEdgeDel(g, sidx, didx, g.EmptyVal) // TODO: Merge visit?
+				if g.Undirected || g.SendRevMsgs {
+					g.ReverseMsgQ[g.RawIdToThreadIdx(change.DstRaw)] <- graph.RevMessage[MsgType, EdgeProp]{Message: msg, EdgeProperty: prop, Type: graph.DEL, Didx: sidx, Sidx: didx}
+					g.MsgSend[tidx]++
+				}
 				changeIdx++
 			}
 			// Addressed the delete, continue the loop (go back to checking for consecutive adds).
@@ -105,41 +126,91 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 		g.Mutex.RUnlock()
 	}
 	miniGraph = nil
+}
 
-	/* // Old basic version that does not aggregate messages.
+// Forward ensures the vertex exists (better optimized for shared memory).
+// Here we just need to add the revese edge if undirected, otherwise call RevAdd / RevDel
+// Note: SIDX AND DIDX HAVE ALREADY BEEN REVERSED. Source -> Dest is already reflecting the inverse edge.
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactReverseChanges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, changes []graph.RevMessage[MsgType, EdgeProp]) {
+	miniGraph := make(map[uint32][]graph.RevMessage[MsgType, EdgeProp], len(changes))
 	for _, change := range changes {
-		g.Mutex.RLock()
-		sidx := g.VertexMap[change.SrcRaw]
-		didx := g.VertexMap[change.DstRaw]
-		src := &g.Vertices[sidx]
+		// Gather changes to a given source vertex.
+		miniGraph[change.Sidx] = append(miniGraph[change.Sidx], change)
+	}
 
-		// Next, add the edge to the source vertex.
-		//src.Mutex.Lock()
-		if change.Type == graph.ADD {
-			didxm := make(map[uint32]int)
-			didxm[didx] = len(src.OutEdges)
-			/// Add edge.. simple
-			src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
-			//src.Mutex.Unlock()
-			val := frame.AggregateRetrieve(src) // TODO: Adjust this for delete as well
-			// Send the edge change message.
-			frame.OnEdgeAdd(g, sidx, didxm, val)
-		} else if change.Type == graph.DEL {
-			/// Delete edge.. naively find target and swap last element with the hole.
-			for k, v := range src.OutEdges {
-				if v.Target == didx {
-					src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
+	// Next, range over the newly added graph structure. Here we range over vertices.
+	for sidx := range miniGraph {
+		g.Mutex.RLock()
+		src := &g.Vertices[sidx]
+		// Here we loop over changes to a vertices edges.
+		changeIdx := 0
+		for changeIdx < len(miniGraph[sidx]) {
+			// First: gather any consecutive edge ADDs. This is because we wish to aggregate them.
+			didxStart := len(src.OutEdges)
+			var sourceMsgs []MsgType
+			for ; changeIdx < len(miniGraph[sidx]); changeIdx++ {
+				change := miniGraph[sidx][changeIdx]
+				if change.Type == graph.ADD {
+					if g.Undirected {
+						// TODO: Edge property considerations for undirected graph
+						src.OutEdges = append(src.OutEdges, graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: change.Didx})
+					}
+					sourceMsgs = append(sourceMsgs, change.Message)
+				} else {
+					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
 				}
 			}
-			src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-			//src.Mutex.Unlock()
-			// Send the edge change message.
-			frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
+			// From the gathered set of consecutive adds, apply them.
+			if len(src.OutEdges) > didxStart {
+				val := frame.AggregateRetrieve(src)
+				frame.OnEdgeAddRev(g, sidx, didxStart, val, sourceMsgs)
+				g.MsgRecv[tidx] += uint32(len(src.OutEdges) - didxStart)
+			}
+
+			// If we didn't finish, it means we hit a delete. Address it here.
+			if changeIdx < len(miniGraph[sidx]) {
+				change := miniGraph[sidx][changeIdx]
+				enforce.ENFORCE(change.Type == graph.DEL)
+				if g.Undirected { // Only delete if undirected graph.. otherwise just a notification of deletion.
+					/// Delete edge.. naively find target and swap last element with the hole.
+					for k, v := range src.OutEdges {
+						if v.Destination == change.Didx {
+							src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
+							break
+						}
+					}
+					src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
+				}
+				frame.OnEdgeDelRev(g, sidx, change.Didx, change.Message)
+				g.MsgRecv[tidx]++
+				changeIdx++
+			}
+			// Addressed the delete, continue the loop (go back to checking for consecutive adds).
 		}
 		g.Mutex.RUnlock()
 	}
-	//*/
+	miniGraph = nil
+}
+
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessReverseEdges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32) {
+	revBuffer := make([]graph.RevMessage[MsgType, EdgeProp], 0)
+RevFillLoop:
+	for { // Read a batch of Changes
+		select {
+		case msg, ok := <-g.ReverseMsgQ[tidx]:
+			if ok {
+				revBuffer = append(revBuffer, msg)
+			} else {
+				break RevFillLoop
+			}
+		default:
+			break RevFillLoop
+		}
+	}
+	if len(revBuffer) > 0 {
+		frame.EnactReverseChanges(g, tidx, revBuffer)
+	}
 }
 
 // ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
@@ -237,11 +308,22 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 								infoTimer = time.Now()
 							}
 						}
+						// Undirected or reverse messages, since we may not break this loop while ingesting forward edges
+						if g.Undirected || g.SendRevMsgs {
+							frame.ProcessReverseEdges(g, tidx)
+						}
 
 						if allRate/float64(graph.TARGETRATE) < 0.99 {
 							continue
 						}
 					}
+				}
+
+				// Undirected or reverse messages
+				// TODO: Probably want to skip this if we know we're actually done all forward edges.. but that's tricky to determine.
+				// (every other thread must be done ingesting and finished processing, not just us, then our queue must be drained)
+				if g.Undirected || g.SendRevMsgs {
+					frame.ProcessReverseEdges(g, tidx)
 				}
 
 				// Process a batch of messages from the MessageQ
@@ -263,8 +345,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
 						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
-						if !frame.IsMsgEmpty(msg.Val) {
-							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
+						if !frame.IsMsgEmpty(msg.Message) {
+							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
 						}
 						val := frame.AggregateRetrieve(target)
 

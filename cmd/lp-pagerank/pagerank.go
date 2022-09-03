@@ -65,7 +65,7 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) (RevData []MessageValue) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -94,6 +94,7 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 		target := src.OutEdges[didx].Destination
 		g.OnQueueVisit(g, sidx, target, MessageValue(distNewEdge+distribute))
 	}
+	return nil // No need for rev data
 }
 
 // OnEdgeAddBasic is the simple version which does not merge a Visit call.
@@ -118,7 +119,7 @@ func OnEdgeAddBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], 
 	g.OnQueueVisit(g, sidx, didx, MessageValue(distNewEdge))
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) (RevData MessageValue) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -135,6 +136,22 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	distOldEdge := -1.0 * distAllPrev / (float64(len(src.OutEdges) + 1))
 
 	g.OnQueueVisit(g, sidx, didx, MessageValue(distOldEdge))
+	return EMPTYVAL // No need for rev data
+}
+
+// If g.SendRevMsgs or g.Undirected were enabled, this will be called on the reverse of the edge change.
+// sidx is us, didx is them, HOWEVER the edge that was added was didx->sidx (unless undirected, in which case our matching edge was also deleted)
+// The VisitMsg is pulled from AggregateRetrieve before calling this function (allowing one to merge a visit call here)
+// The SourceMsgs are produced in OnEdgeAdd from didx (one per newly added edge).
+func OnEdgeAddRev(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, VisitMsg MessageValue, SourceMsgs []MessageValue) {
+	OnEdgeAdd(g, sidx, didxStart, VisitMsg)
+}
+
+// If g.SendRevMsgs or g.Undirected were enabled, this will be called on the reverse of the edge change.
+// sidx is us, didx is them, HOWEVER the edge that was deleted was didx->sidx (unless undirected, in which case our matching edge was also deleted)
+// The message was produced in OnEdgeDel from didx.
+func OnEdgeDelRev(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, VisitMsg MessageValue) {
+	OnEdgeDel(g, sidx, didx, VisitMsg)
 }
 
 func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {

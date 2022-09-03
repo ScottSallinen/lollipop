@@ -38,6 +38,8 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	frame.OnCheckCorrectness = OnCheckCorrectness
 	frame.OnEdgeAdd = OnEdgeAdd
 	frame.OnEdgeDel = OnEdgeDel
+	frame.OnEdgeAddRev = OnEdgeAddRev
+	frame.OnEdgeDelRev = OnEdgeDelRev
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.EdgeParser = EdgeParser
@@ -48,9 +50,11 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	// Some potential extra defines here, for if the algorithm has a "point" initialization
 	// or is instead initialized by default behaviour (where every vertex is visited initially)
 	// g.SourceInit = true
-	// g.SourceInitVal = 1.0
-	// g.EmptyVal = EMPTYVAL
 	// g.SourceVertex = rawSrc
+
+	g.InitVal = 1.0
+	g.EmptyVal = EMPTYVAL
+	// g.SendRevMsgs = false
 
 	frame.Launch(g, gName, async, dynamic, oracle, undirected)
 	return g

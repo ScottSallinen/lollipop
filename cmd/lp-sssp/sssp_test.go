@@ -14,6 +14,8 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
+const PrintInfo = false
+
 func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
 	top := prefix
 	sum := 0.0
@@ -36,27 +38,33 @@ func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue],
 }
 
 func TestAsyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1, false)
-		PrintVertexProps(g, "")
+		if PrintInfo {
+			PrintVertexProps(g, "")
+		}
 		testGraphExpect(g, t)
 	}
 }
 func TestSyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", false, false, false, false, 1, false)
-		PrintVertexProps(g, "")
+		if PrintInfo {
+			PrintVertexProps(g, "")
+		}
 		testGraphExpect(g, t)
 	}
 }
 func TestAsyncDynamic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, true, false, false, 1, false)
+		if PrintInfo {
+			PrintVertexProps(g, "")
+		}
 		testGraphExpect(g, t)
-		PrintVertexProps(g, "")
 	}
 }
 
@@ -68,6 +76,8 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSr
 	frame.OnCheckCorrectness = OnCheckCorrectness
 	frame.OnEdgeAdd = OnEdgeAdd
 	frame.OnEdgeDel = OnEdgeDel
+	frame.OnEdgeAddRev = OnEdgeAddRev
+	frame.OnEdgeDelRev = OnEdgeDelRev
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.IsMsgEmpty = IsMsgEmpty
@@ -141,10 +151,12 @@ func TestDynamicCreation(t *testing.T) {
 
 	testFail := false
 
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 
-		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
+		if PrintInfo {
+			info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
+		}
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
 			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{1.0}},

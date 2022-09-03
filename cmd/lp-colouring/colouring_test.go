@@ -12,32 +12,41 @@ import (
 	"github.com/kelindar/bitmap"
 )
 
+const PrintInfo = false
+
 func TestSyncStatic(t *testing.T) {
-	for ti := 0; ti < 100; ti++ {
+	for ti := 0; ti < 10; ti++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", false, false)
-		g.PrintVertexProperty("Sync colours: ")
+		if PrintInfo {
+			g.PrintVertexProperty("Sync colours: ")
+		}
 	}
 }
 
 func TestAsyncStatic(t *testing.T) {
-	for ti := 0; ti < 100; ti++ {
+	for ti := 0; ti < 10; ti++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, false)
-		g.PrintVertexProperty("Async colours: ")
+		if PrintInfo {
+			g.PrintVertexProperty("Async colours: ")
+		}
 	}
 }
 
 func TestAsyncDynamic(t *testing.T) {
-	for ti := 0; ti < 100; ti++ {
+	for ti := 0; ti < 10; ti++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, true)
-		g.PrintVertexProperty("Dynamic colours: ")
+		if PrintInfo {
+			g.PrintVertexProperty("Dynamic colours: ")
+		}
 	}
 }
 
 func TestAsyncDynamicWithDelete(t *testing.T) {
-	for ti := 0; ti < 100; ti++ {
+	for ti := 0; ti < 10; ti++ {
+		graph.THREADS = rand.Intn(8-1) + 1
 		rawStructureChanges := []graph.StructureChange[EdgeProperty]{
 			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{}},
 			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{}},
@@ -51,10 +60,12 @@ func TestAsyncDynamicWithDelete(t *testing.T) {
 
 		adjustedStructureChanges := framework.InjectDeletesRetainFinalStructure(rawStructureChanges, 0.33)
 
-		g := DynamicGraphExecutionFromSCUndirected(adjustedStructureChanges)
+		g := DynamicGraphExecutionFromSC(adjustedStructureChanges)
 
 		maxColour, nColours := ComputeGraphColouringStat(g)
-		info(fmt.Sprintf("maxColour=%v, nColours=%v", maxColour, nColours))
+		if PrintInfo {
+			info(fmt.Sprintf("maxColour=%v, nColours=%v", maxColour, nColours))
+		}
 	}
 }
 
@@ -110,7 +121,7 @@ func assertEqual(t *testing.T, expected any, actual any, prefix string) {
 	}
 }
 
-func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
 	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -118,6 +129,8 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 	frame.OnCheckCorrectness = OnCheckCorrectness
 	frame.OnEdgeAdd = OnEdgeAdd
 	frame.OnEdgeDel = OnEdgeDel
+	frame.OnEdgeAddRev = OnEdgeAddRev
+	frame.OnEdgeDelRev = OnEdgeDelRev
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.IsMsgEmpty = IsMsgEmpty
@@ -127,6 +140,7 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 	g.InitVal = 0
 	g.EmptyVal = EMPTYVAL
 
+	g.Undirected = true
 	frame.Init(g, true, true)
 
 	var feederWg sync.WaitGroup
@@ -140,10 +154,8 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 		switch v.Type {
 		case graph.ADD:
 			g.SendAdd(v.SrcRaw, v.DstRaw, v.EdgeProperty)
-			g.SendAdd(v.DstRaw, v.SrcRaw, v.EdgeProperty)
 		case graph.DEL:
 			g.SendDel(v.SrcRaw, v.DstRaw)
-			g.SendDel(v.DstRaw, v.SrcRaw)
 		}
 	}
 

@@ -96,7 +96,7 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
 // For colouring, data here is unused.
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) (RevData []MessageValue) {
 	source := &g.Vertices[sidx]
 	sourcePriority := hash(sidx)
 
@@ -108,9 +108,19 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 			g.OnQueueVisit(g, sidx, dstIndex, MessageValue(source.Property.Colour))
 		}
 	}
+	return nil // TODO? unused
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
+// This will be called on the reverse of the edge change.
+// sidx is us, didx is them, HOWEVER the edge that was added was didx->sidx (unless undirected, in which case our matching edge was also deleted)
+// The VisitMsg is pulled from AggregateRetrieve before calling this function (allowing one to merge a visit call here)
+// The SourceMsgs are produced in OnEdgeAdd from didx (one per newly added edge).
+func OnEdgeAddRev(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, VisitMsg MessageValue, SourceMsgs []MessageValue) {
+	// TODO?
+	OnEdgeAdd(g, sidx, didxStart, VisitMsg)
+}
+
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) (RevData MessageValue) {
 	source := &g.Vertices[sidx]
 
 	destinationColour, ok := source.Property.NbrColours.Load(didx)
@@ -140,6 +150,15 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	for i := range source.OutEdges {
 		g.OnQueueVisit(g, sidx, source.OutEdges[i].Destination, MessageValue(newColour))
 	}
+	return EMPTYVAL // TODO? unused
+}
+
+// This will be called on the reverse of the edge change.
+// sidx is us, didx is them, HOWEVER the edge that was deleted was didx->sidx (unless undirected, in which case our matching edge was also deleted)
+// The message was produced in OnEdgeDel from didx.
+func OnEdgeDelRev(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, VisitMsg MessageValue) {
+	// TODO?
+	OnEdgeDel(g, sidx, didx, VisitMsg)
 }
 
 func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {

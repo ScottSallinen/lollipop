@@ -22,7 +22,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *grap
 	// For example, return true only on the transition from zero to non-zero, and not on further increments to a value.
 	if doSendMessage {
 		select {
-		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: g.EmptyVal}:
+		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Sidx: sidx, Didx: didx, Message: g.EmptyVal}:
 		default:
 			enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
 		}
@@ -54,7 +54,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 				trg := &g.Vertices[vidx]
 				newinfo := frame.MessageAggregator(trg, uint32(vidx), uint32(vidx), g.InitVal)
 				if newinfo {
-					g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Sidx: uint32(vidx), Didx: uint32(vidx), Val: g.EmptyVal}
+					g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Sidx: uint32(vidx), Didx: uint32(vidx), Message: g.EmptyVal}
 					acc[tidx] += 1
 				}
 			})
@@ -66,7 +66,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 			trg := &g.Vertices[sidx]
 			newinfo := frame.MessageAggregator(trg, sidx, sidx, g.InitVal)
 			if newinfo {
-				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Sidx: sidx, Didx: sidx, Val: g.EmptyVal}
+				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Sidx: sidx, Didx: sidx, Message: g.EmptyVal}
 				g.MsgSend[VOTES-1] += 1
 			}
 		}
@@ -102,8 +102,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 						msg := msgBuffer[i]
 						target := &g.Vertices[msg.Didx]
 						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
-						if !frame.IsMsgEmpty(msg.Val) {
-							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
+						if !frame.IsMsgEmpty(msg.Message) {
+							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
 						}
 						val := frame.AggregateRetrieve(target)
 

@@ -26,6 +26,8 @@ type Framework[VertexProp, EdgeProp, MsgType any] struct {
 	OnCheckCorrectness OnCheckCorrectnessFunc[VertexProp, EdgeProp, MsgType]
 	OnEdgeAdd          OnEdgeAddFunc[VertexProp, EdgeProp, MsgType]
 	OnEdgeDel          OnEdgeDelFunc[VertexProp, EdgeProp, MsgType]
+	OnEdgeAddRev       OnEdgeAddRevFunc[VertexProp, EdgeProp, MsgType]
+	OnEdgeDelRev       OnEdgeDelRevFunc[VertexProp, EdgeProp, MsgType]
 	MessageAggregator  MessageAggregatorFunc[VertexProp, EdgeProp, MsgType]
 	AggregateRetrieve  AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType]
 	OracleComparison   OracleComparison[VertexProp, EdgeProp, MsgType]
@@ -37,9 +39,11 @@ type OnInitVertexFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[Ver
 type OnVisitVertexFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], vidx uint32, data MsgType) int
 type OnFinishFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType]) error
 type OnCheckCorrectnessFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType]) error
-type OnEdgeAddFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, VisitData MsgType)
-type OnEdgeDelFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
-type MessageAggregatorFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp], didx, sidx uint32, VisitData MsgType) (newInfo bool)
+type OnEdgeAddFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, VisitMsg MsgType) (RevData []MsgType)
+type OnEdgeDelFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitMsg MsgType) (RevData MsgType)
+type OnEdgeAddRevFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, VisitMsg MsgType, SourceMsgs []MsgType)
+type OnEdgeDelRevFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitMsg MsgType)
+type MessageAggregatorFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp], didx, sidx uint32, VisitMsg MsgType) (newInfo bool)
 type AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Vertex[VertexProp, EdgeProp]) (data MsgType)
 type OracleComparison[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], oracle *graph.Graph[VertexProp, EdgeProp, MsgType], resultCache *[]float64)
 type EdgeParserFunc[EdgeProp any] graph.EdgeParserFunc[EdgeProp]
@@ -50,6 +54,9 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[Verte
 		g.OnQueueVisit = frame.OnQueueVisitAsync
 		if dynamic {
 			g.VertexMap = make(map[uint32]uint32, 4*4096)
+			if g.Undirected || g.SendRevMsgs {
+				g.ReverseMsgQ = make([]chan graph.RevMessage[MsgType, EdgeProp], graph.THREADS)
+			}
 		}
 		g.MessageQ = make([]chan graph.Message[MsgType], graph.THREADS)
 		g.ThreadStructureQ = make([]chan graph.StructureChange[EdgeProp], graph.THREADS)
@@ -62,6 +69,9 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[Verte
 				// TODO: Need a better way to manipulate channel size for dynamic. Maybe request approx vertex count from user?
 				g.MessageQ[i] = make(chan graph.Message[MsgType], (4 * 4096 * 64))
 				g.ThreadStructureQ[i] = make(chan graph.StructureChange[EdgeProp], 4*4*4096)
+				if g.Undirected || g.SendRevMsgs {
+					g.ReverseMsgQ[i] = make(chan graph.RevMessage[MsgType, EdgeProp], 4*4*4096)
+				}
 			} else {
 				g.MessageQ[i] = make(chan graph.Message[MsgType], len(g.Vertices)+8)
 			}

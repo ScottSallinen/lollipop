@@ -22,24 +22,25 @@ var DEBUG = false
 
 // Graph t
 type Graph[VertexProp, EdgeProp, MsgType any] struct {
-	Mutex             sync.RWMutex
-	VertexMap         map[uint32]uint32 // Raw to internal
-	Vertices          []Vertex[VertexProp, EdgeProp]
-	OnQueueVisit      OnQueueVisitFunc[VertexProp, EdgeProp, MsgType]
-	OnQueueEdgeAddRev OnQueueEdgeAddRevFunc[VertexProp, EdgeProp, MsgType]
-	AlgConverge       ConvergeFunc[VertexProp, EdgeProp, MsgType]
-	MessageQ          []chan Message[MsgType]
-	ThreadStructureQ  []chan StructureChange[EdgeProp]
-	Undirected        bool     // Declares if the graph should be treated as undirected (e.g. for construction)
-	MsgSend           []uint32 // number of messages sent by each thread
-	MsgRecv           []uint32 // number of messages received by each thread
-	TerminateVote     []int
-	TerminateData     []int64
-	Watch             mathutils.Watch
-	EmptyVal          MsgType // Value used to represent "empty" or "no work to do"
-	InitVal           MsgType // Value to initialize, given either to single source (if SourceInit) or all vertices.
-	SourceInit        bool    // Flag to adjust such that a single specific source vertex starts the algorithm, and will recieve InitVal.
-	SourceVertex      uint32  // Raw ID of source vertex, if applicable.
+	Mutex            sync.RWMutex
+	VertexMap        map[uint32]uint32 // Raw to internal
+	Vertices         []Vertex[VertexProp, EdgeProp]
+	OnQueueVisit     OnQueueVisitFunc[VertexProp, EdgeProp, MsgType]
+	AlgConverge      ConvergeFunc[VertexProp, EdgeProp, MsgType]
+	MessageQ         []chan Message[MsgType]
+	ThreadStructureQ []chan StructureChange[EdgeProp]
+	ReverseMsgQ      []chan RevMessage[MsgType, EdgeProp]
+	Undirected       bool     // Declares if the graph should be treated as undirected (e.g. for construction)
+	SendRevMsgs      bool     // Whether or not to send EdgeAddRev / EdgeDelRev messages for the algorithm to view/handle. Effectively true if undirected.
+	MsgSend          []uint32 // number of messages sent by each thread
+	MsgRecv          []uint32 // number of messages received by each thread
+	TerminateVote    []int
+	TerminateData    []int64
+	Watch            mathutils.Watch
+	EmptyVal         MsgType // Value used to represent "empty" or "no work to do"
+	InitVal          MsgType // Value to initialize, given either to single source (if SourceInit) or all vertices.
+	SourceInit       bool    // Flag to adjust such that a single specific source vertex starts the algorithm, and will recieve InitVal.
+	SourceVertex     uint32  // Raw ID of source vertex, if applicable.
 }
 
 type VisitType int
@@ -47,16 +48,13 @@ type VisitType int
 const (
 	VISIT VisitType = iota
 	ADD
-	ADDREV
 	DEL
-	DELREV
 )
 
 type Message[MsgType any] struct {
-	Val  MsgType
-	Type VisitType
-	Sidx uint32
-	Didx uint32
+	Message MsgType
+	Sidx    uint32
+	Didx    uint32
 }
 
 type StructureChange[EdgeProp any] struct {
@@ -66,8 +64,15 @@ type StructureChange[EdgeProp any] struct {
 	EdgeProperty EdgeProp
 }
 
+type RevMessage[MsgType, EdgeProp any] struct {
+	Message      MsgType   // From sender
+	EdgeProperty EdgeProp  // Same as senders... tbd about sharing
+	Type         VisitType // add or del
+	Sidx         uint32
+	Didx         uint32
+}
+
 type OnQueueVisitFunc[VertexProp, EdgeProp, MsgType any] func(g *Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
-type OnQueueEdgeAddRevFunc[VertexProp, EdgeProp, MsgType any] func(g *Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
 type ConvergeFunc[VertexProp, EdgeProp, MsgType any] func(g *Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup)
 type EdgeParserFunc[EdgeProp any] func(lineText string) RawEdge[EdgeProp]
 
@@ -79,22 +84,10 @@ type Edge[EdgeProp any] struct {
 	Destination uint32
 }
 
-func NewEdge[EdgeProp any](Destination uint32, property *EdgeProp) Edge[EdgeProp] {
-	return Edge[EdgeProp]{*property, Destination}
-}
-
 // InEdge: TODO, this is very outdated.
 type InEdge struct {
 	Destination uint32
 	Weight      float64
-}
-
-func (e *Edge[EdgeProp]) Reset() {
-	*e = Edge[EdgeProp]{}
-}
-
-func (e *InEdge) Reset() {
-	*e = InEdge{}
 }
 
 // Vertex Main type defining a vertex in a graph. Contains necessary per-vertex information for structure and identification.
@@ -107,28 +100,12 @@ type Vertex[VertexProp, EdgeProp any] struct {
 	IsActive int32            // Indicates if the vertex awaits a visit in ConvergeSync
 }
 
-func (v *Vertex[VertexProp, EdgeProp]) Reset() {
-	*v = Vertex[VertexProp, EdgeProp]{}
-	for eidx := range v.OutEdges {
-		v.OutEdges[eidx].Reset()
-	}
-	for uidx := range v.InEdges {
-		v.InEdges[uidx].Reset()
-	}
-}
-
 func (v *Vertex[VertexProp, EdgeProp]) ToThreadIdx() uint32 {
 	return v.Id % uint32(THREADS)
 }
 
 func (g *Graph[VertexProp, EdgeProp, MsgType]) RawIdToThreadIdx(RawId uint32) uint32 {
 	return RawId % uint32(THREADS)
-}
-
-func (g *Graph[VertexProp, EdgeProp, MsgType]) Reset() {
-	for vidx := range g.Vertices {
-		g.Vertices[vidx].Reset()
-	}
 }
 
 // ComputeInEdges update all vertices' InEdges to match the edges stored in OutEdges lists
