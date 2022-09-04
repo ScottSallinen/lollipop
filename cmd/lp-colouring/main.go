@@ -47,23 +47,24 @@ func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Mess
 }
 
 func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	// Check correctness
+	// Here we report the index of the vertex instead of the ID
 	for vi := range g.Vertices {
 		v := &g.Vertices[vi]
 		colour := v.Property.Colour
 		degree := uint32(len(v.OutEdges))
 		if colour == EMPTYVAL {
-			return fmt.Errorf("vertex %d is not coloured", v.Id)
+			return fmt.Errorf("vertex %d is not coloured", vi)
 		}
 		if colour > degree {
-			return fmt.Errorf("vertex %d has a colour (%d) that is larger than its own degree (%d)", v.Id, colour, degree)
+			return fmt.Errorf("vertex %d has a colour (%d) that is larger than its own degree (%d)", vi, colour, degree)
 		}
 		for ei := range v.OutEdges {
-			target := &g.Vertices[v.OutEdges[ei].Destination]
+			targetIndex := v.OutEdges[ei].Destination
+			target := &g.Vertices[targetIndex]
 			if colour == target.Property.Colour && v.Id != target.Id { // Ignore if its a self edge
 				//g.PrintStructure()
 				//g.PrintVertexProperty("OnCheckCorrectness ")
-				return fmt.Errorf("an edge exists between Vertex %d and Vertex %d which have the same colour %d", v.Id, target.Id, v.Property.Colour)
+				return fmt.Errorf("an edge exists between Vertex %d and Vertex %d which have the same colour %d", vi, targetIndex, v.Property.Colour)
 			}
 		}
 	}
