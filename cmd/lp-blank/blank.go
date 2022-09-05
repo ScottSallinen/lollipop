@@ -63,9 +63,9 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 
 // If g.SendRevMsgs or g.Undirected were enabled, this will be called on the reverse of the edge change.
 // sidx is us, didx is them, HOWEVER the edge that was added was didx->sidx (unless undirected, in which case our matching edge was also deleted)
-// The VisitMsg is pulled from AggregateRetrieve before calling this function (allowing one to merge a visit call here)
+// This function does NOT merge a visit (due to ordering considerations)
 // The SourceMsgs are produced in OnEdgeAdd from didx (one per newly added edge).
-func OnEdgeAddRev(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, VisitMsg MessageValue, SourceMsgs []MessageValue) {
+func OnEdgeAddRev(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, SourceMsgs []MessageValue) {
 
 }
 

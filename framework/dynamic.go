@@ -82,16 +82,22 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 			if len(src.OutEdges) > didxStart {
 				val := frame.AggregateRetrieve(src)
 				msgs := frame.OnEdgeAdd(g, sidx, didxStart, val)
-				if g.Undirected || g.SendRevMsgs {
+				if g.Undirected || g.SendRevMsgs { // Send reverse messages only if undirected or required.
 					for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
 						edge := src.OutEdges[eidx]
 						didx := edge.Destination
-						var msg MsgType
+						msg := g.EmptyVal
 						if msgs != nil { // Just incase this is not needed/implemented
+							// This check then protects for two cases; an undirected graph (topological reverse notifications are sent, but a message value isn't required),
+							// or an implementation where the reverse notification is desired to be sent but a specific value to go along with the message is unnecessary.
 							msg = msgs[eidx-didxStart]
 						}
 						// Target dest since we swap s/d for the reverse
 						// TODO: Some consideration needed for edgeproperties here... (should not be shared mem / pointers)
+						// For an undirected graph, its not clear what an edge property should reference.
+						// It could be a shared property such that each side of the undirected edge points to the same property, but this would be hard to do with a distributed implementation (our algorith worldview).
+						// I've opted to go with a duplication of the property, so it's passed along when building the reverse edge to be applied there.
+						// The algorithm could also optionally view the forward edge's property this way to make a decision when it is notified of the creation.
 						g.ReverseMsgQ[g.RawIdToThreadIdx(g.Vertices[didx].Id)] <- graph.RevMessage[MsgType, EdgeProp]{Message: msg, EdgeProperty: edge.Property, Type: graph.ADD, Didx: sidx, Sidx: didx}
 						// These are enqueued messages sent to be processed asynchronously, so we must use our MsgSend / Recv tracking.
 					}
@@ -163,8 +169,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactReverseChanges(g *gr
 			}
 			// From the gathered set of consecutive adds, apply them.
 			if len(src.OutEdges) > didxStart {
-				val := frame.AggregateRetrieve(src)
-				frame.OnEdgeAddRev(g, sidx, didxStart, val, sourceMsgs)
+				// val := frame.AggregateRetrieve(src) Cannot merge with a normal visit, as this must happen before AggregateRetrieve is called.
+				frame.OnEdgeAddRev(g, sidx, didxStart, sourceMsgs)
 				g.MsgRecv[tidx] += uint32(len(src.OutEdges) - didxStart)
 			}
 
@@ -228,7 +234,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 	if graph.DEBUG {
 		exit := false
 		defer func() { exit = true }()
-		go PrintTerminationStatus(g, &exit)
+		go frame.PrintTerminationStatus(g, &exit)
 	}
 
 	// This adds a termination vote for when the dynamic injector is concluded.
@@ -319,13 +325,6 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 					}
 				}
 
-				// Undirected or reverse messages
-				// TODO: Probably want to skip this if we know we're actually done all forward edges.. but that's tricky to determine.
-				// (every other thread must be done ingesting and finished processing, not just us, then our queue must be drained)
-				if g.Undirected || g.SendRevMsgs {
-					frame.ProcessReverseEdges(g, tidx)
-				}
-
 				// Process a batch of messages from the MessageQ
 				algCount := 0
 			algLoop:
@@ -333,9 +332,30 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 					select {
 					case msg := <-g.MessageQ[tidx]:
 						msgBuffer[algCount] = msg
+						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side, so no need to do so on the reciever side.
+						// This exists here in case the message is sent as a normal visit with a real message,
+						// so here we would be able to accumulate on the reciever side.
+						// TODO: Make a flag to do reciever side aggregation?
+						// target := &g.Vertices[msg.Didx]
+						// if msg.Type != graph.VISITEMPTYMSG {
+						//	frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
+						// }
 					default:
 						break algLoop
 					}
+				}
+
+				// Undirected or reverse messages
+				// TODO: Probably want to skip this if we know we're actually done all forward edges.. but that's tricky to determine.
+				// (every other thread must be done ingesting and finished processing, not just us, then our queue must be drained)
+				// A comment on ordering:
+				// This is here so that we order reverse topology events before visits.
+				// For example, if A->B a reverse edge (1), then a visit (2), we must ensure the rev msg happens first.
+				// This can't be before pulling from the MessageQ, because (1) & (2) might happen after processing reverse edges but before pulling from MessageQ (so (2) is in MesssageQ)
+				// Doing it here means we pull from MessageQ first (recieving (2) if it happened) but do not apply yet,
+				// then we process reverse events (if (2) exists (1) must be in this queue). So (1) is applied, then we process visits which may include (2).
+				if g.Undirected || g.SendRevMsgs {
+					frame.ProcessReverseEdges(g, tidx)
 				}
 
 				if algCount != 0 {
@@ -343,16 +363,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 					g.Mutex.RLock()
 					for i := 0; i < algCount; i++ {
 						msg := msgBuffer[i]
-						target := &g.Vertices[msg.Didx]
-						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
-						// so no need to do so on the reciever side.
-						// This exists here in case the message is sent as a normal visit with a real message,
-						// so here we would be able to accumulate on the reciever side.
-						if msg.Type != graph.VISITEMPTYMSG {
-							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
-						}
-						val := frame.AggregateRetrieve(target)
-
+						val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
 						frame.OnVisitVertex(g, msg.Didx, val)
 					}
 					g.Mutex.RUnlock()

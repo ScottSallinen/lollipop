@@ -41,7 +41,7 @@ type OnFinishFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexP
 type OnCheckCorrectnessFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType]) error
 type OnEdgeAddFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, VisitMsg MsgType) (RevData []MsgType)
 type OnEdgeDelFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitMsg MsgType) (RevData MsgType)
-type OnEdgeAddRevFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, VisitMsg MsgType, SourceMsgs []MsgType)
+type OnEdgeAddRevFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, SourceMsgs []MsgType)
 type OnEdgeDelRevFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitMsg MsgType)
 type MessageAggregatorFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp], didx, sidx uint32, VisitMsg MsgType) (newInfo bool)
 type AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Vertex[VertexProp, EdgeProp]) (data MsgType)
