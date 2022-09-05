@@ -262,6 +262,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 			const MsgBundleSize = 256
 			const GscBundleSize = 4096 * 16
 			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
+			valBuffer := make([]MsgType, MsgBundleSize)
 			gscBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
 			strucClosed := false // true indicates the StructureChanges channel is closed
 			infoTimer := time.Now()
@@ -340,6 +341,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 						// if msg.Type != graph.VISITEMPTYMSG {
 						//	frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
 						// }
+						valBuffer[algCount] = frame.AggregateRetrieve(&g.Vertices[msg.Didx])
 					default:
 						break algLoop
 					}
@@ -363,8 +365,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 					g.Mutex.RLock()
 					for i := 0; i < algCount; i++ {
 						msg := msgBuffer[i]
-						val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
-						frame.OnVisitVertex(g, msg.Didx, val)
+						frame.OnVisitVertex(g, msg.Didx, valBuffer[i])
 					}
 					g.Mutex.RUnlock()
 					g.MsgRecv[tidx] += uint32(algCount)
