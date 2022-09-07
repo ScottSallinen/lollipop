@@ -88,7 +88,7 @@ type Vertex[VertexProp, EdgeProp any] struct {
 	Id       uint32           // Raw (external) ID of a vertex, reflecting the external original identifier of a vertex, NOT the internal [0, N] index.
 	OutEdges []Edge[EdgeProp] // Main outgoing edgelist.
 	InEdges  []InEdge         // Incoming edges (currently unused).
-	Mutex    sync.Mutex       // Mutex for thread synchroniziation, if needed.
+	Mutex    sync.RWMutex     // Mutex for thread synchroniziation, if needed.
 	IsActive int32            // Indicates if the vertex awaits a visit in ConvergeSync
 }
 

@@ -123,8 +123,8 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = false
-	g.InitVal = 0
-	g.EmptyVal = EMPTYVAL
+	g.InitVal = []IdColourPair{{Colour: EMPTYVAL}}
+	g.EmptyVal = []IdColourPair{{Colour: EMPTYVAL}}
 
 	g.Undirected = true
 	frame.Init(g, true, true)

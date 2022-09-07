@@ -60,7 +60,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 		}
 		for ei := range v.OutEdges {
 			target := &g.Vertices[v.OutEdges[ei].Destination]
-			if colour == target.Property.Colour {
+			if colour == target.Property.Colour && target.Id != v.Id {
 				//g.PrintStructure()
 				//g.PrintVertexProperty("OnCheckCorrectness ")
 				return fmt.Errorf("an edge exists between Vertex %d and Vertex %d which have the same colour %d", v.Id, target.Id, v.Property.Colour)
@@ -87,8 +87,8 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[V
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = false
-	g.InitVal = 0
-	g.EmptyVal = EMPTYVAL
+	g.InitVal = []IdColourPair{{Colour: EMPTYVAL}}
+	g.EmptyVal = []IdColourPair{{Colour: EMPTYVAL}}
 
 	frame.Launch(g, gName, async, dynamic, false, true)
 
