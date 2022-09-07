@@ -22,7 +22,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *grap
 	// For example, return true only on the transition from zero to non-zero, and not on further increments to a value.
 	if doSendMessage {
 		select {
-		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: didx, Val: g.EmptyVal}:
+		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: didx, Message: g.EmptyVal}:
 		default:
 			enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
 		}
@@ -35,12 +35,41 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *grap
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsyncMsg(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType) {
 	target := &g.Vertices[didx]
 	select {
-	case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISIT, Sidx: sidx, Didx: didx, Val: VisitData}:
+	case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISIT, Sidx: sidx, Didx: didx, Message: VisitData}:
 	default:
 		enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
 	}
 	// must be called by the source vertex's thread
 	g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
+}
+
+// SendInitialVisists: Enqueues the message(s) that will start the algorithm.
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) SendInitialVisists(g *graph.Graph[VertexProp, EdgeProp, MsgType], VOTES int, wg *sync.WaitGroup) {
+	if !g.SourceInit { // Target all vertices: send the algorithm defined initial visit value as a message.
+		acc := make([]uint32, graph.THREADS)
+		mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vidx int, tidx int) {
+			trg := &g.Vertices[vidx]
+			newinfo := frame.MessageAggregator(trg, uint32(vidx), uint32(vidx), g.InitVal)
+			if newinfo {
+				g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: uint32(vidx), Didx: uint32(vidx), Message: g.EmptyVal}
+				acc[tidx] += 1
+			}
+		})
+		for _, v := range acc {
+			g.MsgSend[VOTES-1] += v
+		}
+	} else { // Target specific vertex: send the algorithm defined initial visit value as a message.
+		sidx := g.VertexMap[g.SourceVertex]
+		trg := &g.Vertices[sidx]
+		newinfo := frame.MessageAggregator(trg, sidx, sidx, g.InitVal)
+		if newinfo {
+			g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: sidx, Message: g.EmptyVal}
+			g.MsgSend[VOTES-1] += 1
+		}
+	}
+	g.TerminateVote[VOTES-1] = 1
+	g.TerminateData[VOTES-1] = int64(g.MsgSend[VOTES-1])
+	wg.Done()
 }
 
 // ConvergeAsync: Static focused variant of async convergence.
@@ -54,38 +83,12 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 	if graph.DEBUG {
 		exit := false
 		defer func() { exit = true }()
-		go PrintTerminationStatus(g, &exit)
+		go frame.PrintTerminationStatus(g, &exit)
 	}
 
-	g.TerminateData[VOTES-1] = int64(len(g.Vertices)) // overestimate so we don't accidentally terminate early
+	g.TerminateData[VOTES-1] = int64(len(g.Vertices)) // overestimate so we don't accidentally terminate early. This is resolved when initial msgs are finished.
 	// Send initial visit message(s)
-	go func() {
-		if !g.SourceInit { // Target all vertices: send the algorithm defined initial visit value as a message.
-			acc := make([]uint32, graph.THREADS)
-			mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vidx int, tidx int) {
-				trg := &g.Vertices[vidx]
-				newinfo := frame.MessageAggregator(trg, uint32(vidx), uint32(vidx), g.InitVal)
-				if newinfo {
-					g.MessageQ[trg.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: uint32(vidx), Didx: uint32(vidx), Val: g.EmptyVal}
-					acc[tidx] += 1
-				}
-			})
-			for _, v := range acc {
-				g.MsgSend[VOTES-1] += v
-			}
-		} else { // Target specific vertex: send the algorithm defined initial visit value as a message.
-			sidx := g.VertexMap[g.SourceVertex]
-			trg := &g.Vertices[sidx]
-			newinfo := frame.MessageAggregator(trg, sidx, sidx, g.InitVal)
-			if newinfo {
-				g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: sidx, Val: g.EmptyVal}
-				g.MsgSend[VOTES-1] += 1
-			}
-		}
-		g.TerminateVote[VOTES-1] = 1
-		g.TerminateData[VOTES-1] = int64(g.MsgSend[VOTES-1])
-		wg.Done()
-	}()
+	go frame.SendInitialVisists(g, VOTES, &wg)
 
 	const MsgBundleSize = 256
 	for t := 0; t < graph.THREADS; t++ {
@@ -93,38 +96,36 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
 			for {
 				//g.Mutex.RLock() // If we want to lock for oracle comparisons
-				msgCounter := 0
+				algCount := 0
 				//msgBuffer := msgBuffer[:MsgBundleSize]
 				// read a batch of messages
-			fillLoop:
-				for ; msgCounter < MsgBundleSize; msgCounter++ {
+			algLoop:
+				for ; algCount < MsgBundleSize; algCount++ {
 					select {
 					case msg := <-g.MessageQ[tidx]:
-						msgBuffer[msgCounter] = msg
-					default:
-						break fillLoop
-					}
-				}
-				//msgBuffer = msgBuffer[:msgCounter]
-
-				// consume messages read
-				if msgCounter != 0 {
-					g.TerminateVote[tidx] = -1
-					for i := 0; i < msgCounter; i++ {
-						msg := msgBuffer[i]
-						target := &g.Vertices[msg.Didx]
+						msgBuffer[algCount] = msg
 						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
 						// so no need to do so on the reciever side.
 						// This exists here in case the message is sent as a normal visit with a real message,
 						// so here we would be able to accumulate on the reciever side.
-						if msg.Type != graph.VISITEMPTYMSG {
-							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
-						}
-						val := frame.AggregateRetrieve(target)
+						//target := &g.Vertices[msg.Didx]
+						//if msg.Type != graph.VISITEMPTYMSG {
+						//	frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
+						//}
+					default:
+						break algLoop
+					}
+				}
 
+				// consume messages read
+				if algCount != 0 {
+					g.TerminateVote[tidx] = -1
+					for i := 0; i < algCount; i++ {
+						msg := msgBuffer[i]
+						val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
 						frame.OnVisitVertex(g, msg.Didx, val)
 					}
-					g.MsgRecv[tidx] += uint32(msgCounter)
+					g.MsgRecv[tidx] += uint32(algCount)
 				} else {
 					if frame.CheckTermination(g, tidx) {
 						wg.Done()
@@ -187,7 +188,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnsureCompleteness(g *gra
 }
 
 // PrintTerminationStatus: Debug func to periodically print termination data and vote status.
-func PrintTerminationStatus[VertexProp, EdgeProp, MsgType any](g *graph.Graph[VertexProp, EdgeProp, MsgType], exit *bool) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) PrintTerminationStatus(g *graph.Graph[VertexProp, EdgeProp, MsgType], exit *bool) {
 	time.Sleep(2 * time.Second)
 	for !*exit {
 		chktermData := make([]int64, graph.THREADS+1)

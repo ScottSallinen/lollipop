@@ -25,25 +25,25 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 }
 
 func TestAsyncDynamic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		LaunchGraphExecution("../../data/test.txt", true, true, false, false, false)
 	}
 }
 func TestAsyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		LaunchGraphExecution("../../data/test.txt", true, false, false, false, false)
 	}
 }
 func TestSyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		LaunchGraphExecution("../../data/test.txt", false, false, false, false, false)
 	}
 }
 
-func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
 	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -71,9 +71,15 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *grap
 		switch v.Type {
 		case graph.ADD:
 			g.SendAdd(v.SrcRaw, v.DstRaw, EdgeProperty{})
+			if undirected {
+				g.SendAdd(v.DstRaw, v.SrcRaw, EdgeProperty{})
+			}
 			info("add ", v.SrcRaw, v.DstRaw)
 		case graph.DEL:
 			g.SendDel(v.SrcRaw, v.DstRaw)
+			if undirected {
+				g.SendDel(v.DstRaw, v.SrcRaw)
+			}
 			info("del ", v.SrcRaw, v.DstRaw)
 		}
 	}
@@ -108,14 +114,22 @@ func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, E
 	}
 }
 
-func TestDynamicCreation(t *testing.T) {
+func TestDynamicCreationDirected(t *testing.T) {
+	DynamicCreation(false, t)
+}
+
+func TestDynamicCreationUnDirected(t *testing.T) {
+	DynamicCreation(true, t)
+}
+
+func DynamicCreation(undirected bool, t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	EPSILON = 0.00001
 	allowedVariance := EPSILON * float64(100) // ?????
 
 	testFail := false
 
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
@@ -132,9 +146,9 @@ func TestDynamicCreation(t *testing.T) {
 		}
 		framework.ShuffleSC(rawTestGraph)
 
-		gDyn := DynamicGraphExecutionFromSC(rawTestGraph)
+		gDyn := DynamicGraphExecutionFromSC(rawTestGraph, undirected)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, false)
+		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, undirected)
 
 		a := make([]float64, len(gDyn.Vertices))
 		b := make([]float64, len(gStatic.Vertices))
@@ -175,14 +189,22 @@ func TestDynamicCreation(t *testing.T) {
 	}
 }
 
-func TestDynamicWithDelete(t *testing.T) {
+func TestDynamicWithDeleteDirected(t *testing.T) {
+	DynamicWithDelete(false, t)
+}
+
+func TestDynamicWithDeleteUnDirected(t *testing.T) {
+	DynamicWithDelete(true, t)
+}
+
+func DynamicWithDelete(undirected bool, t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	EPSILON = 0.00001
 	allowedVariance := EPSILON * float64(100) // ?????
 
 	testFail := false
 
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
@@ -198,9 +220,9 @@ func TestDynamicWithDelete(t *testing.T) {
 
 		adjustedGraph := framework.InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)
 
-		gDyn := DynamicGraphExecutionFromSC(adjustedGraph)
+		gDyn := DynamicGraphExecutionFromSC(adjustedGraph, undirected)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, false)
+		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, undirected)
 
 		CheckGraphStructureEquality(t, gDyn, gStatic)
 

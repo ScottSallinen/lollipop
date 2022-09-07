@@ -72,7 +72,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				change := miniGraph[vRaw][changeIdx]
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
-					src.OutEdges = append(src.OutEdges, graph.NewEdge(didx, &change.EdgeProperty))
+					src.OutEdges = append(src.OutEdges, graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: didx})
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
@@ -105,41 +105,6 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 		g.Mutex.RUnlock()
 	}
 	miniGraph = nil
-
-	/* // Old basic version that does not aggregate messages.
-	for _, change := range changes {
-		g.Mutex.RLock()
-		sidx := g.VertexMap[change.SrcRaw]
-		didx := g.VertexMap[change.DstRaw]
-		src := &g.Vertices[sidx]
-
-		// Next, add the edge to the source vertex.
-		//src.Mutex.Lock()
-		if change.Type == graph.ADD {
-			didxm := make(map[uint32]int)
-			didxm[didx] = len(src.OutEdges)
-			/// Add edge.. simple
-			src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
-			//src.Mutex.Unlock()
-			val := frame.AggregateRetrieve(src) // TODO: Adjust this for delete as well
-			// Send the edge change message.
-			frame.OnEdgeAdd(g, sidx, didxm, val)
-		} else if change.Type == graph.DEL {
-			/// Delete edge.. naively find target and swap last element with the hole.
-			for k, v := range src.OutEdges {
-				if v.Target == didx {
-					src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
-					break
-				}
-			}
-			src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-			//src.Mutex.Unlock()
-			// Send the edge change message.
-			frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
-		}
-		g.Mutex.RUnlock()
-	}
-	//*/
 }
 
 // ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
@@ -157,7 +122,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 	if graph.DEBUG {
 		exit := false
 		defer func() { exit = true }()
-		go PrintTerminationStatus(g, &exit)
+		go frame.PrintTerminationStatus(g, &exit)
 	}
 
 	// This adds a termination vote for when the dynamic injector is concluded.
@@ -251,6 +216,14 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 					select {
 					case msg := <-g.MessageQ[tidx]:
 						msgBuffer[algCount] = msg
+						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
+						// so no need to do so on the reciever side.
+						// This exists here in case the message is sent as a normal visit with a real message,
+						// so here we would be able to accumulate on the reciever side.
+						//target := &g.Vertices[msg.Didx]
+						//if msg.Type != graph.VISITEMPTYMSG {
+						//	frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
+						//}
 					default:
 						break algLoop
 					}
@@ -261,16 +234,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 					g.Mutex.RLock()
 					for i := 0; i < algCount; i++ {
 						msg := msgBuffer[i]
-						target := &g.Vertices[msg.Didx]
-						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
-						// so no need to do so on the reciever side.
-						// This exists here in case the message is sent as a normal visit with a real message,
-						// so here we would be able to accumulate on the reciever side.
-						if msg.Type != graph.VISITEMPTYMSG {
-							frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Val)
-						}
-						val := frame.AggregateRetrieve(target)
-
+						val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
 						frame.OnVisitVertex(g, msg.Didx, val)
 					}
 					g.Mutex.RUnlock()

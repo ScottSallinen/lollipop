@@ -13,7 +13,7 @@ import (
 )
 
 func TestSyncStatic(t *testing.T) {
-	for ti := 0; ti < 100; ti++ {
+	for ti := 0; ti < 10; ti++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", false, false)
 		g.PrintVertexProperty("Sync colours: ")
@@ -21,7 +21,7 @@ func TestSyncStatic(t *testing.T) {
 }
 
 func TestAsyncStatic(t *testing.T) {
-	for ti := 0; ti < 100; ti++ {
+	for ti := 0; ti < 10; ti++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, false)
 		g.PrintVertexProperty("Async colours: ")
@@ -29,7 +29,7 @@ func TestAsyncStatic(t *testing.T) {
 }
 
 func TestAsyncDynamic(t *testing.T) {
-	for ti := 0; ti < 100; ti++ {
+	for ti := 0; ti < 10; ti++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, true)
 		g.PrintVertexProperty("Dynamic colours: ")
@@ -37,7 +37,7 @@ func TestAsyncDynamic(t *testing.T) {
 }
 
 func TestAsyncDynamicWithDelete(t *testing.T) {
-	for ti := 0; ti < 100; ti++ {
+	for ti := 0; ti < 10; ti++ {
 		rawStructureChanges := []graph.StructureChange[EdgeProperty]{
 			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{}},
 			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{}},
@@ -126,6 +126,7 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 	g.InitVal = 0
 	g.EmptyVal = EMPTYVAL
 
+	g.Undirected = true
 	frame.Init(g, true, true)
 
 	var feederWg sync.WaitGroup

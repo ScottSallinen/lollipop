@@ -21,20 +21,7 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) SendDel(srcRaw uint32, dstRaw uin
 	g.ThreadStructureQ[g.RawIdToThreadIdx(srcRaw)] <- StructureChange[EdgeProp]{Type: DEL, SrcRaw: srcRaw, DstRaw: dstRaw}
 }
 
-// DynamicEdgeDequeuer reads all edges in queuechan writes corresponding StructureChange to the ThreadStructureQ of the
-// source vertex's thread
-//
-// Note: this is currently unused
-func (g *Graph[VertexProp, EdgeProp, MsgType]) DynamicEdgeDequeuer(queuechan chan RawEdge[EdgeProp], deqWg *sync.WaitGroup) {
-	for qElem := range queuechan {
-		//info("deq ", qElem.SrcRaw, qElem.DstRaw)
-		g.ThreadStructureQ[g.RawIdToThreadIdx(qElem.SrcRaw)] <- StructureChange[EdgeProp]{Type: ADD, SrcRaw: qElem.SrcRaw, DstRaw: qElem.DstRaw, EdgeProperty: qElem.EdgeProperty}
-	}
-	deqWg.Done()
-}
-
-// DynamicEdgeEnqueuer reads edges in the file and writes corresponding StructureChange to the ThreadStructureQ of the
-// source vertex's thread
+// DynamicEdgeEnqueuer reads edges in the file and writes corresponding StructureChange to the ThreadStructureQ of the source vertex's thread
 func (g *Graph[VertexProp, EdgeProp, MsgType]) DynamicEdgeEnqueuer(graphName string, edgeParser EdgeParserFunc[EdgeProp], wg *sync.WaitGroup, idx uint64, enqCount uint64, result chan uint64) {
 	file, err := os.Open(graphName)
 	enforce.ENFORCE(err)
@@ -55,17 +42,6 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) DynamicEdgeEnqueuer(graphName str
 			continue
 		}
 		rawEdge := edgeParser(lineText)
-
-		/*
-			before, after, ok := strings.Cut(lineText, " ")
-			if !ok {
-				before, after, ok = strings.Cut(lineText, "\t")
-				enforce.ENFORCE(ok)
-			}
-			src, _ := strconv.Atoi(before)
-			dst, _ := strconv.Atoi(after)
-			weight := 1.0
-		*/
 
 		// TODO: Option to remove self reference edges?
 		// if rawEdge.SrcRaw == rawEdge.DstRaw {

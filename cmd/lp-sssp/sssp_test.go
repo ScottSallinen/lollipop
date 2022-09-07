@@ -36,7 +36,7 @@ func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue],
 }
 
 func TestAsyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1, false)
 		PrintVertexProps(g, "")
@@ -44,7 +44,7 @@ func TestAsyncStatic(t *testing.T) {
 	}
 }
 func TestSyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", false, false, false, false, 1, false)
 		PrintVertexProps(g, "")
@@ -52,7 +52,7 @@ func TestSyncStatic(t *testing.T) {
 	}
 }
 func TestAsyncDynamic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		g := LaunchGraphExecution("../../data/test.txt", true, true, false, false, 1, false)
 		testGraphExpect(g, t)
@@ -140,7 +140,7 @@ func TestDynamicCreation(t *testing.T) {
 
 	testFail := false
 
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)

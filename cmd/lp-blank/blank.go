@@ -2,9 +2,13 @@ package main
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
 )
+
+// Defines when a message is deemed empty, uninitialized, etc.
+const EMPTYVAL = math.MaxFloat64
 
 // Defines the properties stored per vertex. Can be used below within the algorithm.
 type VertexProperty struct {
@@ -23,7 +27,7 @@ func (p *VertexProperty) String() string {
 // When multiple messages are for a vertex, how should we aggregate the info?
 // At a basic level, we typically wish to lock the target, perform a function
 // on the vertex's scratch data, and then unlock.
-func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
+func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, VisitMsg MessageValue) (newInfo bool) {
 	return false
 }
 
@@ -41,19 +45,19 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, VisitMsg MessageValue) {
 
 }
 
 // This function is to be called on a single edge deletion event.
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, VisitMsg MessageValue) {
 
 }
 
 // The main function for basic algorithm behaviour, and is the entry point.
 // The data is pulled from the scratch (using aggregate retrieve above) before being
 // handed to this function.
-func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
+func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, VisitMsg MessageValue) int {
 	return 0
 }
 
