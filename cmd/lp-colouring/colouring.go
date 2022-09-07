@@ -52,9 +52,10 @@ func findFirstUnused(coloursIndexed bitmap.Bitmap) (firstUnused uint32) {
 }
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, VisitMsg MessageValue) (newInfo bool) {
-	colour := uint32(VisitMsg[0].Colour) // Queue visits should only send a single value for this algorithm
-	if didx != sidx {                    // Self edges shouldn't refuse us our own colour
-		dst.Mutex.RLock() // Share write access
+	// Self edges shouldn't refuse us our own colour & nil message is init message.
+	if didx != sidx && VisitMsg != nil {
+		colour := uint32(VisitMsg[0].Colour) // Queue visits should only send a single value for this algorithm
+		dst.Mutex.RLock()                    // Share write access
 		dst.Property.NbrColoursScratch.Store(sidx, colour)
 		dst.Mutex.RUnlock()
 	}
@@ -115,9 +116,7 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	sourcePriority := hash(sidx)
 
 	for _, v := range VisitMsg {
-		if v.Vidx != sidx && v.Colour != EMPTYVAL {
-			source.Property.NbrColours[v.Vidx] = v.Colour
-		}
+		source.Property.NbrColours[v.Vidx] = v.Colour
 	}
 
 	for eidx := didxStart; eidx < len(source.OutEdges); eidx++ {
@@ -159,9 +158,7 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 	vertex := &g.Vertices[vidx]
 
 	for _, v := range VisitMsg {
-		if v.Vidx != vidx && v.Colour != EMPTYVAL {
-			vertex.Property.NbrColours[v.Vidx] = v.Colour
-		}
+		vertex.Property.NbrColours[v.Vidx] = v.Colour
 	}
 
 	if atomic.LoadInt64(&vertex.Property.WaitCount) > 0 {

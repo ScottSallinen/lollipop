@@ -87,8 +87,8 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[V
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = false
-	g.InitVal = []IdColourPair{{Colour: EMPTYVAL}}
-	g.EmptyVal = []IdColourPair{{Colour: EMPTYVAL}}
+	g.InitVal = nil // Each vertex is visited, but no actual value needed to initialize.
+	g.EmptyVal = nil
 
 	frame.Launch(g, gName, async, dynamic, false, true)
 
