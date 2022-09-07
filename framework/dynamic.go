@@ -80,7 +80,11 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 			}
 			// From the gathered set of consecutive adds, apply them.
 			if len(src.OutEdges) > didxStart {
-				val := frame.AggregateRetrieve(src)
+				// This can't happen here if using reverse messages..
+				val := g.EmptyVal
+				if !g.SendRevMsgs && !g.Undirected {
+					val = frame.AggregateRetrieve(src)
+				}
 				msgs := frame.OnEdgeAdd(g, sidx, didxStart, val)
 				if g.Undirected || g.SendRevMsgs { // Send reverse messages only if undirected or required.
 					for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
