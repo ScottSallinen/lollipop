@@ -2,30 +2,36 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"strconv"
 	"strings"
 
 	_ "net/http/pprof"
 
-	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 )
+
+// Function which defines how to convert a line of text into an edge
+func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
+	stringFields := strings.Fields(lineText)
+	src, _ := strconv.Atoi(stringFields[0])
+	dst, _ := strconv.Atoi(stringFields[1])
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
+}
 
 // This function is mostly optional, but is a good way to describe
 // an algorithm that can check for correctness of a result (outside just the go tests)
 // For example, for breadth first search, you wouldn't expect a neighbour to be more than
 // one hop away; for graph colouring you wouldn't expect two neighbours to have the same colour,
 // etc. This can codify the desire to ensure correct behaviour.
-func OnCheckCorrectness(g *graph.Graph[VertexProperty]) error {
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	return nil
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph[VertexProperty] {
-	frame := framework.Framework[VertexProperty]{}
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -34,14 +40,15 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
+	frame.EdgeParser = EdgeParser
 
-	g := &graph.Graph[VertexProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 
 	// Some potential extra defines here, for if the algorithm has a "point" initialization
 	// or is instead initialized by default behaviour (where every vertex is visited initially)
 	// g.SourceInit = true
 	// g.SourceInitVal = 1.0
-	// g.EmptyVal = math.MaxFloat64
+	// g.EmptyVal = EMPTYVAL
 	// g.SourceVertex = rawSrc
 
 	frame.Launch(g, gName, async, dynamic, oracle, undirected)
@@ -57,43 +64,20 @@ func main() {
 	pptr := flag.Bool("p", false, "Save vertex properties to disk")
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
-	gName := *gptr
+
 	graph.THREADS = *tptr
 	graph.TARGETRATE = *rptr
-
-	gNameMainT := strings.Split(gName, "/")
-	gNameMain := gNameMainT[len(gNameMainT)-1]
-	gNameMainTD := strings.Split(gNameMain, ".")
-	if len(gNameMainTD) > 1 {
-		gNameMain = gNameMainTD[len(gNameMainTD)-2]
-	} else {
-		gNameMain = gNameMainTD[0]
-	}
-	gNameMain = "results/" + gNameMain
 
 	//runtime.SetMutexProfileFraction(1)
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(gName, *aptr, *dptr, false, *uptr)
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, false, *uptr)
 	g.ComputeGraphStats(false, false)
 
 	if *pptr {
-		resName := "static"
-		if *dptr {
-			resName = "dynamic"
-		}
-		WriteVertexProps(g, gNameMain+"-props-"+resName+".txt")
-	}
-}
-
-func WriteVertexProps(g *graph.Graph[VertexProperty], fname string) {
-	f, err := os.Create(fname)
-	enforce.ENFORCE(err)
-	defer f.Close()
-	for vidx := range g.Vertices {
-		_, err := f.WriteString(fmt.Sprintf("%d %.4f\n", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value))
-		enforce.ENFORCE(err)
+		graphName := framework.ExtractGraphName(*gptr)
+		g.WriteVertexProps(graphName, *dptr)
 	}
 }

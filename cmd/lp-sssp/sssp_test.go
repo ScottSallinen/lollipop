@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"sync"
 	"testing"
@@ -15,11 +14,11 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-func PrintVertexProps(g *graph.Graph[VertexProperty], prefix string) {
+func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Scratch)
+		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Scratch)
 		sum += g.Vertices[vidx].Property.Value
 	}
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
@@ -27,8 +26,8 @@ func PrintVertexProps(g *graph.Graph[VertexProperty], prefix string) {
 
 // Expectation when 1 is src.
 // TODO: Test other sources!
-func testGraphExpect(g *graph.Graph[VertexProperty], t *testing.T) {
-	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, g.EmptyVal}
+func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
+	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, EMPTYVAL}
 	for i := range expectations {
 		if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
 			t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value, " expected ", expectations[i])
@@ -37,39 +36,32 @@ func testGraphExpect(g *graph.Graph[VertexProperty], t *testing.T) {
 }
 
 func TestAsyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1)
+		g := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1, false)
 		PrintVertexProps(g, "")
 		testGraphExpect(g, t)
 	}
 }
 func TestSyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", false, false, false, false, 1)
+		g := LaunchGraphExecution("../../data/test.txt", false, false, false, false, 1, false)
 		PrintVertexProps(g, "")
 		testGraphExpect(g, t)
 	}
 }
 func TestAsyncDynamic(t *testing.T) {
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", true, true, false, false, 1)
+		g := LaunchGraphExecution("../../data/test.txt", true, true, false, false, 1, false)
 		testGraphExpect(g, t)
 		PrintVertexProps(g, "")
 	}
 }
 
-type StructureChange struct {
-	change graph.VisitType
-	srcRaw uint32
-	dstRaw uint32
-	weight float64
-}
-
-func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Graph[VertexProperty] {
-	frame := framework.Framework[VertexProperty]{}
+func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
@@ -79,10 +71,10 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
-	g := &graph.Graph[VertexProperty]{}
+	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.SourceInit = true
-	g.SourceInitVal = 1.0
-	g.EmptyVal = math.MaxFloat64
+	g.InitVal = 1.0
+	g.EmptyVal = EMPTYVAL
 	g.SourceVertex = rawSrc
 
 	frame.Init(g, true, true)
@@ -95,13 +87,13 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	go frame.Run(g, &feederWg, &frameWait)
 
 	for _, v := range sc {
-		switch v.change {
+		switch v.Type {
 		case graph.ADD:
-			g.SendAdd(v.srcRaw, v.dstRaw, v.weight)
-			info("add ", v.srcRaw, v.dstRaw, v.weight)
+			g.SendAdd(v.SrcRaw, v.DstRaw, v.EdgeProperty)
+			info("add ", v.SrcRaw, v.DstRaw)
 		case graph.DEL:
-			g.SendDel(v.srcRaw, v.dstRaw)
-			info("del ", v.srcRaw, v.dstRaw)
+			g.SendDel(v.SrcRaw, v.DstRaw)
+			info("del ", v.SrcRaw, v.DstRaw)
 		}
 	}
 
@@ -113,7 +105,7 @@ func DynamicGraphExecutionFromSC(sc []StructureChange, rawSrc uint32) *graph.Gra
 	return g
 }
 
-func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty], g2 *graph.Graph[VertexProperty]) {
+func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, EdgeProperty, MessageValue], g2 *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
 	if len(g1.Vertices) != len(g2.Vertices) {
 		t.Error("vertex count mismatch", len(g1.Vertices), len(g2.Vertices))
 	}
@@ -135,7 +127,7 @@ func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty], 
 	}
 }
 
-func shuffleSC(sc []StructureChange) {
+func shuffleSC(sc []graph.StructureChange[EdgeProperty]) {
 	for i := range sc {
 		j := rand.Intn(i + 1)
 		sc[i], sc[j] = sc[j], sc[i]
@@ -148,26 +140,26 @@ func TestDynamicCreation(t *testing.T) {
 
 	testFail := false
 
-	for tcount := 0; tcount < 100; tcount++ {
+	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
 
-		rawTestGraph := []StructureChange{
-			{graph.ADD, 1, 4, 1.0},
-			{graph.ADD, 2, 0, 1.0},
-			{graph.ADD, 2, 1, 1.0},
-			{graph.ADD, 3, 0, 1.0},
-			{graph.ADD, 4, 2, 1.0},
-			{graph.ADD, 4, 3, 1.0},
-			{graph.ADD, 4, 5, 1.0},
-			{graph.ADD, 6, 2, 1.0},
+		rawTestGraph := []graph.StructureChange[EdgeProperty]{
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{1.0}},
 		}
 		shuffleSC(rawTestGraph)
 
 		gDyn := DynamicGraphExecutionFromSC(rawTestGraph, 1)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1)
+		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1, false)
 
 		a := make([]float64, len(gDyn.Vertices))
 		b := make([]float64, len(gStatic.Vertices))

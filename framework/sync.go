@@ -2,58 +2,48 @@ package framework
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-func (frame *Framework[VertexProp]) OnQueueVisitSync(g *graph.Graph[VertexProp], sidx uint32, didx uint32, VisitData float64) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitSync(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType) {
 	target := &g.Vertices[didx]
-	//target.Mutex.Lock()
-	frame.MessageAggregator(target, VisitData)
-	//target.Mutex.Unlock()
+	newInfo := frame.MessageAggregator(target, didx, sidx, VisitData)
+	if newInfo {
+		atomic.StoreInt32(&target.IsActive, 1)
+	}
 }
 
-func (frame *Framework[VertexProp]) ConvergeSync(g *graph.Graph[VertexProp], wg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeSync(g *graph.Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup) {
 	info("ConvergeSync")
 	if g.SourceInit {
 		sidx := g.VertexMap[g.SourceVertex]
-		frame.OnVisitVertex(g, sidx, g.SourceInitVal)
+		frame.OnVisitVertex(g, sidx, g.InitVal)
 	}
 	iteration := 0
 	for {
-		vertexActive := 0
-		var wg sync.WaitGroup
-		wg.Add(graph.THREADS)
-		batch := uint32(len(g.Vertices) / graph.THREADS)
-		for t := uint32(0); t < uint32(graph.THREADS); t++ {
-			go func(tidx uint32, iteration int) {
-				defer wg.Done()
-				start := tidx * batch
-				end := (tidx + 1) * batch
-				if tidx == uint32(graph.THREADS-1) {
-					end = uint32(len(g.Vertices))
+		someVertexActive := 0
+		mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vidx int, tidx int) {
+			target := &g.Vertices[vidx]
+			if !g.SourceInit && iteration == 0 {
+				frame.OnQueueVisitSync(g, uint32(vidx), uint32(vidx), g.InitVal)
+			}
+			active := atomic.SwapInt32(&target.IsActive, 0) == 1
+			if active {
+				msgVal := frame.AggregateRetrieve(target)
+				createsNewActivity := frame.OnVisitVertex(g, uint32(vidx), msgVal)
+				if createsNewActivity > 0 {
+					someVertexActive = 1
 				}
-				for j := start; j < end; j++ {
-					target := &g.Vertices[j]
-					if target.Scratch != g.EmptyVal || iteration == 0 {
-						//target.Mutex.Lock()
-						msgVal := frame.AggregateRetrieve(target)
-						//target.Mutex.Unlock()
-						mActive := frame.OnVisitVertex(g, j, msgVal)
-						if mActive > 0 {
-							vertexActive = 1
-						}
-					}
-				}
-			}(t, iteration)
-		}
-
-		wg.Wait()
+			}
+		})
 		iteration++
 
 		//frame.OnCompareOracle(g)
 
-		if vertexActive != 1 {
+		if someVertexActive != 1 {
 			break
 		}
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
@@ -9,15 +10,25 @@ import (
 
 const DAMPINGFACTOR = float64(0.85)
 const INITMASS = 1.0
+const EMPTYVAL = 0.0
 
 var EPSILON = float64(0.001)
 
 type VertexProperty struct {
 	Residual float64
 	Value    float64
+	Scratch  float64 // Intermediary accumulator
 }
 
-func MessageAggregator(target *graph.Vertex[VertexProperty], data float64) (newInfo bool) {
+func (p *VertexProperty) String() string {
+	return fmt.Sprintf("%.4f %.4f", p.Value, p.Residual)
+}
+
+type EdgeProperty struct{}
+
+type MessageValue float64
+
+func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
 	/*
 		target.Mutex.Lock()
 		tmp := target.Scratch
@@ -25,11 +36,11 @@ func MessageAggregator(target *graph.Vertex[VertexProperty], data float64) (newI
 		target.Mutex.Unlock()
 		return tmp == 0.0
 	*/
-	old := mathutils.AtomicAddFloat64(&target.Scratch, data)
+	old := mathutils.AtomicAddFloat64(&dst.Property.Scratch, float64(data))
 	return old == 0.0
 }
 
-func AggregateRetrieve(target *graph.Vertex[VertexProperty]) float64 {
+func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
 	/*
 		target.Mutex.Lock()
 		tmp := target.Scratch
@@ -37,51 +48,52 @@ func AggregateRetrieve(target *graph.Vertex[VertexProperty]) float64 {
 		target.Mutex.Unlock()
 		return tmp
 	*/
-	old := mathutils.AtomicSwapFloat64(&target.Scratch, 0.0)
-	return old
+	old := mathutils.AtomicSwapFloat64(&target.Property.Scratch, 0.0)
+	return MessageValue(old)
 }
 
-func OnInitVertex(g *graph.Graph[VertexProperty], vidx uint32) {
-	g.Vertices[vidx].Property.Residual = INITMASS
+func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
+	g.Vertices[vidx].Property.Residual = 0.0
 	g.Vertices[vidx].Property.Value = 0.0
-	g.Vertices[vidx].Scratch = 0.0
+	g.Vertices[vidx].Property.Scratch = 0.0
 }
 
-// OnEdgeAdd is the complex version which merges a Visit call.
-func OnEdgeAdd(g *graph.Graph[VertexProperty], sidx uint32, didxs map[uint32]int, data float64) {
+// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
+// The view here is **post** addition (the edges are already appended to the edge list)
+// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
-	src.Property.Residual += data
+	src.Property.Residual += float64(data)
 	toDistribute := DAMPINGFACTOR * (src.Property.Residual)
 	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.Residual)
 	src.Property.Value += toAbsorb
 	src.Property.Residual = 0.0
 	distribute := toDistribute / float64(len(src.OutEdges))
 
-	if len(src.OutEdges) > 1 { /// Not just our first edge
-		distOld := distAllPrev / (float64(len(src.OutEdges) - len(didxs)))
-		distNew := distAllPrev / (float64(len(src.OutEdges)))
+	if len(src.OutEdges) > 1 { // Not just our first edge
+		distOld := distAllPrev / (float64(didxStart))         // Previous edge count
+		distNew := distAllPrev / (float64(len(src.OutEdges))) // Current (new) edge count
 		distDelta := distNew - distOld
 
-		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Target
-			if _, in := didxs[target]; in {
-				/// Do nothing, this only goes to old edges
-			} else {
-				g.OnQueueVisit(g, sidx, target, distDelta+distribute)
-			}
+		// Previously existing edges [0, new) get this adjustment.
+		for eidx := 0; eidx < didxStart; eidx++ {
+			target := src.OutEdges[eidx].Destination
+			g.OnQueueVisit(g, sidx, target, MessageValue(distDelta+distribute))
 		}
 	}
 	distNewEdge := distAllPrev / (float64(len(src.OutEdges)))
 
-	for didx := range didxs {
-		g.OnQueueVisit(g, sidx, didx, distNewEdge+distribute)
+	// New edges [new, len) get this adjustment
+	for didx := didxStart; didx < len(src.OutEdges); didx++ {
+		target := src.OutEdges[didx].Destination
+		g.OnQueueVisit(g, sidx, target, MessageValue(distNewEdge+distribute))
 	}
 }
 
 // OnEdgeAddBasic is the simple version which does not merge a Visit call.
-func OnEdgeAddBasic(g *graph.Graph[VertexProperty], sidx uint32, didx uint32, data float64) {
+func OnEdgeAddBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -91,18 +103,18 @@ func OnEdgeAddBasic(g *graph.Graph[VertexProperty], sidx uint32, didx uint32, da
 		distDelta := distNew - distOld
 
 		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Target
+			target := src.OutEdges[eidx].Destination
 			if target != didx { /// Only old edges
-				g.OnQueueVisit(g, sidx, target, distDelta)
+				g.OnQueueVisit(g, sidx, target, MessageValue(distDelta))
 			}
 		}
 	}
 	distNewEdge := distAllPrev / (float64(len(src.OutEdges)))
 
-	g.OnQueueVisit(g, sidx, didx, distNewEdge)
+	g.OnQueueVisit(g, sidx, didx, MessageValue(distNewEdge))
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty], sidx uint32, didx uint32, data float64) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -112,18 +124,18 @@ func OnEdgeDel(g *graph.Graph[VertexProperty], sidx uint32, didx uint32, data fl
 		distDelta := distNew - distOld
 
 		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Target
-			g.OnQueueVisit(g, sidx, target, distDelta)
+			target := src.OutEdges[eidx].Destination
+			g.OnQueueVisit(g, sidx, target, MessageValue(distDelta))
 		}
 	}
 	distOldEdge := -1.0 * distAllPrev / (float64(len(src.OutEdges) + 1))
 
-	g.OnQueueVisit(g, sidx, didx, distOldEdge)
+	g.OnQueueVisit(g, sidx, didx, MessageValue(distOldEdge))
 }
 
-func OnVisitVertex(g *graph.Graph[VertexProperty], vidx uint32, data float64) int {
+func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
 	vertex := &g.Vertices[vidx]
-	vertex.Property.Residual += data
+	vertex.Property.Residual += float64(data)
 
 	if math.Abs(vertex.Property.Residual) > EPSILON {
 		toDistribute := DAMPINGFACTOR * (vertex.Property.Residual)
@@ -135,8 +147,8 @@ func OnVisitVertex(g *graph.Graph[VertexProperty], vidx uint32, data float64) in
 		if len(vertex.OutEdges) > 0 {
 			distribute := toDistribute / float64(len(vertex.OutEdges))
 			for eidx := range vertex.OutEdges {
-				target := vertex.OutEdges[eidx].Target
-				g.OnQueueVisit(g, vidx, target, distribute)
+				target := vertex.OutEdges[eidx].Destination
+				g.OnQueueVisit(g, vidx, target, MessageValue(distribute))
 			}
 		}
 		return len(vertex.OutEdges)
@@ -153,7 +165,7 @@ func OnVisitVertex(g *graph.Graph[VertexProperty], vidx uint32, data float64) in
 // A minor modification has been made since the publication of the paper,
 // we no longer need to track latent values within a sink during processing, as it can actually be computed at the end
 // with simply the computation g.Vertices[vidx].Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
-func OnFinish(g *graph.Graph[VertexProperty]) error {
+func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	// Fix all sink node latent values
 	numSinks := 0       /// Number of sink nodes.
 	globalLatent := 0.0 /// Total latent values from sinks.
@@ -163,11 +175,11 @@ func OnFinish(g *graph.Graph[VertexProperty]) error {
 	for vidx := range g.Vertices {
 		// New: absorb any leftovers of residual
 		//*/
-		g.Vertices[vidx].Property.Value += (1.0 - DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Scratch)
+		g.Vertices[vidx].Property.Value += (1.0 - DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Property.Scratch)
 		// Ideally we distribute (the residual should be spread among nbrs).
 		// But we must cheat the total sum mass check, so we leave some here (Residual is no longer meaningful, just used for bookkeeping).
-		g.Vertices[vidx].Property.Residual = (DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Scratch)
-		g.Vertices[vidx].Scratch = 0.0
+		g.Vertices[vidx].Property.Residual = (DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Property.Scratch)
+		g.Vertices[vidx].Property.Scratch = 0.0
 		//*/
 
 		if len(g.Vertices[vidx].OutEdges) == 0 { // Sink vertex

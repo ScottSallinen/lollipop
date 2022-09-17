@@ -1,16 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
@@ -18,32 +19,56 @@ func info(args ...interface{}) {
 	log.Println("[Shuffler]\t", fmt.Sprint(args...))
 }
 
-func EdgeDequeuer(queuechan chan graph.RawEdge, edgelist *[]graph.RawEdge, deqWg *sync.WaitGroup) {
+func LineDequeuer(queuechan chan string, lineList *[]string, deqWg *sync.WaitGroup) {
 	for qElem := range queuechan {
-		*edgelist = append(*edgelist, graph.RawEdge{SrcRaw: uint32(qElem.SrcRaw), DstRaw: uint32(qElem.DstRaw), Weight: qElem.Weight})
+		*lineList = append(*lineList, qElem)
 	}
 	deqWg.Done()
 }
 
-func LoadEdgeList(graphName string, threads int) (finallist []graph.RawEdge) {
+func LineEnqueuer(queuechans []chan string, graphName string, undirected bool, wg *sync.WaitGroup, idx uint64, enqCount uint64, deqCount uint64, result chan uint64) {
+	file, err := os.Open(graphName)
+	enforce.ENFORCE(err)
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lines := uint64(0)
+	mLines := uint64(0)
+	for scanner.Scan() {
+		lines++
+		if lines%enqCount != idx {
+			continue
+		}
+		mLines++
+		lineText := scanner.Text()
+		if strings.HasPrefix(lineText, "#") {
+			continue
+		}
+		queuechans[lines%deqCount] <- lineText
+	}
+	result <- mLines
+	wg.Done()
+}
+
+func LoadlineList(graphName string, threads int) (finallist []string) {
 	qCount := mathutils.MaxUint64(uint64(threads), 1)
 	m1 := time.Now()
 
-	edgelists := make([][]graph.RawEdge, threads)
+	lineLists := make([][]string, threads)
 
-	queuechans := make([]chan graph.RawEdge, qCount)
+	queuechans := make([]chan string, qCount)
 	var deqWg sync.WaitGroup
 	deqWg.Add(int(qCount))
 	for i := uint64(0); i < qCount; i++ {
-		queuechans[i] = make(chan graph.RawEdge, 4096)
-		go EdgeDequeuer(queuechans[i], &edgelists[i], &deqWg)
+		queuechans[i] = make(chan string, 4096)
+		go LineDequeuer(queuechans[i], &lineLists[i], &deqWg)
 	}
 
 	resultchan := make(chan uint64, qCount)
 	var enqWg sync.WaitGroup
 	enqWg.Add(int(qCount))
 	for i := uint64(0); i < qCount; i++ {
-		go graph.EdgeEnqueuer(queuechans, graphName, false, &enqWg, i, qCount, qCount, resultchan)
+		go LineEnqueuer(queuechans, graphName, false, &enqWg, i, qCount, qCount, resultchan)
 	}
 	enqWg.Wait()
 	for i := uint64(0); i < qCount; i++ {
@@ -57,11 +82,11 @@ func LoadEdgeList(graphName string, threads int) (finallist []graph.RawEdge) {
 	deqWg.Wait()
 
 	t1 := time.Since(m1)
-	info("Read ", lines, " edges in (ms) ", t1.Milliseconds())
+	info("Read ", lines, " lines in (ms) ", t1.Milliseconds())
 
-	for i := range edgelists {
-		info(i, ":", len(edgelists[i]))
-		finallist = append(finallist, edgelists[i]...)
+	for i := range lineLists {
+		info(i, ":", len(lineLists[i]))
+		finallist = append(finallist, lineLists[i]...)
 	}
 	return finallist
 }
@@ -71,19 +96,18 @@ func main() {
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
 
-	edgelist := LoadEdgeList(*gptr, *tptr)
+	lineList := LoadlineList(*gptr, *tptr)
 
 	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(edgelist), func(i, j int) { edgelist[i], edgelist[j] = edgelist[j], edgelist[i] })
+	rand.Shuffle(len(lineList), func(i, j int) { lineList[i], lineList[j] = lineList[j], lineList[i] })
 
-	info("Edges:", len(edgelist))
+	info("Lines:", len(lineList))
 
 	f, err := os.Create(*gptr + ".shuffled")
 	enforce.ENFORCE(err)
 	defer f.Close()
-	for edge := range edgelist {
-		// todo: weight?
-		_, err := f.WriteString(fmt.Sprintf("%d %d\n", edgelist[edge].SrcRaw, edgelist[edge].DstRaw))
+	for line := range lineList {
+		_, err := f.WriteString(fmt.Sprintf("%s\n", lineList[line]))
 		enforce.ENFORCE(err)
 	}
 }

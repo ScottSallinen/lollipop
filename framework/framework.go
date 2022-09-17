@@ -3,11 +3,14 @@ package framework
 import (
 	"fmt"
 	"log"
+	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 var resultCache []float64
@@ -16,37 +19,40 @@ func info(args ...any) {
 	log.Println("[Framework]\t", fmt.Sprint(args...))
 }
 
-type Framework[VertexProp any] struct {
-	OnInitVertex       OnInitVertexFunc[VertexProp]
-	OnVisitVertex      OnVisitVertexFunc[VertexProp]
-	OnFinish           OnFinishFunc[VertexProp]
-	OnCheckCorrectness OnCheckCorrectnessFunc[VertexProp]
-	OnEdgeAdd          OnEdgeAddFunc[VertexProp]
-	OnEdgeDel          OnEdgeDelFunc[VertexProp]
-	MessageAggregator  MessageAggregatorFunc[VertexProp]
-	AggregateRetrieve  AggregateRetrieveFunc[VertexProp]
-	OracleComparison   OracleComparison[VertexProp]
+type Framework[VertexProp, EdgeProp, MsgType any] struct {
+	OnInitVertex       OnInitVertexFunc[VertexProp, EdgeProp, MsgType]
+	OnVisitVertex      OnVisitVertexFunc[VertexProp, EdgeProp, MsgType]
+	OnFinish           OnFinishFunc[VertexProp, EdgeProp, MsgType]
+	OnCheckCorrectness OnCheckCorrectnessFunc[VertexProp, EdgeProp, MsgType]
+	OnEdgeAdd          OnEdgeAddFunc[VertexProp, EdgeProp, MsgType]
+	OnEdgeDel          OnEdgeDelFunc[VertexProp, EdgeProp, MsgType]
+	MessageAggregator  MessageAggregatorFunc[VertexProp, EdgeProp, MsgType]
+	AggregateRetrieve  AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType]
+	OracleComparison   OracleComparison[VertexProp, EdgeProp, MsgType]
+	EdgeParser         EdgeParserFunc[EdgeProp]
+	IsMsgEmpty         func(MsgType) bool
 }
 
-type OnInitVertexFunc[VertexProp any] func(g *graph.Graph[VertexProp], vidx uint32)
-type OnVisitVertexFunc[VertexProp any] func(g *graph.Graph[VertexProp], vidx uint32, data float64) int
-type OnFinishFunc[VertexProp any] func(g *graph.Graph[VertexProp]) error
-type OnCheckCorrectnessFunc[VertexProp any] func(g *graph.Graph[VertexProp]) error
-type OnEdgeAddFunc[VertexProp any] func(g *graph.Graph[VertexProp], sidx uint32, didxs map[uint32]int, VisitData float64)
-type OnEdgeDelFunc[VertexProp any] func(g *graph.Graph[VertexProp], sidx uint32, didx uint32, VisitData float64)
-type MessageAggregatorFunc[VertexProp any] func(g *graph.Vertex[VertexProp], VisitData float64) (newInfo bool)
-type AggregateRetrieveFunc[VertexProp any] func(g *graph.Vertex[VertexProp]) (data float64)
-type OracleComparison[VertexProp any] func(g *graph.Graph[VertexProp], oracle *graph.Graph[VertexProp], resultCache *[]float64)
+type OnInitVertexFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], vidx uint32)
+type OnVisitVertexFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], vidx uint32, data MsgType) int
+type OnFinishFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType]) error
+type OnCheckCorrectnessFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType]) error
+type OnEdgeAddFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, VisitData MsgType)
+type OnEdgeDelFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
+type MessageAggregatorFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp], didx, sidx uint32, VisitData MsgType) (newInfo bool)
+type AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Vertex[VertexProp, EdgeProp]) (data MsgType)
+type OracleComparison[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], oracle *graph.Graph[VertexProp, EdgeProp, MsgType], resultCache *[]float64)
+type EdgeParserFunc[EdgeProp any] graph.EdgeParserFunc[EdgeProp]
 
-func (frame *Framework[VertexProp]) Init(g *graph.Graph[VertexProp], async bool, dynamic bool) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[VertexProp, EdgeProp, MsgType], async bool, dynamic bool) {
 	//info("Started.")
 	if async || dynamic {
 		g.OnQueueVisit = frame.OnQueueVisitAsync
 		if dynamic {
 			g.VertexMap = make(map[uint32]uint32, 4*4096)
 		}
-		g.MessageQ = make([]chan graph.Message, graph.THREADS)
-		g.ThreadStructureQ = make([]chan graph.StructureChange, graph.THREADS)
+		g.MessageQ = make([]chan graph.Message[MsgType], graph.THREADS)
+		g.ThreadStructureQ = make([]chan graph.StructureChange[EdgeProp], graph.THREADS)
 		g.MsgSend = make([]uint32, graph.THREADS+1)
 		g.MsgRecv = make([]uint32, graph.THREADS+1)
 		g.TerminateVote = make([]int, graph.THREADS+1)
@@ -54,10 +60,10 @@ func (frame *Framework[VertexProp]) Init(g *graph.Graph[VertexProp], async bool,
 		for i := 0; i < graph.THREADS; i++ {
 			if dynamic {
 				// TODO: Need a better way to manipulate channel size for dynamic. Maybe request approx vertex count from user?
-				g.MessageQ[i] = make(chan graph.Message, (4 * 4096 * 64))
-				g.ThreadStructureQ[i] = make(chan graph.StructureChange, 4*4*4096)
+				g.MessageQ[i] = make(chan graph.Message[MsgType], (4 * 4096 * 64))
+				g.ThreadStructureQ[i] = make(chan graph.StructureChange[EdgeProp], 4*4*4096)
 			} else {
-				g.MessageQ[i] = make(chan graph.Message, len(g.Vertices)+8)
+				g.MessageQ[i] = make(chan graph.Message[MsgType], len(g.Vertices)+8)
 			}
 		}
 		if dynamic {
@@ -71,14 +77,14 @@ func (frame *Framework[VertexProp]) Init(g *graph.Graph[VertexProp], async bool,
 	}
 
 	//m0 := time.Now()
-	for vidx := range g.Vertices {
-		frame.OnInitVertex(g, uint32(vidx))
-	}
+	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(idx int, tidx int) {
+		frame.OnInitVertex(g, uint32(idx))
+	})
 	//t0 := time.Since(m0)
 	//info("Initialized(ms) ", t0.Milliseconds())
 }
 
-func (frame *Framework[VertexProp]) Run(g *graph.Graph[VertexProp], inputWg *sync.WaitGroup, outputWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) Run(g *graph.Graph[VertexProp, EdgeProp, MsgType], inputWg *sync.WaitGroup, outputWg *sync.WaitGroup) {
 	//info("Running.")
 	g.Watch.Start()
 	g.AlgConverge(g, inputWg)
@@ -96,9 +102,10 @@ func (frame *Framework[VertexProp]) Run(g *graph.Graph[VertexProp], inputWg *syn
 	outputWg.Done()
 }
 
-func (frame *Framework[VertexProp]) Launch(g *graph.Graph[VertexProp], gName string, async bool, dynamic bool, oracle bool, undirected bool) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) Launch(g *graph.Graph[VertexProp, EdgeProp, MsgType], gName string, async bool, dynamic bool, oracle bool, undirected bool) {
+	g.Undirected = undirected
 	if !dynamic {
-		g.LoadGraphStatic(gName, undirected)
+		g.LoadGraphStatic(gName, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser))
 	}
 
 	frame.Init(g, async, dynamic)
@@ -109,7 +116,7 @@ func (frame *Framework[VertexProp]) Launch(g *graph.Graph[VertexProp], gName str
 	frameWait.Add(1)
 
 	if dynamic {
-		go g.LoadGraphDynamic(gName, undirected, &feederWg)
+		go g.LoadGraphDynamic(gName, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser), &feederWg)
 	}
 
 	if oracle {
@@ -121,7 +128,7 @@ func (frame *Framework[VertexProp]) Launch(g *graph.Graph[VertexProp], gName str
 	frame.Run(g, &feederWg, &frameWait)
 }
 
-func (frame *Framework[VertexProp]) CompareToOracleRunnable(g *graph.Graph[VertexProp], exit *bool, sleepTime time.Duration) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracleRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], exit *bool, sleepTime time.Duration) {
 	time.Sleep(sleepTime)
 	for !*exit {
 		frame.CompareToOracle(g)
@@ -129,14 +136,14 @@ func (frame *Framework[VertexProp]) CompareToOracleRunnable(g *graph.Graph[Verte
 	}
 }
 
-func (originalFrame *Framework[VertexProp]) CompareToOracle(g *graph.Graph[VertexProp]) {
+func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g *graph.Graph[VertexProp, EdgeProp, MsgType]) {
 	numEdges := uint64(0)
 
 	g.Mutex.Lock()
 	g.Watch.Pause()
 	info("----INLINE----")
 	info("inlineCurrentTime(ms) ", g.Watch.Elapsed().Milliseconds())
-	newFrame := Framework[VertexProp]{}
+	newFrame := Framework[VertexProp, EdgeProp, MsgType]{}
 	newFrame.OnInitVertex = originalFrame.OnInitVertex
 	newFrame.OnVisitVertex = originalFrame.OnVisitVertex
 	newFrame.OnFinish = originalFrame.OnFinish
@@ -145,22 +152,23 @@ func (originalFrame *Framework[VertexProp]) CompareToOracle(g *graph.Graph[Verte
 	newFrame.OnEdgeDel = originalFrame.OnEdgeDel
 	newFrame.MessageAggregator = originalFrame.MessageAggregator
 	newFrame.AggregateRetrieve = originalFrame.AggregateRetrieve
+	newFrame.IsMsgEmpty = originalFrame.IsMsgEmpty
 
-	altG := &graph.Graph[VertexProp]{}
+	altG := &graph.Graph[VertexProp, EdgeProp, MsgType]{}
+	altG.Undirected = g.Undirected
 	altG.EmptyVal = g.EmptyVal
 	altG.SourceInit = g.SourceInit
-	altG.SourceInitVal = g.SourceInitVal
+	altG.InitVal = g.InitVal
 	altG.SourceVertex = g.SourceVertex
 
 	altG.VertexMap = g.VertexMap // ok to shallow copy, we do not edit.
-	altG.Vertices = make([]graph.Vertex[VertexProp], len(g.Vertices))
-	gVertexStash := make([]graph.Vertex[VertexProp], len(g.Vertices))
+	altG.Vertices = make([]graph.Vertex[VertexProp, EdgeProp], len(g.Vertices))
+	gVertexStash := make([]graph.Vertex[VertexProp, EdgeProp], len(g.Vertices))
 	for v := range g.Vertices {
 		altG.Vertices[v].Id = g.Vertices[v].Id
 		altG.Vertices[v].OutEdges = g.Vertices[v].OutEdges
 		numEdges += uint64(len(g.Vertices[v].OutEdges))
 		gVertexStash[v].Id = g.Vertices[v].Id
-		gVertexStash[v].Scratch = g.Vertices[v].Scratch
 		gVertexStash[v].Property = g.Vertices[v].Property
 	}
 
@@ -182,7 +190,6 @@ func (originalFrame *Framework[VertexProp]) CompareToOracle(g *graph.Graph[Verte
 
 	for v := range g.Vertices {
 		// Resetting the effect of the "early finish"
-		g.Vertices[v].Scratch = gVertexStash[v].Scratch
 		g.Vertices[v].Property = gVertexStash[v].Property
 	}
 
@@ -224,4 +231,50 @@ func (originalFrame *Framework[VertexProp]) CompareToOracle(g *graph.Graph[Verte
 	g.Mutex.Unlock()
 	info("----END_INLINE----")
 	g.Watch.UnPause()
+}
+
+func ExtractGraphName(graphFilename string) (graphName string) {
+	gNameMainT := strings.Split(graphFilename, "/")
+	gNameMain := gNameMainT[len(gNameMainT)-1]
+	gNameMainTD := strings.Split(gNameMain, ".")
+	if len(gNameMainTD) > 1 {
+		return gNameMainTD[len(gNameMainTD)-2]
+	} else {
+		return gNameMainTD[0]
+	}
+}
+
+func ShuffleSC[EdgeProp any](sc []graph.StructureChange[EdgeProp]) {
+	for i := range sc {
+		j := rand.Intn(i + 1)
+		sc[i], sc[j] = sc[j], sc[i]
+	}
+}
+
+func InjectDeletesRetainFinalStructure[EdgeProp any](sc []graph.StructureChange[EdgeProp], chance float64) []graph.StructureChange[EdgeProp] {
+	availableAdds := make([]graph.StructureChange[EdgeProp], len(sc))
+	var previousAdds []graph.StructureChange[EdgeProp]
+	var returnSC []graph.StructureChange[EdgeProp]
+
+	copy(availableAdds, sc)
+	ShuffleSC(availableAdds)
+
+	for len(availableAdds) > 0 {
+		if len(previousAdds) > 0 && rand.Float64() < chance {
+			// chance for del
+			ShuffleSC(previousAdds)
+			idx := len(previousAdds) - 1
+			injDel := graph.StructureChange[EdgeProp]{Type: graph.DEL, SrcRaw: previousAdds[idx].SrcRaw, DstRaw: previousAdds[idx].DstRaw, EdgeProperty: previousAdds[idx].EdgeProperty}
+			returnSC = append(returnSC, injDel)
+			availableAdds = append(availableAdds, previousAdds[idx])
+			previousAdds = previousAdds[:idx]
+		} else {
+			ShuffleSC(availableAdds)
+			idx := len(availableAdds) - 1
+			returnSC = append(returnSC, availableAdds[idx])
+			previousAdds = append(previousAdds, availableAdds[idx])
+			availableAdds = availableAdds[:idx]
+		}
+	}
+	return returnSC
 }

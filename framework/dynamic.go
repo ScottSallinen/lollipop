@@ -9,10 +9,10 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexProp], tidx uint32, changes []graph.StructureChange) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
 	hasChangedIdMapping := false
 	newVid := make(map[uint32]bool, len(changes)*2)
-	miniGraph := make(map[uint32][]graph.StructureChange, len(changes))
+	miniGraph := make(map[uint32][]graph.StructureChange[EdgeProp], len(changes))
 
 	// First pass: read lock the graph (no changes, just need consistent view).
 	g.Mutex.RLock()
@@ -44,13 +44,13 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 				// First, create vertex.
 				vidx := uint32(len(g.VertexMap))
 				g.VertexMap[uint32(IdRaw)] = vidx
-				g.Vertices = append(g.Vertices, graph.Vertex[VertexProp]{Id: IdRaw})
+				g.Vertices = append(g.Vertices, graph.Vertex[VertexProp, EdgeProp]{Id: IdRaw})
 				frame.OnInitVertex(g, vidx)
 				// Next, visit the newly created vertex if needed.
 				if g.SourceInit && IdRaw == g.SourceVertex { // Only visit targetted vertex.
-					frame.OnVisitVertex(g, vidx, g.SourceInitVal)
-				} else { // We initial visit all vertices.
-					frame.OnVisitVertex(g, vidx, g.EmptyVal)
+					frame.OnVisitVertex(g, vidx, g.InitVal)
+				} else if !g.SourceInit { // We initial visit all vertices.
+					frame.OnVisitVertex(g, vidx, g.InitVal)
 				}
 			}
 		}
@@ -67,22 +67,21 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 		changeIdx := 0
 		for changeIdx < len(miniGraph[vRaw]) {
 			// First: gather any consecutive edge ADDs. This is because we wish to aggregate them.
-			didxMap := make(map[uint32]int, len(miniGraph[vRaw]))
+			didxStart := len(src.OutEdges)
 			for ; changeIdx < len(miniGraph[vRaw]); changeIdx++ {
 				change := miniGraph[vRaw][changeIdx]
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
-					didxMap[didx] = len(src.OutEdges)
-					src.OutEdges = append(src.OutEdges, graph.NewEdge(didx, change.Weight))
+					src.OutEdges = append(src.OutEdges, graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: didx})
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
 				}
 			}
 			// From the gathered set of consecutive adds, apply them.
-			if len(didxMap) > 0 {
+			if len(src.OutEdges) > didxStart {
 				val := frame.AggregateRetrieve(src)
-				frame.OnEdgeAdd(g, sidx, didxMap, val)
+				frame.OnEdgeAdd(g, sidx, didxStart, val)
 			}
 
 			// If we didn't finish, it means we hit a delete. Address it here.
@@ -92,7 +91,7 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 				didx := g.VertexMap[change.DstRaw]
 				/// Delete edge.. naively find target and swap last element with the hole.
 				for k, v := range src.OutEdges {
-					if v.Target == didx {
+					if v.Destination == didx {
 						src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
 						break
 					}
@@ -106,45 +105,10 @@ func (frame *Framework[VertexProp]) EnactStructureChanges(g *graph.Graph[VertexP
 		g.Mutex.RUnlock()
 	}
 	miniGraph = nil
-
-	/* // Old basic version that does not aggregate messages.
-	for _, change := range changes {
-		g.Mutex.RLock()
-		sidx := g.VertexMap[change.SrcRaw]
-		didx := g.VertexMap[change.DstRaw]
-		src := &g.Vertices[sidx]
-
-		// Next, add the edge to the source vertex.
-		//src.Mutex.Lock()
-		if change.Type == graph.ADD {
-			didxm := make(map[uint32]int)
-			didxm[didx] = len(src.OutEdges)
-			/// Add edge.. simple
-			src.OutEdges = append(src.OutEdges, graph.Edge{Target: didx, Weight: change.Weight})
-			//src.Mutex.Unlock()
-			val := frame.AggregateRetrieve(src) // TODO: Adjust this for delete as well
-			// Send the edge change message.
-			frame.OnEdgeAdd(g, sidx, didxm, val)
-		} else if change.Type == graph.DEL {
-			/// Delete edge.. naively find target and swap last element with the hole.
-			for k, v := range src.OutEdges {
-				if v.Target == didx {
-					src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
-					break
-				}
-			}
-			src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-			//src.Mutex.Unlock()
-			// Send the edge change message.
-			frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
-		}
-		g.Mutex.RUnlock()
-	}
-	//*/
 }
 
 // ConvergeAsyncDynWithRate: Dynamic focused variant of async convergence.
-func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp], feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(g *graph.Graph[VertexProp, EdgeProp, MsgType], feederWg *sync.WaitGroup) {
 	info("ConvergeAsyncDynWithRate")
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1
@@ -158,7 +122,7 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 	if graph.DEBUG {
 		exit := false
 		defer func() { exit = true }()
-		go PrintTerminationStatus(g, &exit)
+		go frame.PrintTerminationStatus(g, &exit)
 	}
 
 	// This adds a termination vote for when the dynamic injector is concluded.
@@ -185,8 +149,8 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 		go func(tidx uint32, wg *sync.WaitGroup) {
 			const MsgBundleSize = 256
 			const GscBundleSize = 4096 * 16
-			msgBuffer := make([]graph.Message, MsgBundleSize)
-			gscBuffer := make([]graph.StructureChange, GscBundleSize)
+			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
+			gscBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
 			strucClosed := false // true indicates the StructureChanges channel is closed
 			infoTimer := time.Now()
 			for {
@@ -252,6 +216,14 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 					select {
 					case msg := <-g.MessageQ[tidx]:
 						msgBuffer[algCount] = msg
+						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
+						// so no need to do so on the reciever side.
+						// This exists here in case the message is sent as a normal visit with a real message,
+						// so here we would be able to accumulate on the reciever side.
+						//target := &g.Vertices[msg.Didx]
+						//if msg.Type != graph.VISITEMPTYMSG {
+						//	frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
+						//}
 					default:
 						break algLoop
 					}
@@ -262,23 +234,8 @@ func (frame *Framework[VertexProp]) ConvergeAsyncDynWithRate(g *graph.Graph[Vert
 					g.Mutex.RLock()
 					for i := 0; i < algCount; i++ {
 						msg := msgBuffer[i]
-						target := &g.Vertices[msg.Didx]
-						// Messages inserted by OnQueueVisitAsync always contain EmptyVal
-						if msg.Val != g.EmptyVal {
-							frame.MessageAggregator(target, msg.Val)
-						}
-						val := frame.AggregateRetrieve(target)
-
-						//switch msg.Type {
-						//case graph.ADD:
-						//	enforce.ENFORCE(false)
-						//case graph.DEL:
-						//	enforce.ENFORCE(false)
-						//case graph.VISIT:
+						val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
 						frame.OnVisitVertex(g, msg.Didx, val)
-						//default:
-						//	enforce.ENFORCE(false)
-						//}
 					}
 					g.Mutex.RUnlock()
 					g.MsgRecv[tidx] += uint32(algCount)
