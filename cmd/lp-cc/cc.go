@@ -1,79 +1,96 @@
 package main
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
+const EMPTYVAL = math.MaxFloat64
+
 type VertexProperty struct {
-	Value float64
+	Value   float64
+	Scratch float64 // Intermediary accumulator
 }
 
-func MessageAggregator(target *graph.Vertex[VertexProperty], data float64) (newInfo bool) {
-	target.Mutex.Lock()
-	tmp := target.Scratch
-	target.Scratch = math.Min(target.Scratch, data)
-	newInfo = tmp != target.Scratch
-	target.Mutex.Unlock()
+func (p *VertexProperty) String() string {
+	return fmt.Sprintf("%.4f", p.Value)
+}
+
+type EdgeProperty struct {
+	Weight float64
+}
+
+type MessageValue float64
+
+func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
+	dst.Mutex.Lock()
+	tmp := dst.Property.Scratch
+	// Labels decrease monotonically
+	dst.Property.Scratch = math.Min(dst.Property.Scratch, float64(data))
+	newInfo = tmp != dst.Property.Scratch
+	dst.Mutex.Unlock()
 	return newInfo
 }
 
-func AggregateRetrieve(target *graph.Vertex[VertexProperty]) float64 {
+func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
 	// We can leave Scratch alone, since we are monotonicly decreasing.
 	target.Mutex.Lock()
-	tmp := target.Scratch
+	tmp := target.Property.Scratch
 	target.Mutex.Unlock()
-	return tmp
+	return MessageValue(tmp)
 }
+
 
 // set vidx as label
-func OnInitVertex(g *graph.Graph[VertexProperty], vidx uint32) {
+func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
+	// set id as label, type is float64, change to other later
 	g.Vertices[vidx].Property.Value = float64(g.Vertices[vidx].Id)
 	//g.Vertices[vidx].Property.Value = float64(vidx)
-	g.Vertices[vidx].Scratch = float64(g.Vertices[vidx].Id)
-	//g.Vertices[vidx].Scratch = float64(vidx)
+	g.Vertices[vidx].Property.Scratch = float64(g.Vertices[vidx].Id)
+	//g.Vertices[vidx].Property.Scratch = float64(vidx)
 }
 
-func OnEdgeAdd(g *graph.Graph[VertexProperty], sidx uint32, didxs map[uint32]int, data float64) {
+// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
+// The view here is **post** addition (the edges are already appended to the edge list)
+// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
 	if OnVisitVertex(g, sidx, data) > 0 {
 		// do nothing, we had messaged all edges
 	} else {
 		src := &g.Vertices[sidx]
-		if src.Property.Value < g.EmptyVal { // Do not need ? // Only useful if we are connected
-			// Latest edge is len(src.OutEdges)-1
-			// New: didx maps to the real index in the edge array
-			for didx := range didxs {
-				info("on edge add # sidx = ", sidx, " didx = ", didx, " value = ", src.Property.Value)
-				g.OnQueueVisit(g, sidx, didx, src.Property.Value)
+		if src.Property.Value < EMPTYVAL { // Only useful if we are connected
+			// Message only new edges.
+			for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
+				target := src.OutEdges[eidx].Destination
+				g.OnQueueVisit(g, sidx, target, MessageValue(src.Property.Value))
 			}
 		}
 	}
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty], sidx uint32, didx uint32, data float64) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
 	enforce.ENFORCE(false, "Incremental only algorithm")
 }
 
-func OnVisitVertex(g *graph.Graph[VertexProperty], vidx uint32, data float64) int {
+func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
 	src := &g.Vertices[vidx]
 	// Only act on an improvement to shortest path.
-	if src.Property.Value > data {
+	if src.Property.Value > float64(data) {
 		// Update our own value.
-		info("on visit vertex & update # vidx = ", vidx, " Id = ", g.Vertices[vidx].Id , " value befor = ", src.Property.Value, " after = ", data)
-		src.Property.Value = data
+		src.Property.Value = float64(data)
 		// Send an update to all neighbours.
 		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Target
-			info("on visit vertex & send # vidx = ", vidx, " target = ", target, " value = ", src.Property.Value)
-			g.OnQueueVisit(g, vidx, target, src.Property.Value)
+			target := src.OutEdges[eidx].Destination
+			g.OnQueueVisit(g, vidx, target, MessageValue(src.Property.Value))
 		}
 		return len(src.OutEdges)
 	}
 	return 0
 }
 
-func OnFinish(g *graph.Graph[VertexProperty]) error {
+func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	return nil
 }
