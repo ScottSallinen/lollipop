@@ -16,18 +16,18 @@ import (
 
 func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
 	top := prefix
-	sum := 0.0
+	sum := uint32(0)
 	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Scratch)
+		top += fmt.Sprintf("%d:[%d,%d] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Scratch)
 		sum += g.Vertices[vidx].Property.Value
 	}
-	info(top + " : " + fmt.Sprintf("%.3f", sum))
+	info(top + " : " + fmt.Sprintf("%d", sum))
 }
 
 // Expectation when 1 is src.
 // TODO: Test other sources!
 func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
-	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, EMPTYVAL}
+	expectations := []uint32{0, 0, 0, 0, 0, 0, 0}
 	for i := range expectations {
 		if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
 			t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value, " expected ", expectations[i])
@@ -161,8 +161,8 @@ func TestDynamicCreation(t *testing.T) {
 
 		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1, false)
 
-		a := make([]float64, len(gDyn.Vertices))
-		b := make([]float64, len(gStatic.Vertices))
+		a := make([]uint32, len(gDyn.Vertices))
+		b := make([]uint32, len(gStatic.Vertices))
 
 		CheckGraphStructureEquality(t, gDyn, gStatic)
 
@@ -176,7 +176,7 @@ func TestDynamicCreation(t *testing.T) {
 			a[vidx] = g1values.Property.Value
 			b[vidx] = g2values.Property.Value
 
-			if !mathutils.FloatEquals(g1values.Property.Value, g2values.Property.Value, allowedVariance) {
+			if !mathutils.FloatEquals(float64(g1values.Property.Value), float64(g2values.Property.Value), allowedVariance) {
 				PrintVertexProps(gStatic, "S ")
 				PrintVertexProps(gDyn, "D ")
 				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)

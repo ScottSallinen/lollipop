@@ -16,7 +16,7 @@ type VertexProperty struct {
 }
 
 func (p *VertexProperty) String() string {
-	return fmt.Sprintf("%.4f", p.Value)
+	return fmt.Sprintf("%d", p.Value)
 }
 
 type EdgeProperty struct {
