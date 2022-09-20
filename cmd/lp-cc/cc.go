@@ -8,11 +8,11 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 )
 
-const EMPTYVAL = math.MaxFloat64
+const EMPTYVAL = math.MaxUint32
 
 type VertexProperty struct {
-	Value   float64
-	Scratch float64 // Intermediary accumulator
+	Value   uint32
+	Scratch uint32 // Intermediary accumulator
 }
 
 func (p *VertexProperty) String() string {
@@ -23,13 +23,15 @@ type EdgeProperty struct {
 	Weight float64
 }
 
-type MessageValue float64
+type MessageValue uint32
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
 	dst.Mutex.Lock()
 	tmp := dst.Property.Scratch
 	// Labels decrease monotonically
-	dst.Property.Scratch = math.Min(dst.Property.Scratch, float64(data))
+	if uint32(data) < dst.Property.Scratch {
+		dst.Property.Scratch = uint32(data)
+	}
 	newInfo = tmp != dst.Property.Scratch
 	dst.Mutex.Unlock()
 	return newInfo
@@ -47,9 +49,9 @@ func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) Messa
 // set vidx as label
 func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
 	// set id as label, type is float64, change to other later
-	g.Vertices[vidx].Property.Value = float64(g.Vertices[vidx].Id)
+	g.Vertices[vidx].Property.Value = uint32(g.Vertices[vidx].Id)
 	//g.Vertices[vidx].Property.Value = float64(vidx)
-	g.Vertices[vidx].Property.Scratch = float64(g.Vertices[vidx].Id)
+	g.Vertices[vidx].Property.Scratch = uint32(g.Vertices[vidx].Id)
 	//g.Vertices[vidx].Property.Scratch = float64(vidx)
 }
 
@@ -78,9 +80,9 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
 	src := &g.Vertices[vidx]
 	// Only act on an improvement to shortest path.
-	if src.Property.Value > float64(data) {
+	if src.Property.Value > uint32(data) {
 		// Update our own value.
-		src.Property.Value = float64(data)
+		src.Property.Value = uint32(data)
 		// Send an update to all neighbours.
 		for eidx := range src.OutEdges {
 			target := src.OutEdges[eidx].Destination

@@ -61,8 +61,8 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 	numEdges := uint64(0)
 
 	for v := range g.Vertices {
-		ia[v] = oracle.Vertices[v].Property.Value
-		ib[v] = g.Vertices[v].Property.Value
+		ia[v] = float64(oracle.Vertices[v].Property.Value)
+		ib[v] = float64(g.Vertices[v].Property.Value)
 		numEdges += uint64(len(g.Vertices[v].OutEdges))
 	}
 
