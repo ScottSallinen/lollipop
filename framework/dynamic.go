@@ -48,9 +48,16 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				frame.OnInitVertex(g, vidx)
 				// Next, visit the newly created vertex if needed.
 				if g.SourceInit && IdRaw == g.SourceVertex { // Only visit targetted vertex.
-					frame.OnVisitVertex(g, vidx, g.InitVal)
+					// Even though we will be the only one able to access this vertex, we will aggregate then retrieve immediately,
+					// rather than directly send the initval as a visit -- this is to matche the view that async algorithms have
+					// on initialization (it flows through this process) and will let logic in aggregation modify the initial value if needed.
+					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.InitVal)
+					initial := frame.AggregateRetrieve(&g.Vertices[vidx])
+					frame.OnVisitVertex(g, vidx, initial)
 				} else if !g.SourceInit { // We initial visit all vertices.
-					frame.OnVisitVertex(g, vidx, g.InitVal)
+					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.InitVal)
+					initial := frame.AggregateRetrieve(&g.Vertices[vidx])
+					frame.OnVisitVertex(g, vidx, initial)
 				}
 			}
 		}
