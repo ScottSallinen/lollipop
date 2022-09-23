@@ -39,6 +39,7 @@ type Graph[VertexProp, EdgeProp, MsgType any] struct {
 	InitVal          MsgType // Value to initialize, given either to single source (if SourceInit) or all vertices.
 	SourceInit       bool    // Flag to adjust such that a single specific source vertex starts the algorithm, and will recieve InitVal.
 	SourceVertex     uint32  // Raw ID of source vertex, if applicable.
+	LogEntryChan     chan string
 }
 
 type VisitType int
@@ -126,11 +127,11 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) ComputeGraphStats(inDeg bool, out
 		}
 		numEdges += uint64(len(g.Vertices[vidx].OutEdges))
 		if outDeg {
-			maxOutDegree = mathutils.MaxUint64(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
+			maxOutDegree = mathutils.Max(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
 			listOutDegree = append(listOutDegree, len(g.Vertices[vidx].OutEdges))
 		}
 		if inDeg {
-			maxInDegree = mathutils.MaxUint64(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
+			maxInDegree = mathutils.Max(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
 			listInDegree = append(listInDegree, len(g.Vertices[vidx].InEdges))
 		}
 	}
@@ -160,8 +161,8 @@ func ResultCompare(a []float64, b []float64) float64 {
 		delta := math.Abs((b[idx] - a[idx]) * 100.0 / math.Min(a[idx], b[idx]))
 		listDiff = append(listDiff, delta)
 		avgDiff += delta
-		largestDiff = mathutils.MaxFloat64(largestDiff, delta)
-		smallestDiff = mathutils.MinFloat64(smallestDiff, delta)
+		largestDiff = mathutils.Max(largestDiff, delta)
+		smallestDiff = mathutils.Min(smallestDiff, delta)
 	}
 	avgDiff = avgDiff / float64(len(a))
 

@@ -11,8 +11,9 @@ import (
 const DAMPINGFACTOR = float64(0.85)
 const INITMASS = 1.0
 const EMPTYVAL = 0.0
+const EPSILON = float64(INITMASS * 0.001)
 
-var EPSILON = float64(0.001)
+const NORMALIZE = false
 
 type VertexProperty struct {
 	Residual float64
@@ -29,25 +30,11 @@ type EdgeProperty struct{}
 type MessageValue float64
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
-	/*
-		target.Mutex.Lock()
-		tmp := target.Scratch
-		target.Scratch += data
-		target.Mutex.Unlock()
-		return tmp == 0.0
-	*/
 	old := mathutils.AtomicAddFloat64(&dst.Property.Scratch, float64(data))
 	return old == 0.0
 }
 
 func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
-	/*
-		target.Mutex.Lock()
-		tmp := target.Scratch
-		target.Scratch = 0
-		target.Mutex.Unlock()
-		return tmp
-	*/
 	old := mathutils.AtomicSwapFloat64(&target.Property.Scratch, 0.0)
 	return MessageValue(old)
 }
@@ -90,6 +77,19 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 		target := src.OutEdges[didx].Destination
 		g.OnQueueVisit(g, sidx, target, MessageValue(distNewEdge+distribute))
 	}
+
+	/*
+		for eidx := 0; eidx < didxStart; eidx++ {
+			last := tsLast
+			currentTS := uint64(src.OutEdges[eidx].Property)
+			potNextTs := (last + (24*60*60)*7)
+			if currentTS > potNextTs {
+				if atomic.CompareAndSwapUint64(&tsLast, last, currentTS) {
+					g.LogEntryChan <- time.Unix(int64(currentTS), 0).Format(time.RFC3339)
+				}
+			}
+		}
+	*/
 }
 
 // OnEdgeAddBasic is the simple version which does not merge a Visit call.
@@ -213,7 +213,9 @@ func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error 
 			toAbsorb += (1.0 - DAMPINGFACTOR) * (NormalQuota) * (geometricLatentSum) * (retainSumPct) * (relativeSinkPowerPct)
 		}
 		g.Vertices[vidx].Property.Value += toAbsorb
-		// g.Vertices[vidx].Value /= float64(len(g.Vertices)) // If we want to normalize here
+		if NORMALIZE {
+			g.Vertices[vidx].Property.Value /= float64(len(g.Vertices))
+		}
 	}
 
 	return nil

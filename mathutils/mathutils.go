@@ -6,8 +6,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
-	//"golang.org/x/exp/constraints"
+
+	"golang.org/x/exp/constraints"
 )
+
+type Pair[F any, S any] struct {
+	First  F
+	Second S
+}
 
 func FloatEquals(a float64, b float64, args ...interface{}) bool {
 	if len(args) >= 1 {
@@ -16,34 +22,14 @@ func FloatEquals(a float64, b float64, args ...interface{}) bool {
 	return math.Abs(a-b) < 0.001
 }
 
-//func Max[T constraints.Ordered](x, y T) T {
-//	if x < y {
-//		return y
-//	}
-//	return x
-//}
-
-func MaxFloat64(x, y float64) float64 {
-	if x < y {
-		return y
-	}
-	return x
-}
-func MaxUint64(x, y uint64) uint64 {
+func Max[T constraints.Ordered](x, y T) T {
 	if x < y {
 		return y
 	}
 	return x
 }
 
-//func Min[T constraints.Ordered](x, y T) T {
-//	if y < x {
-//		return y
-//	}
-//	return x
-//}
-
-func MinFloat64(x, y float64) float64 {
+func Min[T constraints.Ordered](x, y T) T {
 	if y < x {
 		return y
 	}

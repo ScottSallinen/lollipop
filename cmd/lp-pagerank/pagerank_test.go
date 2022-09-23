@@ -67,6 +67,7 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], undir
 
 	go frame.Run(g, &feederWg, &frameWait)
 
+	count := 0
 	for _, v := range sc {
 		switch v.Type {
 		case graph.ADD:
@@ -74,6 +75,7 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], undir
 			if undirected {
 				g.SendAdd(v.DstRaw, v.SrcRaw, EdgeProperty{})
 			}
+			count++
 			info("add ", v.SrcRaw, v.DstRaw)
 		case graph.DEL:
 			g.SendDel(v.SrcRaw, v.DstRaw)
@@ -124,7 +126,6 @@ func TestDynamicCreationUnDirected(t *testing.T) {
 
 func DynamicCreation(undirected bool, t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	EPSILON = 0.00001
 	allowedVariance := EPSILON * float64(100) // ?????
 
 	testFail := false
@@ -135,14 +136,14 @@ func DynamicCreation(undirected bool, t *testing.T) {
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2},
 		}
 		framework.ShuffleSC(rawTestGraph)
 
@@ -199,7 +200,6 @@ func TestDynamicWithDeleteUnDirected(t *testing.T) {
 
 func DynamicWithDelete(undirected bool, t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	EPSILON = 0.00001
 	allowedVariance := EPSILON * float64(100) // ?????
 
 	testFail := false
@@ -208,14 +208,14 @@ func DynamicWithDelete(undirected bool, t *testing.T) {
 		graph.THREADS = rand.Intn(8-1) + 1
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{}},
-			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{}},
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2},
 		}
 
 		adjustedGraph := framework.InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)

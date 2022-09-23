@@ -133,8 +133,8 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) BuildMap(graphName string, edgePa
 // LoadGraphStatic loads the graph store in the file. The graph structure is updated to reflect the complete graph
 // before returning.
 func (g *Graph[VertexProp, EdgeProp, MsgType]) LoadGraphStatic(graphName string, edgeParser EdgeParserFunc[EdgeProp]) {
-	deqCount := mathutils.MaxUint64(uint64(THREADS), 1)
-	enqCount := mathutils.MaxUint64(uint64(THREADS/2), 1)
+	deqCount := mathutils.Max(uint64(THREADS), 1)
+	enqCount := mathutils.Max(uint64(THREADS/2), 1)
 
 	m0 := time.Now()
 	g.VertexMap = make(map[uint32]uint32)

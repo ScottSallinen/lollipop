@@ -51,7 +51,7 @@ func LineEnqueuer(queuechans []chan string, graphName string, undirected bool, w
 }
 
 func LoadlineList(graphName string, threads int) (finallist []string) {
-	qCount := mathutils.MaxUint64(uint64(threads), 1)
+	qCount := mathutils.Max(uint64(threads), 1)
 	m1 := time.Now()
 
 	lineLists := make([][]string, threads)

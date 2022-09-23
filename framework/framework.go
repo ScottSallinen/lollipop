@@ -57,6 +57,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[Verte
 		g.MsgRecv = make([]uint32, graph.THREADS+1)
 		g.TerminateVote = make([]int, graph.THREADS+1)
 		g.TerminateData = make([]int64, graph.THREADS+1)
+		g.LogEntryChan = make(chan string, 512)
 		for i := 0; i < graph.THREADS; i++ {
 			if dynamic {
 				// TODO: Need a better way to manipulate channel size for dynamic. Maybe request approx vertex count from user?
@@ -100,6 +101,9 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Run(g *graph.Graph[Vertex
 	enforce.ENFORCE(err)
 	//info("Correct.")
 	outputWg.Done()
+	if g.LogEntryChan != nil {
+		close(g.LogEntryChan)
+	}
 }
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) Launch(g *graph.Graph[VertexProp, EdgeProp, MsgType], gName string, async bool, dynamic bool, oracle bool, undirected bool) {
@@ -228,9 +232,39 @@ func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g
 		frame.Run(mirrorG, &mirrorGfeederWg, &mirrorGframeWait)
 	*/
 
-	g.Mutex.Unlock()
-	info("----END_INLINE----")
 	g.Watch.UnPause()
+	info("----END_INLINE----")
+	g.Mutex.Unlock()
+}
+
+// LogTimeSeriesRunnable will check for any entry in the LogEntryChan. When on is supplied, it will
+// immediately freeze the graph, and copy vertex properties. Then call "Finish" for the algorithm,
+// then stash the finished vertex properties. Will then put back the original state of vertex properties.
+// The stashed finished properties are then sent to the applyTimeSeries func (defined by the algorithm).
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], applyTimeSeries func(string, []mathutils.Pair[uint32, VertexProp])) {
+	for entry := range g.LogEntryChan {
+		g.Mutex.Lock()
+		g.Watch.Pause()
+		numEdges := uint64(0)
+		gVertexStash := make([]mathutils.Pair[uint32, VertexProp], len(g.Vertices))
+		for v := range g.Vertices {
+			numEdges += uint64(len(g.Vertices[v].OutEdges))
+			gVertexStash[v].First = g.Vertices[v].Id
+			gVertexStash[v].Second = g.Vertices[v].Property
+		}
+		frame.OnFinish(g)
+
+		for v := range g.Vertices {
+			// Resetting the effect of the "early finish"
+			tmp := g.Vertices[v].Property
+			g.Vertices[v].Property = gVertexStash[v].Second
+			gVertexStash[v].Second = tmp
+		}
+		g.Watch.UnPause()
+		g.Mutex.Unlock()
+
+		applyTimeSeries(entry, gVertexStash)
+	}
 }
 
 func ExtractGraphName(graphFilename string) (graphName string) {
