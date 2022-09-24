@@ -28,14 +28,7 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 	src, _ := strconv.Atoi(stringFields[0])
 	dst, _ := strconv.Atoi(stringFields[1])
 
-	weight := 1.0
-	var err error
-	if sflen >= 3 {
-		weight, err = strconv.ParseFloat(stringFields[2], 32)
-		enforce.ENFORCE(err, "Text file parse error: weight not floats?")
-	}
-
-	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{Weight: weight}}
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst)}
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
@@ -45,7 +38,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 		ourValue := g.Vertices[vidx].Property.Value
 		for eidx := range g.Vertices[vidx].OutEdges {
 			target := g.Vertices[vidx].OutEdges[eidx].Destination
-			enforce.ENFORCE(g.Vertices[target].Property.Value <= ourValue)
+			enforce.ENFORCE(g.Vertices[target].Property.Value == ourValue)
 		}
 	}	
 	info("vertex values: ")
@@ -99,11 +92,10 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	// Init all vertexs
 	g.SourceInit = false
-	//g.InitVal = 1.0
-	//g.EmptyVal = EMPTYVAL
-	//g.SourceVertex = rawSrc
+	g.InitVal = EMPTYVAL
+	g.EmptyVal = EMPTYVAL
 
-	frame.Launch(g, gName, async, dynamic, oracleRun, undirected)
+	frame.Launch(g, gName, async, dynamic, oracleRun, true) // undirected should always be true.
 
 	if oracleFin {
 		frame.CompareToOracle(g)
