@@ -76,7 +76,7 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 	// Something to be done ?
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, rawSrc uint32, undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
 	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -125,7 +125,7 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr, *fptr, uint32(*iptr), *uptr)
+	g := LaunchGraphExecution(gName, *aptr, *dptr, *optr, *fptr)
 
 	g.ComputeGraphStats(false, false)
 
