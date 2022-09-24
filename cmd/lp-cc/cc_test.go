@@ -27,7 +27,7 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 // Expectation when 1 is src.
 // TODO: Test other sources!
 func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
-	expectations := []uint32{0, 0, 0, 0, 0, 0, 0}
+	expectations := []uint32{0, 1, 1, 0, 1, 1, 1, 0, 0, 0}
 	for i := range expectations {
 		if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
 			t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value, " expected ", expectations[i])
@@ -38,7 +38,7 @@ func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue],
 func TestAsyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1, false)
+		g := LaunchGraphExecution("../../data/test_multiple_components.txt", true, false, false, false)
 		PrintVertexProps(g, "")
 		testGraphExpect(g, t)
 	}
@@ -46,7 +46,7 @@ func TestAsyncStatic(t *testing.T) {
 func TestSyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", false, false, false, false, 1, false)
+		g := LaunchGraphExecution("../../data/test_multiple_components.txt", false, false, false, false)
 		PrintVertexProps(g, "")
 		testGraphExpect(g, t)
 	}
@@ -54,7 +54,7 @@ func TestSyncStatic(t *testing.T) {
 func TestAsyncDynamic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test.txt", true, true, false, false, 1, false)
+		g := LaunchGraphExecution("../../data/test_multiple_components.txt", true, true, false, false)
 		testGraphExpect(g, t)
 		PrintVertexProps(g, "")
 	}
@@ -72,10 +72,9 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSr
 	frame.AggregateRetrieve = AggregateRetrieve
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	g.SourceInit = true
-	g.InitVal = 1.0
+	g.SourceInit = false
+	g.InitVal = EMPTYVAL
 	g.EmptyVal = EMPTYVAL
-	g.SourceVertex = rawSrc
 
 	frame.Init(g, true, true)
 
@@ -90,9 +89,11 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSr
 		switch v.Type {
 		case graph.ADD:
 			g.SendAdd(v.SrcRaw, v.DstRaw, v.EdgeProperty)
+			g.SendAdd(v.DstRaw, v.SrcRaw, v.EdgeProperty)
 			info("add ", v.SrcRaw, v.DstRaw)
 		case graph.DEL:
 			g.SendDel(v.SrcRaw, v.DstRaw)
+			g.SendDel(v.DstRaw, v.SrcRaw)
 			info("del ", v.SrcRaw, v.DstRaw)
 		}
 	}
@@ -146,20 +147,20 @@ func TestDynamicCreation(t *testing.T) {
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{1.0}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{1.0}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{1.0}},
-			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{1.0}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{1.0}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{1.0}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{1.0}},
-			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{1.0}},
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2},
 		}
 		shuffleSC(rawTestGraph)
 
-		gDyn := DynamicGraphExecutionFromSC(rawTestGraph, 1)
+		gDyn := DynamicGraphExecutionFromSC(rawTestGraph)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, false, 1, false)
+		gStatic := LaunchGraphExecution("../../data/test_multiple_components.txt", true, false, false, false)
 
 		a := make([]uint32, len(gDyn.Vertices))
 		b := make([]uint32, len(gStatic.Vertices))
