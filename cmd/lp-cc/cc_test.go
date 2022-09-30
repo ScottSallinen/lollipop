@@ -24,8 +24,7 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 	info(top + " : " + fmt.Sprintf("%d", sum))
 }
 
-// Expectation when 1 is src.
-// TODO: Test other sources!
+// Expect two connected components.
 func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
 	expectations := []uint32{0, 1, 1, 0, 1, 1, 1, 0, 0, 0}
 	for i := range expectations {
@@ -60,7 +59,7 @@ func TestAsyncDynamic(t *testing.T) {
 	}
 }
 
-func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSrc uint32) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
 	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -177,7 +176,7 @@ func TestDynamicCreation(t *testing.T) {
 			a[vidx] = g1values.Property.Value
 			b[vidx] = g2values.Property.Value
 
-			if !mathutils.FloatEquals(float64(g1values.Property.Value), float64(g2values.Property.Value), allowedVariance) {
+			if g1values.Property.Value != g2values.Property.Value {
 				PrintVertexProps(gStatic, "S ")
 				PrintVertexProps(gDyn, "D ")
 				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
