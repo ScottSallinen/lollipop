@@ -19,8 +19,7 @@ func (p *VertexProperty) String() string {
 	return fmt.Sprintf("%d", p.Value)
 }
 
-type EdgeProperty struct {
-}
+type EdgeProperty struct {}
 
 type MessageValue uint32
 

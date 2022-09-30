@@ -109,11 +109,9 @@ func main() {
 	aptr := flag.Bool("a", false, "Use async")
 	dptr := flag.Bool("d", false, "Dynamic")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")
-	uptr := flag.Bool("u", false, "Interpret the input graph as undirected (add transpose edges)")
 	optr := flag.Bool("o", false, "Compare to oracle results during runtime")
 	fptr := flag.Bool("f", false, "Compare to oracle results (computed via async) upon finishing the initial algorithm.")
 	pptr := flag.Bool("p", false, "Save vertex properties to disk")
-	iptr := flag.Int("i", 1, "Init vertex (raw id)")
 	tptr := flag.Int("t", 32, "Thread count")
 	flag.Parse()
 	gName := *gptr
