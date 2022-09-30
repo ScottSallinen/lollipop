@@ -33,7 +33,7 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
 func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
+	// Make sure the labels inside connected components are consistent
 	for vidx := range g.Vertices {
 		ourValue := g.Vertices[vidx].Property.Value
 		for eidx := range g.Vertices[vidx].OutEdges {

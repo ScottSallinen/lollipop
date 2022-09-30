@@ -11,7 +11,6 @@ import (
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
@@ -136,7 +135,6 @@ func shuffleSC(sc []graph.StructureChange[EdgeProperty]) {
 
 func TestDynamicCreation(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	allowedVariance := float64(0.001) // ?????
 
 	testFail := false
 
@@ -147,13 +145,16 @@ func TestDynamicCreation(t *testing.T) {
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
 			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0},
+			{Type: graph.ADD, SrcRaw: 7, DstRaw: 0},
 			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1},
 			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0},
 			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3},
+			{Type: graph.ADD, SrcRaw: 8, DstRaw: 3},
 			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5},
 			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2},
+			{Type: graph.ADD, SrcRaw: 7, DstRaw: 3},
+			{Type: graph.ADD, SrcRaw: 8, DstRaw: 9},
+			{Type: graph.ADD, SrcRaw: 9, DstRaw: 0},
 		}
 		shuffleSC(rawTestGraph)
 
