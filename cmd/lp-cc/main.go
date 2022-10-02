@@ -87,10 +87,10 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected: true, // undirected should always be true.
-		SourceInit: false,
-		EmptyVal:   EMPTYVAL,
-		InitVal:    EMPTYVAL,
+		Undirected:     true, // undirected should always be true.
+		SourceInit:     false,
+		EmptyVal:       EMPTYVAL,
+		InitAllMessage: EMPTYVAL,
 	}
 
 	frame.Launch(g, gName, async, dynamic)

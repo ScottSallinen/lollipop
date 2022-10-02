@@ -40,13 +40,14 @@ type Graph[VertexProp, EdgeProp, MsgType any] struct {
 
 type GraphOptions[MsgType any] struct {
 	Undirected         bool    // Declares if the graph should be treated as undirected (e.g. for construction)
-	SourceInit         bool    // Flag to adjust such that a single specific source vertex starts the algorithm, and will recieve InitVal.
 	LogTimeseries      bool    // Uses timestamps to log a timeseries of vertex properties.
 	TimeSeriesInterval uint64  // Interval (seconds) for how often to log timeseries.
 	OracleCompare      bool    // Will compare to computed oracle results, either from an interval or, if creating a timeseries, each time a timeseries is logged.
-	SourceVertex       uint32  // Raw ID of source vertex, if applicable.
 	EmptyVal           MsgType // Value used to represent "empty" or "no work to do"
-	InitVal            MsgType // Value to initialize, given either to single source (if SourceInit) or all vertices.
+
+	SourceInit     bool               // If set to true, InitMessages defines how initial messages will be sent. Otherwise, all vertices will receive InitAllMessage.
+	InitMessages   map[uint32]MsgType // Mapping from raw vertex ID to the initial messages they receive
+	InitAllMessage MsgType            // Value to initialize when SourceInit is set to false
 }
 
 type VisitType int

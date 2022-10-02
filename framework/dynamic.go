@@ -53,15 +53,17 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				g.Vertices = append(g.Vertices, graph.Vertex[VertexProp, EdgeProp]{Id: IdRaw})
 				frame.OnInitVertex(g, vidx)
 				// Next, visit the newly created vertex if needed.
-				if g.Options.SourceInit && IdRaw == g.Options.SourceVertex { // Only visit targetted vertex.
-					// Even though we will be the only one able to access this vertex, we will aggregate then retrieve immediately,
-					// rather than directly send the initval as a visit -- this is to match the view that async algorithms have
-					// on initialization (it flows through this process) and will let logic in aggregation modify the initial value if needed.
-					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.Options.InitVal)
-					initial := frame.AggregateRetrieve(&g.Vertices[vidx])
-					frame.OnVisitVertex(g, vidx, initial)
-				} else if !g.Options.SourceInit { // We initial visit all vertices.
-					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.Options.InitVal)
+				if g.Options.SourceInit { // Only visit targeted vertex.
+					if message, ok := g.Options.InitMessages[IdRaw]; ok {
+						// Even though we will be the only one able to access this vertex, we will aggregate then retrieve immediately,
+						// rather than directly send the initial message as a visit -- this is to match the view that async algorithms have
+						// on initialization (it flows through this process) and will let logic in aggregation modify the initial value if needed.
+						frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, message)
+						initial := frame.AggregateRetrieve(&g.Vertices[vidx])
+						frame.OnVisitVertex(g, vidx, initial)
+					}
+				} else { // We initial visit all vertices.
+					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.Options.InitAllMessage)
 					initial := frame.AggregateRetrieve(&g.Vertices[vidx])
 					frame.OnVisitVertex(g, vidx, initial)
 				}

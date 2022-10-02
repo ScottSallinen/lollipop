@@ -261,7 +261,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	g.Options = graph.GraphOptions[MessageValue]{
 		Undirected:         undirected,
 		EmptyVal:           EMPTYVAL,
-		InitVal:            INITMASS,
+		InitAllMessage:     INITMASS,
 		LogTimeseries:      timeSeries,
 		TimeSeriesInterval: (24 * 60 * 60) * 7,
 		OracleCompare:      oracleRun,

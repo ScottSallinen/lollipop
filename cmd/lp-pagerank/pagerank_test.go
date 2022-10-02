@@ -56,9 +56,9 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], undir
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected: undirected,
-		EmptyVal:   EMPTYVAL,
-		InitVal:    INITMASS,
+		Undirected:     undirected,
+		EmptyVal:       EMPTYVAL,
+		InitAllMessage: INITMASS,
 	}
 
 	frame.Init(g, true, true)

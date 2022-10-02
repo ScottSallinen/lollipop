@@ -49,8 +49,8 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 			maxValue = math.Max(maxValue, ourValue)
 		}
 
-		if g.Vertices[vidx].Id == g.Options.SourceVertex {
-			enforce.ENFORCE(ourValue == float64(g.Options.InitVal), ourValue)
+		if initVal, ok := g.Options.InitMessages[g.Vertices[vidx].Id]; ok {
+			enforce.ENFORCE(ourValue == float64(initVal), ourValue)
 		}
 		if ourValue == EMPTYVAL { // we were never visted
 
@@ -103,11 +103,10 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.Options = graph.GraphOptions[MessageValue]{
 		Undirected:    undirected,
-		SourceInit:    true,
-		SourceVertex:  rawSrc,
-		EmptyVal:      EMPTYVAL,
-		InitVal:       1.0,
 		OracleCompare: oracleRun,
+		SourceInit:    true,
+		InitMessages:  map[uint32]MessageValue{rawSrc: 1.0},
+		EmptyVal:      EMPTYVAL,
 	}
 
 	frame.Launch(g, gName, async, dynamic)

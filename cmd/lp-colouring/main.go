@@ -87,10 +87,10 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[V
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected: true,
-		SourceInit: false,
-		EmptyVal:   nil,
-		InitVal:    nil,
+		Undirected:     true,
+		SourceInit:     false,
+		EmptyVal:       nil,
+		InitAllMessage: nil,
 	}
 
 	frame.Launch(g, gName, async, dynamic)
