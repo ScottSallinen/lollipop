@@ -126,13 +126,6 @@ func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, E
 	}
 }
 
-func shuffleSC(sc []graph.StructureChange[EdgeProperty]) {
-	for i := range sc {
-		j := rand.Intn(i + 1)
-		sc[i], sc[j] = sc[j], sc[i]
-	}
-}
-
 func TestDynamicCreation(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
 
@@ -156,7 +149,7 @@ func TestDynamicCreation(t *testing.T) {
 			{Type: graph.ADD, SrcRaw: 8, DstRaw: 9},
 			{Type: graph.ADD, SrcRaw: 9, DstRaw: 0},
 		}
-		shuffleSC(rawTestGraph)
+		framework.ShuffleSC(rawTestGraph)
 
 		gDyn := DynamicGraphExecutionFromSC(rawTestGraph)
 

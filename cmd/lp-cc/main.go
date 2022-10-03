@@ -41,9 +41,11 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 			enforce.ENFORCE(g.Vertices[target].Property.Value == ourValue)
 		}
 	}	
-	info("vertex values: ")
-	for vidx := range g.Vertices {
-		info("# vidx = ", vidx, " Id = ", g.Vertices[vidx].Id, " value = ", g.Vertices[vidx].Property.Value)
+	if graph.DEBUG {
+		info("vertex values: ")
+		for vidx := range g.Vertices {
+			info("# vidx = ", vidx, " Id = ", g.Vertices[vidx].Id, " value = ", g.Vertices[vidx].Property.Value)
+		}
 	}
 	return nil
 }
