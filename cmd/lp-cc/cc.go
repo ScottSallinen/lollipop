@@ -25,7 +25,7 @@ type MessageValue uint32
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
 	input := uint32(data)
-	if input > dst.Id { // This means ininitalization
+	if input == EMPTYVAL { // This means ininitalization
 		input = dst.Id
 	}
 	dst.Mutex.Lock()
