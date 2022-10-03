@@ -150,10 +150,8 @@ type NamedEntry struct {
 
 var tsDB = make([]NamedEntry, 0)
 
-var tsLast = uint64(0)
-
 // Logs top N vertices
-func LogTimeSeries(name string, data []mathutils.Pair[uint32, VertexProperty], numEdges uint64) {
+func ApplyTimeSeries(name string, data []mathutils.Pair[uint32, VertexProperty], numEdges uint64) {
 	//idMap := make(map[uint32]int, 0)
 	ia := make([]float64, len(data))
 	for v := range data {
@@ -256,17 +254,20 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.OracleComparison = OracleComparison
 	frame.EdgeParser = EdgeParser
+	frame.RetrieveTimestamp = RetrieveTimestamp
+	frame.ApplyTimeSeries = ApplyTimeSeries
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	g.EmptyVal = EMPTYVAL
-	g.InitVal = INITMASS
-
-	if timeSeries {
-		go frame.LogTimeSeriesRunnable(g, oracleRun, LogTimeSeries)
-		oracleRun = false
+	g.Options = graph.GraphOptions[MessageValue]{
+		Undirected:         undirected,
+		EmptyVal:           EMPTYVAL,
+		InitVal:            INITMASS,
+		LogTimeseries:      timeSeries,
+		TimeSeriesInterval: (24 * 60 * 60) * 7,
+		OracleCompare:      oracleRun,
 	}
 
-	frame.Launch(g, gName, async, dynamic, oracleRun, undirected)
+	frame.Launch(g, gName, async, dynamic)
 
 	if oracleFin {
 		frame.CompareToOracle(g, true)
@@ -302,7 +303,7 @@ func main() {
 
 	g.ComputeGraphStats(false, true)
 
-	if *dptr {
+	if *sptr {
 		PrintTimeSeries(true, true)
 	}
 	PrintTopN(g, 10)

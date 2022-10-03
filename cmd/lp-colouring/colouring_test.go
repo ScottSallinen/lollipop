@@ -122,11 +122,13 @@ func DynamicGraphExecutionFromSCUndirected(sc []graph.StructureChange[EdgeProper
 	frame.AggregateRetrieve = AggregateRetrieve
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	g.SourceInit = false
-	g.InitVal = nil
-	g.EmptyVal = nil
+	g.Options = graph.GraphOptions[MessageValue]{
+		Undirected: true,
+		SourceInit: false,
+		EmptyVal:   nil,
+		InitVal:    nil,
+	}
 
-	g.Undirected = true
 	frame.Init(g, true, true)
 
 	var feederWg sync.WaitGroup

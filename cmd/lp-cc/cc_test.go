@@ -70,9 +70,12 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *grap
 	frame.AggregateRetrieve = AggregateRetrieve
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	g.SourceInit = false
-	g.InitVal = EMPTYVAL
-	g.EmptyVal = EMPTYVAL
+	g.Options = graph.GraphOptions[MessageValue]{
+		Undirected: true,
+		SourceInit: false,
+		EmptyVal:   EMPTYVAL,
+		InitVal:    EMPTYVAL,
+	}
 
 	frame.Init(g, true, true)
 

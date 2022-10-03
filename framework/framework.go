@@ -30,7 +30,8 @@ type Framework[VertexProp, EdgeProp, MsgType any] struct {
 	AggregateRetrieve  AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType]
 	OracleComparison   OracleComparison[VertexProp, EdgeProp, MsgType]
 	EdgeParser         EdgeParserFunc[EdgeProp]
-	IsMsgEmpty         func(MsgType) bool
+	RetrieveTimestamp  RetrieveTimestampFunc[EdgeProp]
+	ApplyTimeSeries    ApplyTimeSeriesFunc[VertexProp]
 }
 
 type OnInitVertexFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], vidx uint32)
@@ -43,6 +44,8 @@ type MessageAggregatorFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Ve
 type AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp]) (data MsgType)
 type OracleComparison[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], oracle *graph.Graph[VertexProp, EdgeProp, MsgType], resultCache *[]float64, cache bool)
 type EdgeParserFunc[EdgeProp any] graph.EdgeParserFunc[EdgeProp]
+type ApplyTimeSeriesFunc[VertexProp any] func(string, []mathutils.Pair[uint32, VertexProp], uint64)
+type RetrieveTimestampFunc[EdgeProp any] func(edge graph.Edge[EdgeProp]) uint64
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[VertexProp, EdgeProp, MsgType], async bool, dynamic bool) {
 	if async || dynamic {
@@ -104,8 +107,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Run(g *graph.Graph[Vertex
 	}
 }
 
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) Launch(g *graph.Graph[VertexProp, EdgeProp, MsgType], gName string, async bool, dynamic bool, oracle bool, undirected bool) {
-	g.Undirected = undirected
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) Launch(g *graph.Graph[VertexProp, EdgeProp, MsgType], gName string, async bool, dynamic bool) {
 	if !dynamic {
 		g.LoadGraphStatic(gName, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser))
 	}
@@ -121,10 +123,16 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Launch(g *graph.Graph[Ver
 		go g.LoadGraphDynamic(gName, graph.EdgeParserFunc[EdgeProp](frame.EdgeParser), &feederWg)
 	}
 
-	if oracle {
+	// Only if we're not logging a timeseries, we launch an interval oracle comparer
+	if g.Options.OracleCompare && !g.Options.LogTimeseries {
 		exit := false
 		defer func() { exit = true }()
 		go frame.CompareToOracleRunnable(g, &exit, 1000*time.Millisecond)
+	}
+
+	// We launch the timeseries consumer thread
+	if g.Options.LogTimeseries {
+		go frame.LogTimeSeriesRunnable(g)
 	}
 
 	frame.Run(g, &feederWg, &frameWait)
@@ -154,14 +162,9 @@ func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g
 	newFrame.OnEdgeDel = originalFrame.OnEdgeDel
 	newFrame.MessageAggregator = originalFrame.MessageAggregator
 	newFrame.AggregateRetrieve = originalFrame.AggregateRetrieve
-	newFrame.IsMsgEmpty = originalFrame.IsMsgEmpty
 
 	altG := &graph.Graph[VertexProp, EdgeProp, MsgType]{}
-	altG.Undirected = g.Undirected
-	altG.EmptyVal = g.EmptyVal
-	altG.SourceInit = g.SourceInit
-	altG.InitVal = g.InitVal
-	altG.SourceVertex = g.SourceVertex
+	altG.Options = g.Options
 
 	altG.VertexMap = g.VertexMap // ok to shallow copy, we do not edit.
 	altG.Vertices = make([]graph.Vertex[VertexProp, EdgeProp], len(g.Vertices))
@@ -239,7 +242,7 @@ func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g
 // immediately freeze the graph, and copy vertex properties. Then call "Finish" for the algorithm,
 // then stash the finished vertex properties. Will then put back the original state of vertex properties.
 // The stashed finished properties are then sent to the applyTimeSeries func (defined by the algorithm).
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], oracleRun bool, applyTimeSeries func(string, []mathutils.Pair[uint32, VertexProp], uint64)) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType]) {
 	for entry := range g.LogEntryChan {
 		g.Mutex.Lock()
 		g.Watch.Pause()
@@ -261,11 +264,11 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *
 		g.Watch.UnPause()
 		g.Mutex.Unlock()
 
-		if oracleRun {
+		if g.Options.OracleCompare {
 			frame.CompareToOracle(g, false)
 		}
 
-		applyTimeSeries(entry, gVertexStash, numEdges)
+		frame.ApplyTimeSeries(entry, gVertexStash, numEdges)
 	}
 }
 

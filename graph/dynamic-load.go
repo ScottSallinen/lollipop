@@ -31,6 +31,7 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) DynamicEdgeEnqueuer(graphName str
 	lines := uint64(0)
 	mLines := uint64(0)
 	var lineText string
+	undirected := g.Options.Undirected
 	for scanner.Scan() {
 		lines++
 		if lines%enqCount != idx {
@@ -49,7 +50,7 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) DynamicEdgeEnqueuer(graphName str
 		// }
 
 		g.ThreadStructureQ[g.RawIdToThreadIdx(rawEdge.SrcRaw)] <- StructureChange[EdgeProp]{Type: ADD, SrcRaw: rawEdge.SrcRaw, DstRaw: rawEdge.DstRaw, EdgeProperty: rawEdge.EdgeProperty}
-		if g.Undirected {
+		if undirected {
 			g.ThreadStructureQ[g.RawIdToThreadIdx(rawEdge.DstRaw)] <- StructureChange[EdgeProp]{Type: ADD, SrcRaw: rawEdge.DstRaw, DstRaw: rawEdge.SrcRaw, EdgeProperty: rawEdge.EdgeProperty}
 		}
 	}

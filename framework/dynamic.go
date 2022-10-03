@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 const GscBundleSize = 4 * 4096
+
+var tsLast = uint64(0)
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
 	hasChangedIdMapping := false
@@ -49,15 +53,15 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				g.Vertices = append(g.Vertices, graph.Vertex[VertexProp, EdgeProp]{Id: IdRaw})
 				frame.OnInitVertex(g, vidx)
 				// Next, visit the newly created vertex if needed.
-				if g.SourceInit && IdRaw == g.SourceVertex { // Only visit targetted vertex.
+				if g.Options.SourceInit && IdRaw == g.Options.SourceVertex { // Only visit targetted vertex.
 					// Even though we will be the only one able to access this vertex, we will aggregate then retrieve immediately,
 					// rather than directly send the initval as a visit -- this is to match the view that async algorithms have
 					// on initialization (it flows through this process) and will let logic in aggregation modify the initial value if needed.
-					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.InitVal)
+					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.Options.InitVal)
 					initial := frame.AggregateRetrieve(&g.Vertices[vidx])
 					frame.OnVisitVertex(g, vidx, initial)
-				} else if !g.SourceInit { // We initial visit all vertices.
-					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.InitVal)
+				} else if !g.Options.SourceInit { // We initial visit all vertices.
+					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.Options.InitVal)
 					initial := frame.AggregateRetrieve(&g.Vertices[vidx])
 					frame.OnVisitVertex(g, vidx, initial)
 				}
@@ -66,6 +70,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 		g.Mutex.Unlock()
 	}
 	newVid = nil
+
+	latestTime := tsLast
 
 	// Next, range over the newly added graph structure. Here we range over vertices.
 	for vRaw := range miniGraph {
@@ -81,7 +87,11 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				change := miniGraph[vRaw][changeIdx]
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
-					src.OutEdges = append(src.OutEdges, graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: didx})
+					edge := graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: didx}
+					if g.Options.LogTimeseries {
+						latestTime = mathutils.Max(frame.RetrieveTimestamp(edge), latestTime)
+					}
+					src.OutEdges = append(src.OutEdges, edge)
 				} else {
 					// Was a delete; we will break early and address this changeIdx in a moment.
 					break
@@ -106,12 +116,22 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 					}
 				}
 				src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-				frame.OnEdgeDel(g, sidx, didx, g.EmptyVal)
+				frame.OnEdgeDel(g, sidx, didx, g.Options.EmptyVal)
 				changeIdx++
 			}
 			// Addressed the delete, continue the loop (go back to checking for consecutive adds).
 		}
 		g.Mutex.RUnlock()
+	}
+
+	if g.Options.LogTimeseries {
+		last := tsLast
+		potNextTime := (last + g.Options.TimeSeriesInterval)
+		if latestTime > potNextTime {
+			if atomic.CompareAndSwapUint64(&tsLast, last, latestTime) {
+				g.LogEntryChan <- time.Unix(int64(latestTime), 0).Format(time.RFC3339)
+			}
+		}
 	}
 	miniGraph = nil
 }
@@ -181,7 +201,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 					if tidx == 0 && !strucClosed {
 						if timeNow >= (infoTimer + 1.0) {
 							allRateSince := float64(allEdgeCount-allEdgeCountLast) / 1.0
-							info("TotalRate ", uint64(allRate), " InstRate ", uint64(allRateSince), " AllRateAchieved ", fmt.Sprintf("%.3f", (allRate*100.0)/float64(graph.TARGETRATE)))
+							info("Edges ", allEdgeCount, " TotalRate ", uint64(allRate), " InstRate ", uint64(allRateSince), " AllRateAchieved ", fmt.Sprintf("%.3f", (allRate*100.0)/float64(graph.TARGETRATE)))
 							infoTimer = timeNow
 							allEdgeCountLast = allEdgeCount
 						}
@@ -198,7 +218,9 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 								doneCount := atomic.AddInt32(&doneCounter, 1)
 								if doneCount == int32(graph.THREADS) {
 									info("T", tidx, " all edges consumed at ", g.Watch.Elapsed().Milliseconds())
-									//frame.CompareToOracle(g, false)
+									if g.Options.OracleCompare {
+										frame.CompareToOracle(g, false)
+									}
 								}
 								strucClosed = true
 								break fillLoop

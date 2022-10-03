@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"sync/atomic"
-	"time"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
@@ -49,6 +47,10 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 	g.Vertices[vidx].Property.Scratch = 0.0
 }
 
+func RetrieveTimestamp(edge graph.Edge[EdgeProperty]) uint64 {
+	return uint64(edge.Property)
+}
+
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
@@ -81,19 +83,6 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 		target := src.OutEdges[didx].Destination
 		g.OnQueueVisit(g, sidx, target, MessageValue(distNewEdge+distribute))
 	}
-
-	//*
-	for eidx := 0; eidx < didxStart; eidx++ {
-		last := tsLast
-		currentTS := uint64(src.OutEdges[eidx].Property)
-		potNextTs := (last + (24*60*60)*7)
-		if currentTS > potNextTs {
-			if atomic.CompareAndSwapUint64(&tsLast, last, currentTS) {
-				g.LogEntryChan <- time.Unix(int64(currentTS), 0).Format(time.RFC3339)
-			}
-		}
-	}
-	//*/
 }
 
 // OnEdgeAddBasic is the simple version which does not merge a Visit call.

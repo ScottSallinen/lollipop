@@ -86,12 +86,14 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.EdgeParser = EdgeParser
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	// Init all vertexs
-	g.SourceInit = false
-	g.InitVal = EMPTYVAL
-	g.EmptyVal = EMPTYVAL
+	g.Options = graph.GraphOptions[MessageValue]{
+		Undirected: true, // undirected should always be true.
+		SourceInit: false,
+		EmptyVal:   EMPTYVAL,
+		InitVal:    EMPTYVAL,
+	}
 
-	frame.Launch(g, gName, async, dynamic, oracleRun, true) // undirected should always be true.
+	frame.Launch(g, gName, async, dynamic)
 
 	if oracleFin {
 		frame.CompareToOracle(g, true)

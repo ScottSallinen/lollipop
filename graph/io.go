@@ -39,7 +39,7 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) EdgeEnqueuer(queuechans []chan Ra
 	lines := uint64(0)
 	mLines := uint64(0)
 	var lineText string
-	//var stringFields []string
+	undirected := g.Options.Undirected
 	for scanner.Scan() {
 		lines++
 		if lines%enqCount != idx {
@@ -58,7 +58,7 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) EdgeEnqueuer(queuechans []chan Ra
 		// }
 
 		queuechans[uint64(rawEdge.SrcRaw)%deqCount] <- rawEdge
-		if g.Undirected {
+		if undirected {
 			queuechans[uint64(rawEdge.DstRaw)%deqCount] <- RawEdge[EdgeProp]{SrcRaw: rawEdge.DstRaw, DstRaw: rawEdge.SrcRaw, EdgeProperty: rawEdge.EdgeProperty}
 		}
 	}

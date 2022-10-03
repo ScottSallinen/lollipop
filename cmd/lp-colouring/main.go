@@ -86,11 +86,14 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[V
 	frame.EdgeParser = EdgeParser
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	g.SourceInit = false
-	g.InitVal = nil // Each vertex is visited, but no actual value needed to initialize.
-	g.EmptyVal = nil
+	g.Options = graph.GraphOptions[MessageValue]{
+		Undirected: true,
+		SourceInit: false,
+		EmptyVal:   nil,
+		InitVal:    nil,
+	}
 
-	frame.Launch(g, gName, async, dynamic, false, true)
+	frame.Launch(g, gName, async, dynamic)
 
 	return g
 }
