@@ -20,7 +20,9 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeSync(g *graph.Gra
 	info("ConvergeSync")
 	if g.SourceInit {
 		sidx := g.VertexMap[g.SourceVertex]
-		frame.OnVisitVertex(g, sidx, g.InitVal)
+		frame.MessageAggregator(&g.Vertices[sidx], sidx, sidx, g.InitVal)
+		initial := frame.AggregateRetrieve(&g.Vertices[sidx])
+		frame.OnVisitVertex(g, sidx, initial)
 	}
 	iteration := 0
 	for {

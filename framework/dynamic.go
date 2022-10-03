@@ -3,11 +3,13 @@ package framework
 import (
 	"fmt"
 	"sync"
-	"time"
+	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
 )
+
+const GscBundleSize = 4 * 4096
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
 	hasChangedIdMapping := false
@@ -49,7 +51,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				// Next, visit the newly created vertex if needed.
 				if g.SourceInit && IdRaw == g.SourceVertex { // Only visit targetted vertex.
 					// Even though we will be the only one able to access this vertex, we will aggregate then retrieve immediately,
-					// rather than directly send the initval as a visit -- this is to matche the view that async algorithms have
+					// rather than directly send the initval as a visit -- this is to match the view that async algorithms have
 					// on initialization (it flows through this process) and will let logic in aggregation modify the initial value if needed.
 					frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, g.InitVal)
 					initial := frame.AggregateRetrieve(&g.Vertices[vidx])
@@ -125,21 +127,19 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 		graph.TARGETRATE = 1e16
 	}
 
-	haltFlag := false
-	if graph.DEBUG {
+	if graph.DEBUG { // For debugging if the termination isn't working.
 		exit := false
 		defer func() { exit = true }()
 		go frame.PrintTerminationStatus(g, &exit)
 	}
 
-	// This adds a termination vote for when the dynamic injector is concluded.
-	go func() {
+	go func() { // This adds a termination vote for when the dynamic injector is concluded.
 		feederWg.Wait()
 		wg.Done()
 		g.TerminateVote[VOTES-1] = 1
 	}()
 
-	/* // For debugging if the termination isn't working.
+	/*  haltFlag := false
 		go func(hf *bool) {
 			for !(*hf) {
 				time.Sleep(10 * time.Millisecond)
@@ -149,36 +149,56 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 		}(&haltFlag)
 	/*/
 
-	//m1 := time.Now()
-	threadEdges := make([]uint64, graph.THREADS) // number of edges that each thread has processed
+	threadEdges := make([]int64, graph.THREADS) // Number of edges that each thread has processed.
+	doneCounter := int32(0)                     // Counter for when a thread has no more edges left.
 
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
-			const MsgBundleSize = 256
-			const GscBundleSize = 4096 * 16
 			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
 			gscBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
+			completed := false
 			strucClosed := false // true indicates the StructureChanges channel is closed
-			infoTimer := time.Now()
-			for {
-				// Process a batch of StructureChanges
-				if !strucClosed && !haltFlag {
-					//m2 := time.Since(m1)
-					m2 := g.Watch.Elapsed()
-					targetEdgeCount := m2.Seconds() * (float64(graph.TARGETRATE) / float64(graph.THREADS))
-					incEdgeCount := uint64(targetEdgeCount) - threadEdges[tidx] // number of edges to process in this round
+			infoTimer := g.Watch.Elapsed().Seconds()
+			allEdgeCountLast := int64(0)
 
-					ec := uint64(0) // edge count
-				fillLoop:
-					// Read a batch of StructureChanges
-					for ; ec < incEdgeCount && ec < GscBundleSize; ec++ {
+			for !completed {
+				// Process a batch of StructureChanges
+				if !strucClosed {
+					allEdgeCount := int64(0)
+					for te := range threadEdges { // No need to lock, as we do not care for a consistent view, only approximate
+						allEdgeCount += threadEdges[te]
+					}
+					//if allEdgeCount > 18838563 {
+					//	haltFlag = true
+					//	strucClosed = true
+					//	info("haltAt ", g.Watch.Elapsed().Milliseconds())
+					//}
+					timeNow := g.Watch.Elapsed().Seconds()
+					targetEdgeCount := int64(timeNow * (float64(graph.TARGETRATE)))
+					incEdgeCount := (targetEdgeCount - allEdgeCount) / int64(graph.THREADS) // Target number of edges for this thread to process in this round
+					allRate := float64(allEdgeCount) / timeNow
+
+					if tidx == 0 && !strucClosed {
+						if timeNow >= (infoTimer + 1.0) {
+							allRateSince := float64(allEdgeCount-allEdgeCountLast) / 1.0
+							info("TotalRate ", uint64(allRate), " InstRate ", uint64(allRateSince), " AllRateAchieved ", fmt.Sprintf("%.3f", (allRate*100.0)/float64(graph.TARGETRATE)))
+							infoTimer = timeNow
+							allEdgeCountLast = allEdgeCount
+						}
+					}
+
+					edgeCount := int64(0)
+				fillLoop: // Read a batch of StructureChanges
+					for ; edgeCount < incEdgeCount && edgeCount < GscBundleSize; edgeCount++ {
 						select {
 						case msg, ok := <-g.ThreadStructureQ[tidx]:
 							if ok {
-								gscBuffer[ec] = msg
+								gscBuffer[edgeCount] = msg
 							} else {
-								if tidx == 0 {
-									info("T0EdgeFinish ", g.Watch.Elapsed().Milliseconds())
+								doneCount := atomic.AddInt32(&doneCounter, 1)
+								if doneCount == int32(graph.THREADS) {
+									info("T", tidx, " all edges consumed at ", g.Watch.Elapsed().Milliseconds())
+									//frame.CompareToOracle(g, false)
 								}
 								strucClosed = true
 								break fillLoop
@@ -187,72 +207,22 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 							break fillLoop
 						}
 					}
-					if ec != 0 {
-						frame.EnactStructureChanges(g, tidx, gscBuffer[:ec])
-						threadEdges[tidx] += uint64(ec)
+					if edgeCount != 0 {
+						frame.EnactStructureChanges(g, tidx, gscBuffer[:edgeCount])
+						threadEdges[tidx] += int64(edgeCount)
 
-						allEdgeCount := uint64(0)
-						for te := range threadEdges { // No need to lock, as we do not care for a consistent view, only approximate
-							allEdgeCount += threadEdges[te]
-							//if allEdgeCount > 18838563 {
-							//	haltFlag = true
-							//	strucClosed = true
-							//	info("haltAt ", g.Watch.Elapsed().Milliseconds())
-							//}
-						}
-						allRate := float64(allEdgeCount) / g.Watch.Elapsed().Seconds()
-
-						if tidx == 0 && !strucClosed {
-							infoTimerChk := time.Since(infoTimer)
-							if infoTimerChk.Seconds() > 1.0 {
-								info("ApproxRate ", uint64(allRate), " T0_IngestCount ", ec, " Percent ", fmt.Sprintf("%.3f", (float64(ec*100.0)/float64(incEdgeCount+1))), " AllRateAchieved ", fmt.Sprintf("%.3f", (allRate*100.0)/float64(graph.TARGETRATE)))
-								infoTimer = time.Now()
-							}
-						}
-
-						if allRate/float64(graph.TARGETRATE) < 0.99 {
+						// If we are lagging behind the target ingestion rate, and we filled our bundle (implies more edges are available),
+						// then we should loop back to ingest more edges rather than process algorithm messages.
+						if allRate/float64(graph.TARGETRATE) < 0.99 && edgeCount == GscBundleSize {
 							continue
 						}
 					}
 				}
 
-				// Process a batch of messages from the MessageQ
-				algCount := 0
-			algLoop:
-				for ; algCount < MsgBundleSize; algCount++ {
-					select {
-					case msg := <-g.MessageQ[tidx]:
-						msgBuffer[algCount] = msg
-						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
-						// so no need to do so on the reciever side.
-						// This exists here in case the message is sent as a normal visit with a real message,
-						// so here we would be able to accumulate on the reciever side.
-						//target := &g.Vertices[msg.Didx]
-						//if msg.Type != graph.VISITEMPTYMSG {
-						//	frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
-						//}
-					default:
-						break algLoop
-					}
-				}
-
-				if algCount != 0 {
-					g.TerminateVote[tidx] = -1
-					g.Mutex.RLock()
-					for i := 0; i < algCount; i++ {
-						msg := msgBuffer[i]
-						val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
-						frame.OnVisitVertex(g, msg.Didx, val)
-					}
-					g.Mutex.RUnlock()
-					g.MsgRecv[tidx] += uint32(algCount)
-				} else if strucClosed { // No more structure changes (channel is closed)
-					if frame.CheckTermination(g, tidx) {
-						wg.Done()
-						return
-					}
-				}
+				// Process algorithm messages. Need to rlock, and check for termination only if we have no more edges to consume.
+				completed = frame.ProcessMessages(g, tidx, msgBuffer, true, strucClosed)
 			}
+			wg.Done()
 		}(uint32(t), &wg)
 	}
 	wg.Wait()

@@ -40,12 +40,11 @@ type OnCheckCorrectnessFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Gra
 type OnEdgeAddFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, VisitData MsgType)
 type OnEdgeDelFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
 type MessageAggregatorFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp], didx, sidx uint32, VisitData MsgType) (newInfo bool)
-type AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Vertex[VertexProp, EdgeProp]) (data MsgType)
-type OracleComparison[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], oracle *graph.Graph[VertexProp, EdgeProp, MsgType], resultCache *[]float64)
+type AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp]) (data MsgType)
+type OracleComparison[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], oracle *graph.Graph[VertexProp, EdgeProp, MsgType], resultCache *[]float64, cache bool)
 type EdgeParserFunc[EdgeProp any] graph.EdgeParserFunc[EdgeProp]
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[VertexProp, EdgeProp, MsgType], async bool, dynamic bool) {
-	//info("Started.")
 	if async || dynamic {
 		g.OnQueueVisit = frame.OnQueueVisitAsync
 		if dynamic {
@@ -86,7 +85,6 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[Verte
 }
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) Run(g *graph.Graph[VertexProp, EdgeProp, MsgType], inputWg *sync.WaitGroup, outputWg *sync.WaitGroup) {
-	//info("Running.")
 	g.Watch.Start()
 	g.AlgConverge(g, inputWg)
 	//t1 := time.Since(m1)
@@ -99,7 +97,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Run(g *graph.Graph[Vertex
 
 	err := frame.OnCheckCorrectness(g)
 	enforce.ENFORCE(err)
-	//info("Correct.")
+
 	outputWg.Done()
 	if g.LogEntryChan != nil {
 		close(g.LogEntryChan)
@@ -135,12 +133,12 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Launch(g *graph.Graph[Ver
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracleRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], exit *bool, sleepTime time.Duration) {
 	time.Sleep(sleepTime)
 	for !*exit {
-		frame.CompareToOracle(g)
+		frame.CompareToOracle(g, false)
 		time.Sleep(sleepTime)
 	}
 }
 
-func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g *graph.Graph[VertexProp, EdgeProp, MsgType]) {
+func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g *graph.Graph[VertexProp, EdgeProp, MsgType], cache bool) {
 	numEdges := uint64(0)
 
 	g.Mutex.Lock()
@@ -190,7 +188,7 @@ func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g
 	// important to compare with it applied to both .
 	newFrame.OnFinish(g)
 
-	originalFrame.OracleComparison(g, altG, &resultCache)
+	originalFrame.OracleComparison(g, altG, &resultCache, cache)
 
 	for v := range g.Vertices {
 		// Resetting the effect of the "early finish"
@@ -241,7 +239,7 @@ func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g
 // immediately freeze the graph, and copy vertex properties. Then call "Finish" for the algorithm,
 // then stash the finished vertex properties. Will then put back the original state of vertex properties.
 // The stashed finished properties are then sent to the applyTimeSeries func (defined by the algorithm).
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], applyTimeSeries func(string, []mathutils.Pair[uint32, VertexProp])) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], oracleRun bool, applyTimeSeries func(string, []mathutils.Pair[uint32, VertexProp], uint64)) {
 	for entry := range g.LogEntryChan {
 		g.Mutex.Lock()
 		g.Watch.Pause()
@@ -263,7 +261,11 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *
 		g.Watch.UnPause()
 		g.Mutex.Unlock()
 
-		applyTimeSeries(entry, gVertexStash)
+		if oracleRun {
+			frame.CompareToOracle(g, false)
+		}
+
+		applyTimeSeries(entry, gVertexStash, numEdges)
 	}
 }
 

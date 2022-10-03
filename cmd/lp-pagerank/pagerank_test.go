@@ -27,19 +27,19 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 func TestAsyncDynamic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", true, true, false, false, false)
+		LaunchGraphExecution("../../data/test.txt", true, true, false, false, false, false)
 	}
 }
 func TestAsyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", true, false, false, false, false)
+		LaunchGraphExecution("../../data/test.txt", true, false, false, false, false, false)
 	}
 }
 func TestSyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", false, false, false, false, false)
+		LaunchGraphExecution("../../data/test.txt", false, false, false, false, false, false)
 	}
 }
 
@@ -71,9 +71,9 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], undir
 	for _, v := range sc {
 		switch v.Type {
 		case graph.ADD:
-			g.SendAdd(v.SrcRaw, v.DstRaw, EdgeProperty{})
+			g.SendAdd(v.SrcRaw, v.DstRaw, EdgeProperty(count))
 			if undirected {
-				g.SendAdd(v.DstRaw, v.SrcRaw, EdgeProperty{})
+				g.SendAdd(v.DstRaw, v.SrcRaw, EdgeProperty(count))
 			}
 			count++
 			info("add ", v.SrcRaw, v.DstRaw)
@@ -149,7 +149,7 @@ func DynamicCreation(undirected bool, t *testing.T) {
 
 		gDyn := DynamicGraphExecutionFromSC(rawTestGraph, undirected)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, undirected)
+		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, false, undirected)
 
 		a := make([]float64, len(gDyn.Vertices))
 		b := make([]float64, len(gStatic.Vertices))
@@ -222,7 +222,7 @@ func DynamicWithDelete(undirected bool, t *testing.T) {
 
 		gDyn := DynamicGraphExecutionFromSC(adjustedGraph, undirected)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, undirected)
+		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, false, undirected)
 
 		CheckGraphStructureEquality(t, gDyn, gStatic)
 

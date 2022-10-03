@@ -9,6 +9,8 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
+const MsgBundleSize = 256
+
 // OnQueueVisitAsync: Async queue applying function; aggregates message values,
 // and only injects a visit marker if none exist already.
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType) {
@@ -21,26 +23,26 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *grap
 	// The MessageAggregator can be designed in such a way to ensure uniqueness of a notification;
 	// For example, return true only on the transition from zero to non-zero, and not on further increments to a value.
 	if doSendMessage {
+		// Must be called by the source vertex's thread.
+		g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
 		select {
 		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: didx, Message: g.EmptyVal}:
 		default:
 			enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
 		}
-		// must be called by the source vertex's thread
-		g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
 	}
 }
 
 // Example function that would send a real message, to be accumulated on the reciever side (this is how a distributed set up would need to operate)
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsyncMsg(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType) {
 	target := &g.Vertices[didx]
+	g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
 	select {
 	case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISIT, Sidx: sidx, Didx: didx, Message: VisitData}:
 	default:
 		enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
 	}
 	// must be called by the source vertex's thread
-	g.MsgSend[g.Vertices[sidx].ToThreadIdx()] += 1
 }
 
 // SendInitialVisists: Enqueues the message(s) that will start the algorithm.
@@ -72,6 +74,55 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) SendInitialVisists(g *gra
 	wg.Done()
 }
 
+// ProcessMessages will pull a bundle of messages targetting this thread, and then process them all.
+// We can choose to readlock the graph if needed, and will check for termination only if the bool is set.
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessMessages(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, msgBuffer []graph.Message[MsgType], lock bool, exitCheck bool) bool {
+	algCount := 0
+	// Process a batch of messages from the MessageQ
+algLoop:
+	for ; algCount < MsgBundleSize; algCount++ {
+		select {
+		case msg := <-g.MessageQ[tidx]:
+			msgBuffer[algCount] = msg
+			// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
+			// so no need to do so on the reciever side.
+			// This exists here in case the message is sent as a normal visit with a real message,
+			// so here we would be able to accumulate on the reciever side.
+			//target := &g.Vertices[msg.Didx]
+			//if msg.Type != graph.VISITEMPTYMSG {
+			//	frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
+			//}
+		default:
+			break algLoop
+		}
+	}
+
+	// Consume messages read
+	if algCount != 0 {
+		g.TerminateVote[tidx] = -1
+		if lock {
+			g.Mutex.RLock()
+		}
+		for i := 0; i < algCount; i++ {
+			msg := msgBuffer[i]
+			val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
+			//	if exitCheck && algCount < MsgBundleSize {
+			//		info(msg.Sidx, "->", msg.Didx, ": ", val)
+			//	}
+			frame.OnVisitVertex(g, msg.Didx, val)
+		}
+		if lock {
+			g.Mutex.RUnlock()
+		}
+		g.MsgRecv[tidx] += uint32(algCount)
+	} else if exitCheck {
+		if frame.CheckTermination(g, tidx) {
+			return true
+		}
+	}
+	return false
+}
+
 // ConvergeAsync: Static focused variant of async convergence.
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Graph[VertexProp, EdgeProp, MsgType], feederWg *sync.WaitGroup) {
 	// Note: feederWg not used -- only in the function to match the template ConvergeFunc.
@@ -90,51 +141,14 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 	// Send initial visit message(s)
 	go frame.SendInitialVisists(g, VOTES, &wg)
 
-	const MsgBundleSize = 256
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
 			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
-			for {
-				//g.Mutex.RLock() // If we want to lock for oracle comparisons
-				algCount := 0
-				//msgBuffer := msgBuffer[:MsgBundleSize]
-				// read a batch of messages
-			algLoop:
-				for ; algCount < MsgBundleSize; algCount++ {
-					select {
-					case msg := <-g.MessageQ[tidx]:
-						msgBuffer[algCount] = msg
-						// Messages inserted by OnQueueVisitAsync are already aggregated from the sender side,
-						// so no need to do so on the reciever side.
-						// This exists here in case the message is sent as a normal visit with a real message,
-						// so here we would be able to accumulate on the reciever side.
-						//target := &g.Vertices[msg.Didx]
-						//if msg.Type != graph.VISITEMPTYMSG {
-						//	frame.MessageAggregator(target, msg.Didx, msg.Sidx, msg.Message)
-						//}
-					default:
-						break algLoop
-					}
-				}
-
-				// consume messages read
-				if algCount != 0 {
-					g.TerminateVote[tidx] = -1
-					for i := 0; i < algCount; i++ {
-						msg := msgBuffer[i]
-						val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
-						frame.OnVisitVertex(g, msg.Didx, val)
-					}
-					g.MsgRecv[tidx] += uint32(algCount)
-				} else {
-					if frame.CheckTermination(g, tidx) {
-						wg.Done()
-						return
-					}
-				}
-
-				//g.Mutex.RUnlock()
+			completed := false
+			for !completed {
+				completed = frame.ProcessMessages(g, tidx, msgBuffer, false, true)
 			}
+			wg.Done()
 		}(uint32(t), &wg)
 	}
 	wg.Wait()

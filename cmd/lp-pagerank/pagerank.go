@@ -3,17 +3,19 @@ package main
 import (
 	"fmt"
 	"math"
+	"sync/atomic"
+	"time"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 const DAMPINGFACTOR = float64(0.85)
-const INITMASS = 1.0
+const INITMASS = 100.0
 const EMPTYVAL = 0.0
 const EPSILON = float64(INITMASS * 0.001)
 
-const NORMALIZE = false
+const NORMALIZE = true
 
 type VertexProperty struct {
 	Residual float64
@@ -25,12 +27,14 @@ func (p *VertexProperty) String() string {
 	return fmt.Sprintf("%.4f %.4f", p.Value, p.Residual)
 }
 
-type EdgeProperty struct{}
+type EdgeProperty uint64
 
 type MessageValue float64
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
 	old := mathutils.AtomicAddFloat64(&dst.Property.Scratch, float64(data))
+	//newInfo = math.Abs(old) < EPSILON && math.Abs(old+float64(data)) > EPSILON
+	//return newInfo
 	return old == 0.0
 }
 
@@ -78,18 +82,18 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 		g.OnQueueVisit(g, sidx, target, MessageValue(distNewEdge+distribute))
 	}
 
-	/*
-		for eidx := 0; eidx < didxStart; eidx++ {
-			last := tsLast
-			currentTS := uint64(src.OutEdges[eidx].Property)
-			potNextTs := (last + (24*60*60)*7)
-			if currentTS > potNextTs {
-				if atomic.CompareAndSwapUint64(&tsLast, last, currentTS) {
-					g.LogEntryChan <- time.Unix(int64(currentTS), 0).Format(time.RFC3339)
-				}
+	//*
+	for eidx := 0; eidx < didxStart; eidx++ {
+		last := tsLast
+		currentTS := uint64(src.OutEdges[eidx].Property)
+		potNextTs := (last + (24*60*60)*7)
+		if currentTS > potNextTs {
+			if atomic.CompareAndSwapUint64(&tsLast, last, currentTS) {
+				g.LogEntryChan <- time.Unix(int64(currentTS), 0).Format(time.RFC3339)
 			}
 		}
-	*/
+	}
+	//*/
 }
 
 // OnEdgeAddBasic is the simple version which does not merge a Visit call.

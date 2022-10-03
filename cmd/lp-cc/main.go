@@ -40,7 +40,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 			target := g.Vertices[vidx].OutEdges[eidx].Destination
 			enforce.ENFORCE(g.Vertices[target].Property.Value == ourValue)
 		}
-	}	
+	}
 	if graph.DEBUG {
 		info("vertex values: ")
 		for vidx := range g.Vertices {
@@ -50,7 +50,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 	return nil
 }
 
-func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], oracle *graph.Graph[VertexProperty, EdgeProperty, MessageValue], resultCache *[]float64) {
+func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], oracle *graph.Graph[VertexProperty, EdgeProperty, MessageValue], resultCache *[]float64, cache bool) {
 	ia := make([]float64, len(g.Vertices))
 	ib := make([]float64, len(g.Vertices))
 	numEdges := uint64(0)
@@ -61,21 +61,15 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 		numEdges += uint64(len(g.Vertices[v].OutEdges))
 	}
 
-	// TODO: should be parameterized...
-	const ORACLEEDGES = 28511807
-	const ORACLEVERTICES = 1791489
-
-	if resultCache == nil && numEdges == ORACLEEDGES {
+	if resultCache == nil && cache {
 		*resultCache = make([]float64, len(ia))
 		copy(*resultCache, ia)
 	}
 	if resultCache != nil {
 		copy(ia, *resultCache)
 	}
-	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges, " vertexPct ", (len(g.Vertices)*100)/ORACLEVERTICES, " edgePct ", (numEdges*100)/ORACLEEDGES)
+	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges)
 	graph.ResultCompare(ia, ib)
-
-	// Something to be done ?
 }
 
 func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
@@ -100,7 +94,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.Launch(g, gName, async, dynamic, oracleRun, true) // undirected should always be true.
 
 	if oracleFin {
-		frame.CompareToOracle(g)
+		frame.CompareToOracle(g, true)
 	}
 
 	return g

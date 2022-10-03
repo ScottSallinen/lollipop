@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 
 	_ "net/http/pprof"
 
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
@@ -26,10 +28,13 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 
 	src, _ := strconv.Atoi(stringFields[0])
 	dst, _ := strconv.Atoi(stringFields[1])
-	//ts, _ := strconv.ParseFloat(stringFields[2], 64)
+	var ts uint64
+	if len(stringFields) > 2 {
+		ts, _ = strconv.ParseUint(stringFields[2], 10, 64)
+	}
 
-	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst)}
-	//return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty(ts)}
+	//return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst)}
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty(ts)}
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
@@ -61,7 +66,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 	return nil
 }
 
-func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], oracle *graph.Graph[VertexProperty, EdgeProperty, MessageValue], resultCache *[]float64) {
+func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], oracle *graph.Graph[VertexProperty, EdgeProperty, MessageValue], resultCache *[]float64, cache bool) {
 	ia := make([]float64, len(g.Vertices))
 	ib := make([]float64, len(g.Vertices))
 	numEdges := uint64(0)
@@ -72,18 +77,14 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 		numEdges += uint64(len(g.Vertices[v].OutEdges))
 	}
 
-	// TODO: should be parameterized...
-	const ORACLEEDGES = 28511807
-	const ORACLEVERTICES = 1791489
-
-	if resultCache == nil && numEdges == ORACLEEDGES {
+	if resultCache == nil && cache {
 		*resultCache = make([]float64, len(ia))
 		copy(*resultCache, ia)
 	}
 	if resultCache != nil {
 		copy(ia, *resultCache)
 	}
-	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges, " vertexPct ", (len(g.Vertices)*100)/ORACLEVERTICES, " edgePct ", (numEdges*100)/ORACLEEDGES)
+	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges)
 	graph.ResultCompare(ia, ib)
 
 	iaRank := mathutils.NewIndexedFloat64Slice(ia)
@@ -93,20 +94,28 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 
 	topN := 1000
 	topK := 100
+	topM := 10
 	if len(iaRank.Idx) < topN {
 		topN = len(iaRank.Idx)
 	}
 	if len(iaRank.Idx) < topK {
 		topK = len(iaRank.Idx)
 	}
+	if len(iaRank.Idx) < topM {
+		topM = len(iaRank.Idx)
+	}
 	iaRk := make([]int, topK)
 	copy(iaRk, iaRank.Idx[:topK])
+
 	ibRk := make([]int, topK)
 	copy(ibRk, ibRank.Idx[:topK])
+	icRk := make([]int, topM)
+	copy(icRk, ibRank.Idx[:topM])
 
 	mRBO6 := mathutils.CalculateRBO(iaRank.Idx[:topN], ibRank.Idx[:topN], 0.6)
 	mRBO9 := mathutils.CalculateRBO(iaRk, ibRk, 0.9)
-	info("top", topN, " RBO6 ", fmt.Sprintf("%.4f", mRBO6*100.0), " top", topK, " RBO9 ", fmt.Sprintf("%.4f", mRBO9*100.0))
+	mRBO5 := mathutils.CalculateRBO(iaRk, icRk, 0.5)
+	info("top", topN, " RBO6 ", fmt.Sprintf("%.4f", mRBO6*100.0), " top", topK, " RBO9 ", fmt.Sprintf("%.4f", mRBO9*100.0), " top", topM, " RBO5 ", fmt.Sprintf("%.4f", mRBO5*100.0))
 
 	println("pos,   rawId,       score, rawId(oracle),   score(oracle)")
 	for i := 0; i < mathutils.Min(10, len(oracle.Vertices)); i++ {
@@ -115,6 +124,7 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 }
 
 func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], size int) {
+	info("PrintTopN:")
 	ia := make([]float64, len(g.Vertices))
 	for v := range g.Vertices {
 		ia[v] = g.Vertices[v].Property.Value
@@ -132,19 +142,23 @@ func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], size 
 }
 
 type NamedEntry struct {
-	Name  string
-	Entry []mathutils.Pair[uint32, float64]
+	Name   string
+	vCount uint64
+	eCount uint64
+	Entry  []mathutils.Pair[uint32, float64]
 }
 
 var tsDB = make([]NamedEntry, 0)
 
-//var tsLast = uint64(0)
+var tsLast = uint64(0)
 
 // Logs top N vertices
-func LogTimeSeries(name string, data []mathutils.Pair[uint32, VertexProperty]) {
+func LogTimeSeries(name string, data []mathutils.Pair[uint32, VertexProperty], numEdges uint64) {
+	//idMap := make(map[uint32]int, 0)
 	ia := make([]float64, len(data))
 	for v := range data {
 		ia[v] = data[v].Second.Value
+		//idMap[data[v].First] = v
 	}
 	iaRank := mathutils.NewIndexedFloat64Slice(ia)
 	sort.Sort(sort.Reverse(iaRank))
@@ -157,19 +171,39 @@ func LogTimeSeries(name string, data []mathutils.Pair[uint32, VertexProperty]) {
 		newDbEntry[i] = mathutils.Pair[uint32, float64]{First: data[iaRank.Idx[i]].First, Second: iaRank.Float64Slice[i]}
 		//info(fmt.Sprintf("%d,%10d,\t%10.3f", i, g.Vertices[iaRank.Idx[i]].Id, iaRank.Float64Slice[i]))
 	}
-	entry := NamedEntry{name, newDbEntry}
-	info(entry)
+
+	//newDbEntry := make([]mathutils.Pair[uint32, float64], 0)
+	//interestArray := []uint32{53, 40, 68, 175, 6, 67, 36, 70, 47, 164, 16, 7, 139, 11, 71, 77, 13, 54, 17, 78, 37, 59, 89, 448, 825, 145, 26, 405, 1690, 983, 363, 9724, 9499, 5880, 13753, 1439, 760, 8661, 6379, 3873, 25336, 27029, 17608, 18416, 13951, 43668, 29990, 38806, 396, 85033, 499, 383716, 43, 3943}
+	//for i := range interestArray {
+	//	if vidx, in := idMap[interestArray[i]]; in {
+	//		newDbEntry = append(newDbEntry, mathutils.Pair[uint32, float64]{First: data[vidx].First, Second: data[vidx].Second.Value})
+	//	}
+	//}
+
+	entry := NamedEntry{name, uint64(len(data)), numEdges, newDbEntry}
+	//info(entry)
 	tsDB = append(tsDB, entry)
+	PrintTimeSeries(true, false)
 }
 
 // Spits out top10 for each point in time (entry).
 // Will print all possible vertices for each row (blanks for non entries) to help with formatting.
-func PrintTimeSeries() {
-	info("Timeseries:")
+func PrintTimeSeries(fileOut bool, stdOut bool) {
+	if stdOut {
+		info("Timeseries:")
+	}
 	allVerticesMap := make(map[uint32]int) // Map of real vertex index to our array index
 	allVerticesArr := make([]float64, 0)
 
-	header := ","
+	var f *os.File
+	var err error
+	if fileOut {
+		f, err = os.Create("timeseries.txt")
+		enforce.ENFORCE(err)
+		defer f.Close()
+	}
+
+	header := "ts,v,e,"
 	for i := range tsDB {
 		for _, e := range tsDB[i].Entry {
 			if _, ok := allVerticesMap[e.First]; !ok {
@@ -179,13 +213,18 @@ func PrintTimeSeries() {
 			}
 		}
 	}
-	println(header)
+	if stdOut {
+		println(header)
+	}
+	if fileOut {
+		f.WriteString(header + "\n")
+	}
 
 	for i := range tsDB {
 		for j := range allVerticesArr {
 			allVerticesArr[j] = 0
 		}
-		line := tsDB[i].Name + ","
+		line := tsDB[i].Name + "," + strconv.FormatUint(tsDB[i].vCount, 10) + "," + strconv.FormatUint(tsDB[i].eCount, 10) + ","
 		for _, e := range tsDB[i].Entry {
 			allVerticesArr[allVerticesMap[e.First]] = e.Second
 		}
@@ -196,11 +235,16 @@ func PrintTimeSeries() {
 				line += ","
 			}
 		}
-		println(line)
+		if stdOut {
+			println(line)
+		}
+		if fileOut {
+			f.WriteString(line + "\n")
+		}
 	}
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool, timeSeries bool, undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
 	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
@@ -217,12 +261,15 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	g.EmptyVal = EMPTYVAL
 	g.InitVal = INITMASS
 
-	//go frame.LogTimeSeriesRunnable(g, LogTimeSeries)
+	if timeSeries {
+		go frame.LogTimeSeriesRunnable(g, oracleRun, LogTimeSeries)
+		oracleRun = false
+	}
 
 	frame.Launch(g, gName, async, dynamic, oracleRun, undirected)
 
 	if oracleFin {
-		frame.CompareToOracle(g)
+		frame.CompareToOracle(g, true)
 	}
 
 	return g
@@ -234,7 +281,8 @@ func main() {
 	dptr := flag.Bool("d", false, "Dynamic")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")
 	uptr := flag.Bool("u", false, "Interpret the input graph as undirected (add transpose edges)")
-	optr := flag.Bool("o", false, "Compare to oracle results during runtime")
+	optr := flag.Bool("o", false, "Compare to oracle results during runtime. If timeseries enabled, will run on each logging of data instead of intervaled.")
+	sptr := flag.Bool("s", false, "Log timeseries data")
 	fptr := flag.Bool("f", false, "Compare to oracle results (computed via async) upon finishing the initial algorithm.")
 	pptr := flag.Bool("p", false, "Save vertex properties to disk")
 	tptr := flag.Int("t", 32, "Thread count")
@@ -250,12 +298,15 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr, *optr, *fptr, *uptr)
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, *optr, *fptr, *sptr, *uptr)
 
-	g.ComputeGraphStats(false, false)
-	//PrintTimeSeries()
+	g.ComputeGraphStats(false, true)
 
-	//PrintTopN(g, 10)
+	if *dptr {
+		PrintTimeSeries(true, true)
+	}
+	PrintTopN(g, 10)
+
 	if *pptr {
 		graphName := framework.ExtractGraphName(*gptr)
 		g.WriteVertexProps(graphName, *dptr)
