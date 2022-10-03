@@ -24,10 +24,10 @@ type EdgeProperty struct {}
 type MessageValue uint32
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
-    input := uint32(data)
-    if input > dst.Id { // This means ininitalization
-        input = dst.Id
-    }
+	input := uint32(data)
+	if input > dst.Id { // This means ininitalization
+		input = dst.Id
+	}
 	dst.Mutex.Lock()
 	tmp := dst.Property.Scratch
 	// Labels decrease monotonically
