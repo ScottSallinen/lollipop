@@ -71,10 +71,10 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *grap
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected: true,
-		SourceInit: false,
-		EmptyVal:   EMPTYVAL,
-		InitVal:    EMPTYVAL,
+		Undirected:     true,
+		SourceInit:     false,
+		EmptyVal:       EMPTYVAL,
+		InitAllMessage: EMPTYVAL,
 	}
 
 	frame.Init(g, true, true)

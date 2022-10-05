@@ -49,7 +49,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsyncMsg(g *g
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) SendInitialVisists(g *graph.Graph[VertexProp, EdgeProp, MsgType], VOTES int, wg *sync.WaitGroup) {
 	if !g.Options.SourceInit { // Target all vertices: send the algorithm defined initial visit value as a message.
 		acc := make([]uint32, graph.THREADS)
-		initVal := g.Options.InitVal
+		initVal := g.Options.InitAllMessage
 		mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vidx int, tidx int) {
 			trg := &g.Vertices[vidx]
 			newinfo := frame.MessageAggregator(trg, uint32(vidx), uint32(vidx), initVal)
@@ -61,13 +61,15 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) SendInitialVisists(g *gra
 		for _, v := range acc {
 			g.MsgSend[VOTES-1] += v
 		}
-	} else { // Target specific vertex: send the algorithm defined initial visit value as a message.
-		sidx := g.VertexMap[g.Options.SourceVertex]
-		trg := &g.Vertices[sidx]
-		newinfo := frame.MessageAggregator(trg, sidx, sidx, g.Options.InitVal)
-		if newinfo {
-			g.MessageQ[g.Vertices[sidx].ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: sidx}
-			g.MsgSend[VOTES-1] += 1
+	} else { // Target specific vertices: send the algorithm defined initial visit value as a message.
+		for vid, message := range g.Options.InitMessages {
+			vidx := g.VertexMap[vid]
+			v := &g.Vertices[vidx]
+			newInfo := frame.MessageAggregator(v, vidx, vidx, message)
+			if newInfo {
+				g.MessageQ[g.Vertices[vidx].ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: vidx, Didx: vidx, Message: g.Options.EmptyVal}
+				g.MsgSend[VOTES-1] += 1
+			}
 		}
 	}
 	g.TerminateVote[VOTES-1] = 1

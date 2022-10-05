@@ -19,10 +19,12 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitSync(g *graph
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeSync(g *graph.Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup) {
 	info("ConvergeSync")
 	if g.Options.SourceInit {
-		sidx := g.VertexMap[g.Options.SourceVertex]
-		frame.MessageAggregator(&g.Vertices[sidx], sidx, sidx, g.Options.InitVal)
-		initial := frame.AggregateRetrieve(&g.Vertices[sidx])
-		frame.OnVisitVertex(g, sidx, initial)
+		for vid, message := range g.Options.InitMessages {
+			vidx := g.VertexMap[vid]
+			frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, message)
+			aggregated := frame.AggregateRetrieve(&g.Vertices[vidx])
+			frame.OnVisitVertex(g, vidx, aggregated)
+		}
 	}
 	iteration := 0
 	for {
@@ -30,7 +32,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeSync(g *graph.Gra
 		mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vidx int, tidx int) {
 			target := &g.Vertices[vidx]
 			if !g.Options.SourceInit && iteration == 0 {
-				frame.OnQueueVisitSync(g, uint32(vidx), uint32(vidx), g.Options.InitVal)
+				frame.OnQueueVisitSync(g, uint32(vidx), uint32(vidx), g.Options.InitAllMessage)
 			}
 			active := atomic.SwapInt32(&target.IsActive, 0) == 1
 			if active {

@@ -47,10 +47,10 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracle bool, u
 	// Some potential extra defines here, for if the algorithm has a "point" initialization
 	// or is instead initialized by default behaviour (where every vertex is visited initially)
 	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected: false,
-		SourceInit: false,
-		EmptyVal:   EMPTYVAL,
-		InitVal:    EMPTYVAL,
+		Undirected:     false,
+		SourceInit:     false,
+		EmptyVal:       EMPTYVAL,
+		InitAllMessage: EMPTYVAL,
 	}
 
 	frame.Launch(g, gName, async, dynamic)
