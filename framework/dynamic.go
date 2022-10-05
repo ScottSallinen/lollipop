@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
@@ -14,8 +13,9 @@ import (
 const GscBundleSize = 4 * 4096
 
 var tsLast = uint64(0)
+var threadAtTimestamp []uint64
 
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, changes []graph.StructureChange[EdgeProp]) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, changes []graph.StructureChange[EdgeProp], expiredEdges *[]graph.StructureChange[EdgeProp]) {
 	hasChangedIdMapping := false
 	newVid := make(map[uint32]bool, len(changes)*2)
 	miniGraph := make(map[uint32][]graph.StructureChange[EdgeProp], len(changes))
@@ -38,6 +38,29 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 		}
 	}
 	g.Mutex.RUnlock()
+
+	if g.Options.InsertDeleteOnExpire > 0 {
+		for _, change := range changes {
+			futureDelete := graph.StructureChange[EdgeProp]{Type: graph.DEL, SrcRaw: change.SrcRaw, DstRaw: change.DstRaw}
+			tsInit := frame.GetTimestamp(change.EdgeProperty)
+			frame.SetTimestamp(&futureDelete.EdgeProperty, tsInit+g.Options.InsertDeleteOnExpire)
+			(*expiredEdges) = append((*expiredEdges), futureDelete)
+		}
+
+		for {
+			if len((*expiredEdges)) == 0 {
+				break
+			}
+			change := (*expiredEdges)[0]
+			ts := frame.GetTimestamp(change.EdgeProperty)
+			if ts <= threadAtTimestamp[tidx] {
+				miniGraph[change.SrcRaw] = append(miniGraph[change.SrcRaw], change)
+				(*expiredEdges) = (*expiredEdges)[1:]
+				continue
+			}
+			break
+		}
+	}
 
 	// If we have a new raw ID to add to the graph, we need to write lock the graph.
 	if hasChangedIdMapping {
@@ -91,7 +114,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 					didx := g.VertexMap[change.DstRaw]
 					edge := graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: didx}
 					if g.Options.LogTimeseries {
-						latestTime = mathutils.Max(frame.RetrieveTimestamp(edge), latestTime)
+						latestTime = mathutils.Max(frame.GetTimestamp(edge.Property), latestTime)
+						threadAtTimestamp[tidx] = latestTime
 					}
 					src.OutEdges = append(src.OutEdges, edge)
 				} else {
@@ -105,23 +129,31 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				frame.OnEdgeAdd(g, sidx, didxStart, val)
 			}
 
+			var didxDel []uint32
 			// If we didn't finish, it means we hit a delete. Address it here.
-			if changeIdx < len(miniGraph[vRaw]) {
+			for ; changeIdx < len(miniGraph[vRaw]); changeIdx++ {
 				change := miniGraph[vRaw][changeIdx]
-				enforce.ENFORCE(change.Type == graph.DEL)
-				didx := g.VertexMap[change.DstRaw]
-				/// Delete edge.. naively find target and swap last element with the hole.
-				for k, v := range src.OutEdges {
-					if v.Destination == didx {
-						src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
-						break
+				if change.Type == graph.DEL {
+					didx := g.VertexMap[change.DstRaw]
+					/// Delete edge.. naively find target and swap last element with the hole.
+					for k := range src.OutEdges {
+						if src.OutEdges[k].Destination == didx { // TODO: Multigraph target ?  compare property?
+							src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
+							break
+						}
 					}
+					src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
+					didxDel = append(didxDel, didx)
+				} else {
+					break
 				}
-				src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-				frame.OnEdgeDel(g, sidx, didx, g.Options.EmptyVal)
-				changeIdx++
 			}
-			// Addressed the delete, continue the loop (go back to checking for consecutive adds).
+			// From the gathered set of consecutive deletes, apply them.
+			if len(didxDel) > 0 {
+				val := frame.AggregateRetrieve(src)
+				frame.OnEdgeDel(g, sidx, didxDel, val)
+			}
+			// Addressed the delete(s), continue the loop (go back to checking for consecutive adds).
 		}
 		g.Mutex.RUnlock()
 	}
@@ -131,7 +163,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 		potNextTime := (last + g.Options.TimeSeriesInterval)
 		if latestTime > potNextTime {
 			if atomic.CompareAndSwapUint64(&tsLast, last, latestTime) {
-				g.LogEntryChan <- time.Unix(int64(latestTime), 0).Format(time.RFC3339)
+				g.LogEntryChan <- time.Unix(int64(latestTime), 0)
 			}
 		}
 	}
@@ -144,6 +176,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 	var wg sync.WaitGroup
 	VOTES := graph.THREADS + 1
 	wg.Add(VOTES)
+
+	threadAtTimestamp = make([]uint64, graph.THREADS)
 
 	if graph.TARGETRATE == 0 {
 		graph.TARGETRATE = 1e16
@@ -177,7 +211,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
 			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
-			gscBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
+			structureChangeBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
+			expiredEdges := make([]graph.StructureChange[EdgeProp], 0)
 			completed := false
 			strucClosed := false // true indicates the StructureChanges channel is closed
 			infoTimer := g.Watch.Elapsed().Seconds()
@@ -215,7 +250,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 						select {
 						case msg, ok := <-g.ThreadStructureQ[tidx]:
 							if ok {
-								gscBuffer[edgeCount] = msg
+								structureChangeBuffer[edgeCount] = msg
 							} else {
 								doneCount := atomic.AddInt32(&doneCounter, 1)
 								if doneCount == int32(graph.THREADS) {
@@ -232,7 +267,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 						}
 					}
 					if edgeCount != 0 {
-						frame.EnactStructureChanges(g, tidx, gscBuffer[:edgeCount])
+						frame.EnactStructureChanges(g, tidx, structureChangeBuffer[:edgeCount], &expiredEdges)
 						threadEdges[tidx] += int64(edgeCount)
 
 						// If we are lagging behind the target ingestion rate, and we filled our bundle (implies more edges are available),

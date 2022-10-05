@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "net/http/pprof"
 
@@ -142,7 +143,7 @@ func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], size 
 }
 
 type NamedEntry struct {
-	Name   string
+	Name   time.Time
 	vCount uint64
 	eCount uint64
 	Entry  []mathutils.Pair[uint32, float64]
@@ -151,7 +152,7 @@ type NamedEntry struct {
 var tsDB = make([]NamedEntry, 0)
 
 // Logs top N vertices
-func ApplyTimeSeries(name string, data []mathutils.Pair[uint32, VertexProperty], numEdges uint64) {
+func ApplyTimeSeries(name time.Time, data []mathutils.Pair[uint32, VertexProperty], numEdges uint64) {
 	//idMap := make(map[uint32]int, 0)
 	ia := make([]float64, len(data))
 	for v := range data {
@@ -196,12 +197,12 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 	var f *os.File
 	var err error
 	if fileOut {
-		f, err = os.Create("timeseries.txt")
+		f, err = os.Create("results/timeseries.txt")
 		enforce.ENFORCE(err)
 		defer f.Close()
 	}
 
-	header := "ts,v,e,"
+	header := "ts,,v,e,,"
 	for i := range tsDB {
 		for _, e := range tsDB[i].Entry {
 			if _, ok := allVerticesMap[e.First]; !ok {
@@ -222,7 +223,8 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 		for j := range allVerticesArr {
 			allVerticesArr[j] = 0
 		}
-		line := tsDB[i].Name + "," + strconv.FormatUint(tsDB[i].vCount, 10) + "," + strconv.FormatUint(tsDB[i].eCount, 10) + ","
+		// Tweaked for better excel importing...
+		line := tsDB[i].Name.Format(time.RFC3339) + "," + tsDB[i].Name.Format("2006-01-02") + "," + strconv.FormatUint(tsDB[i].vCount, 10) + "," + strconv.FormatUint(tsDB[i].eCount, 10) + "," + tsDB[i].Name.Format("2006-01-02") + ","
 		for _, e := range tsDB[i].Entry {
 			allVerticesArr[allVerticesMap[e.First]] = e.Second
 		}
@@ -254,7 +256,8 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.OracleComparison = OracleComparison
 	frame.EdgeParser = EdgeParser
-	frame.RetrieveTimestamp = RetrieveTimestamp
+	frame.GetTimestamp = GetTimestamp
+	frame.SetTimestamp = SetTimestamp
 	frame.ApplyTimeSeries = ApplyTimeSeries
 
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
@@ -263,8 +266,9 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 		EmptyVal:           EMPTYVAL,
 		InitAllMessage:     INITMASS,
 		LogTimeseries:      timeSeries,
-		TimeSeriesInterval: (24 * 60 * 60) * 7,
-		OracleCompare:      oracleRun,
+		TimeSeriesInterval: (24 * 60 * 60) * 1,
+		//InsertDeleteOnExpire: (24 * 60 * 60) * 120,
+		OracleCompare: oracleRun,
 	}
 
 	frame.Launch(g, gName, async, dynamic)

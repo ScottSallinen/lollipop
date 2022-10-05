@@ -19,7 +19,7 @@ func (p *VertexProperty) String() string {
 	return fmt.Sprintf("%d", p.Value)
 }
 
-type EdgeProperty struct {}
+type EdgeProperty struct{}
 
 type MessageValue uint32
 
@@ -68,7 +68,7 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	}
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxs []uint32, data MessageValue) {
 	enforce.ENFORCE(false, "Incremental only algorithm")
 }
 

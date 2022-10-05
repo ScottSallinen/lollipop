@@ -47,8 +47,12 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 	g.Vertices[vidx].Property.Scratch = 0.0
 }
 
-func RetrieveTimestamp(edge graph.Edge[EdgeProperty]) uint64 {
-	return uint64(edge.Property)
+func GetTimestamp(prop EdgeProperty) uint64 {
+	return uint64(prop)
+}
+
+func SetTimestamp(prop *EdgeProperty, ts uint64) {
+	*prop = EdgeProperty(ts)
 }
 
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
@@ -107,7 +111,7 @@ func OnEdgeAddBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], 
 	g.OnQueueVisit(g, sidx, didx, MessageValue(distNewEdge))
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
+func OnEdgeDelBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -124,6 +128,35 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	distOldEdge := -1.0 * distAllPrev / (float64(len(src.OutEdges) + 1))
 
 	g.OnQueueVisit(g, sidx, didx, MessageValue(distOldEdge))
+}
+
+// Version that merges with a visit
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxs []uint32, data MessageValue) {
+	src := &g.Vertices[sidx]
+	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+
+	src.Property.Residual += float64(data)
+	toDistribute := DAMPINGFACTOR * (src.Property.Residual)
+	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.Residual)
+	src.Property.Value += toAbsorb
+	src.Property.Residual = 0.0
+
+	if len(src.OutEdges) > 0 { /// Still have edges left
+		distribute := toDistribute / float64(len(src.OutEdges))
+		distOld := distAllPrev / (float64(len(src.OutEdges) + len(didxs)))
+		distNew := distAllPrev / (float64(len(src.OutEdges)))
+		distDelta := distNew - distOld
+
+		for eidx := range src.OutEdges {
+			target := src.OutEdges[eidx].Destination
+			g.OnQueueVisit(g, sidx, target, MessageValue(distDelta+distribute))
+		}
+	}
+
+	distOldEdges := -1.0 * distAllPrev / (float64(len(src.OutEdges) + len(didxs)))
+	for _, didx := range didxs {
+		g.OnQueueVisit(g, sidx, didx, MessageValue(distOldEdges))
+	}
 }
 
 func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {

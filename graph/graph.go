@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/mathutils"
@@ -34,20 +35,20 @@ type Graph[VertexProp, EdgeProp, MsgType any] struct {
 	TerminateVote    []int
 	TerminateData    []int64
 	Watch            mathutils.Watch
-	LogEntryChan     chan string
+	LogEntryChan     chan time.Time
 	Options          GraphOptions[MsgType]
 }
 
 type GraphOptions[MsgType any] struct {
-	Undirected         bool    // Declares if the graph should be treated as undirected (e.g. for construction)
-	LogTimeseries      bool    // Uses timestamps to log a timeseries of vertex properties.
-	TimeSeriesInterval uint64  // Interval (seconds) for how often to log timeseries.
-	OracleCompare      bool    // Will compare to computed oracle results, either from an interval or, if creating a timeseries, each time a timeseries is logged.
-	EmptyVal           MsgType // Value used to represent "empty" or "no work to do"
-
-	SourceInit     bool               // If set to true, InitMessages defines how initial messages will be sent. Otherwise, all vertices will receive InitAllMessage.
-	InitMessages   map[uint32]MsgType // Mapping from raw vertex ID to the initial messages they receive
-	InitAllMessage MsgType            // Value to initialize when SourceInit is set to false
+	Undirected           bool               // Declares if the graph should be treated as undirected (e.g. for construction)
+	LogTimeseries        bool               // Uses timestamps to log a timeseries of vertex properties.
+	TimeSeriesInterval   uint64             // Interval (seconds) for how often to log timeseries.
+	OracleCompare        bool               // Will compare to computed oracle results, either from an interval or, if creating a timeseries, each time a timeseries is logged.
+	EmptyVal             MsgType            // Value used to represent "empty" or "no work to do"
+	SourceInit           bool               // If set to true, InitMessages defines how initial messages will be sent. Otherwise, all vertices will receive InitAllMessage.
+	InitMessages         map[uint32]MsgType // Mapping from raw vertex ID to the initial messages they receive
+	InitAllMessage       MsgType            // Value to initialize when SourceInit is set to false
+	InsertDeleteOnExpire uint64             // If non-zero, will insert delete edges that were added before, after passing the expiration duration. (Create a sliding window graph). Needs (Get/Set)Timestamp defined.
 }
 
 type VisitType int

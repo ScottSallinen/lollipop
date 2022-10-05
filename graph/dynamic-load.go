@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 // SendAdd: Direct add for debugging
@@ -66,8 +65,8 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) LoadGraphDynamic(graphName string
 	// perhaps this should be parameterized.
 	// Also, it may be reasonable to have multiple files as input sources, each could have it's own enqueuer.
 	// .. assuming the sources are independent.
-	enqCount := mathutils.Max(uint64(THREADS/4), 1)
-	//enqCount := uint64(1)
+	//enqCount := mathutils.Max(uint64(THREADS/4), 1)
+	enqCount := uint64(1)
 
 	m1 := time.Now()
 

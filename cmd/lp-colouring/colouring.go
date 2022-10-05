@@ -129,28 +129,37 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	}
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, VisitMsg MessageValue) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxs []uint32, VisitMsg MessageValue) {
 	source := &g.Vertices[sidx]
 
-	newColour, ok := source.Property.NbrColours[didx]
-	if !ok {
-		return
-	}
+	// Could be optimized by merging
+	OnVisitVertex(g, sidx, VisitMsg)
 
-	if newColour >= source.Property.Colour {
-		// Only want to take a smaller colour
-		return
-	}
-
-	for _, v := range source.Property.NbrColours {
-		if v == newColour {
-			return
+	myNewColour := source.Property.Colour
+	for _, didx := range didxs {
+		potentialNewColour, ok := source.Property.NbrColours[didx]
+		if !ok {
+			continue
 		}
+
+		if potentialNewColour >= myNewColour {
+			// Only want to take a smaller colour
+			continue
+		}
+
+		for _, v := range source.Property.NbrColours {
+			if v == potentialNewColour {
+				continue
+			}
+		}
+		myNewColour = potentialNewColour
 	}
 
-	source.Property.Colour = newColour
-	for i := range source.OutEdges {
-		g.OnQueueVisit(g, sidx, source.OutEdges[i].Destination, []IdColourPair{{Vidx: sidx, Colour: newColour}})
+	if myNewColour != source.Property.Colour {
+		source.Property.Colour = myNewColour
+		for i := range source.OutEdges {
+			g.OnQueueVisit(g, sidx, source.OutEdges[i].Destination, []IdColourPair{{Vidx: sidx, Colour: myNewColour}})
+		}
 	}
 }
 

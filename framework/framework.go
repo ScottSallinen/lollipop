@@ -30,7 +30,8 @@ type Framework[VertexProp, EdgeProp, MsgType any] struct {
 	AggregateRetrieve  AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType]
 	OracleComparison   OracleComparison[VertexProp, EdgeProp, MsgType]
 	EdgeParser         EdgeParserFunc[EdgeProp]
-	RetrieveTimestamp  RetrieveTimestampFunc[EdgeProp]
+	GetTimestamp       GetTimestampFunc[EdgeProp]
+	SetTimestamp       SetTimestampFunc[EdgeProp]
 	ApplyTimeSeries    ApplyTimeSeriesFunc[VertexProp]
 }
 
@@ -39,13 +40,14 @@ type OnVisitVertexFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[Ve
 type OnFinishFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType]) error
 type OnCheckCorrectnessFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType]) error
 type OnEdgeAddFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didxStart int, VisitData MsgType)
-type OnEdgeDelFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
+type OnEdgeDelFunc[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx []uint32, VisitData MsgType)
 type MessageAggregatorFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp], didx, sidx uint32, VisitData MsgType) (newInfo bool)
 type AggregateRetrieveFunc[VertexProp, EdgeProp, MsgType any] func(dst *graph.Vertex[VertexProp, EdgeProp]) (data MsgType)
 type OracleComparison[VertexProp, EdgeProp, MsgType any] func(g *graph.Graph[VertexProp, EdgeProp, MsgType], oracle *graph.Graph[VertexProp, EdgeProp, MsgType], resultCache *[]float64, cache bool)
 type EdgeParserFunc[EdgeProp any] graph.EdgeParserFunc[EdgeProp]
-type ApplyTimeSeriesFunc[VertexProp any] func(string, []mathutils.Pair[uint32, VertexProp], uint64)
-type RetrieveTimestampFunc[EdgeProp any] func(edge graph.Edge[EdgeProp]) uint64
+type ApplyTimeSeriesFunc[VertexProp any] func(time.Time, []mathutils.Pair[uint32, VertexProp], uint64)
+type GetTimestampFunc[EdgeProp any] func(prop EdgeProp) uint64
+type SetTimestampFunc[EdgeProp any] func(prop *EdgeProp, ts uint64)
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[VertexProp, EdgeProp, MsgType], async bool, dynamic bool) {
 	if async || dynamic {
@@ -59,7 +61,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[Verte
 		g.MsgRecv = make([]uint32, graph.THREADS+1)
 		g.TerminateVote = make([]int, graph.THREADS+1)
 		g.TerminateData = make([]int64, graph.THREADS+1)
-		g.LogEntryChan = make(chan string, 512)
+		g.LogEntryChan = make(chan time.Time, 512)
 		for i := 0; i < graph.THREADS; i++ {
 			if dynamic {
 				// TODO: Need a better way to manipulate channel size for dynamic. Maybe request approx vertex count from user?
