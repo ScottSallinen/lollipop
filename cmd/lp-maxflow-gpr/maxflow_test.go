@@ -15,7 +15,10 @@ type TestGraph struct {
 	Filename string
 }
 
-var testGraphs = [...]TestGraph{{2, 0, 3, "../../data/maxflow/test-1.txt"}}
+var testGraphs = [...]TestGraph{
+	{2, 0, 3, "../../data/maxflow/test-1.txt"},
+	{8, 0, 2, "../../data/maxflow/test-2.txt"},
+}
 
 func assertEqual(t *testing.T, expected any, actual any, prefix string) {
 	if reflect.DeepEqual(expected, actual) {

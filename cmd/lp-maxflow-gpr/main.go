@@ -122,7 +122,8 @@ func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw uint32) (frame framew
 		SourceInit:    true,
 	}
 
-	g.LoadVertexMap(gName, EdgeParser)
+	g.VertexMap = make(map[uint32]uint32)
+	g.LoadVertexMap(gName, EdgeParser) // TODO: find a better way to determine the initial height of the source vertex
 	sourceHeight := uint32(len(g.VertexMap))
 	source, sourceOk := g.VertexMap[sourceRaw]
 	sink, sinkOk := g.VertexMap[sinkRaw]
