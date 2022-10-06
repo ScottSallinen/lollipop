@@ -114,12 +114,15 @@ func push(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 	for neighbourIndex, neighbourProperty := range v.Property.Neighbours {
 		// TODO: what happens if we prioritize vertices with lower height?
 		if v.Property.Height > neighbourProperty.Height && neighbourProperty.ResidualCapacity > 0 {
-			additionalFlow := mathutils.Max(neighbourProperty.ResidualCapacity, v.Property.Excess)
+			additionalFlow := mathutils.Min(neighbourProperty.ResidualCapacity, v.Property.Excess)
 			v.Property.Excess -= additionalFlow
 			neighbourProperty.ResidualCapacity -= additionalFlow
 			v.Property.Neighbours[neighbourIndex] = neighbourProperty
 
 			g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: PushRequest, Height: v.Property.Height, Value: additionalFlow}})
+		}
+		if v.Property.Excess == 0 {
+			break
 		}
 	}
 }

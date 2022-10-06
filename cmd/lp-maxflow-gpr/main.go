@@ -28,18 +28,18 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 
 	src, _ := strconv.Atoi(stringFields[0])
 	dst, _ := strconv.Atoi(stringFields[1])
-	capacity, _ := strconv.Atoi(stringFields[1])
+	capacity, _ := strconv.Atoi(stringFields[2])
 
 	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{uint32(capacity)}}
 }
 
 func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 	var sourceIndex, sinkIndex uint32
-	for i, m := range g.Options.InitMessages {
+	for mi, m := range g.Options.InitMessages {
 		if m[0].Type == InitSource {
-			sourceIndex = i
+			sourceIndex = mi
 		} else if m[0].Type == InitSink {
-			sinkIndex = i
+			sinkIndex = mi
 		} else {
 			enforce.ENFORCE(false, "unknown initial message")
 		}
