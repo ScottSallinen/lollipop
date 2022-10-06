@@ -57,10 +57,14 @@ func (t VertexType) String() string {
 	}
 }
 
+func (n Neighbour) String() string {
+	return fmt.Sprintf("{%d,%d}", n.Height, n.ResidualCapacity)
+}
+
 func (p *VertexProperty) String() string {
 	s := fmt.Sprintf("{%v,%v,%v,%v,[", p.Type, p.Excess, p.Height, p.InitHeight)
 	for k, v := range p.Neighbours {
-		s += fmt.Sprintf("%d:{%d,%d},", k, v.Height, v.ResidualCapacity)
+		s += fmt.Sprintf("%d:%v,", k, v)
 	}
 	return s + "]}"
 }
