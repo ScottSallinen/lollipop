@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
@@ -21,7 +22,7 @@ const (
 	Unspecified MessageType = 0
 	InitSource  MessageType = 1
 	InitSink    MessageType = 2
-	INIT_HEIGHT MessageType = 3 // TODO: implement 2PPR instead of GPR
+	InitHeight  MessageType = 3 // TODO: implement 2PPR instead of GPR
 	NewHeight   MessageType = 4
 	PushRequest MessageType = 5 // (PUSH-REQUEST-ANS , δ, NOK)
 	RejectPush  MessageType = 6 // (PUSH-REQUEST-ANS , δ, NOK)
@@ -43,9 +44,25 @@ type VertexProperty struct {
 	Neighbours map[uint32]Neighbour
 }
 
+func (t VertexType) String() string {
+	switch t {
+	case Normal:
+		return "Normal"
+	case Source:
+		return "Source"
+	case Sink:
+		return "Sink"
+	default:
+		return fmt.Sprintf("%d", t)
+	}
+}
+
 func (p *VertexProperty) String() string {
-	// TODO
-	return ""
+	s := fmt.Sprintf("{%v,%v,%v,%v,[", p.Type, p.Excess, p.Height, p.InitHeight)
+	for k, v := range p.Neighbours {
+		s += fmt.Sprintf("%d:{%d,%d},", k, v.Height, v.ResidualCapacity)
+	}
+	return s + "]}"
 }
 
 type EdgeProperty struct {
@@ -109,7 +126,7 @@ func push(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 
 func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
 	v := &g.Vertices[vidx]
-	enforce.ENFORCE(v.Property.Type != Normal)
+	enforce.ENFORCE(v.Property.Type == Normal)
 	// TODO: this is different from the one proposed by Pham et al
 	minHeight := uint32(math.MaxUint32)
 	for _, neighbourProperty := range v.Property.Neighbours {

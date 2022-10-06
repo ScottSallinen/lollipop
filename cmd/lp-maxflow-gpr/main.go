@@ -28,16 +28,51 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 
 	src, _ := strconv.Atoi(stringFields[0])
 	dst, _ := strconv.Atoi(stringFields[1])
+	capacity, _ := strconv.Atoi(stringFields[1])
 
-	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{uint32(capacity)}}
 }
 
 func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	enforce.ENFORCE("Not implemented")
+	var sourceIndex, sinkIndex uint32
+	for i, m := range g.Options.InitMessages {
+		if m[0].Type == InitSource {
+			sourceIndex = i
+		} else if m[0].Type == InitSink {
+			sinkIndex = i
+		} else {
+			enforce.ENFORCE(false, "unknown initial message")
+		}
+	}
+
+	source := &g.Vertices[sourceIndex]
+	sink := &g.Vertices[sinkIndex]
+
+	enforce.ENFORCE(source.Property.InitHeight == uint32(len(g.Vertices)), "source InitHeight != # of vertices")
+	enforce.ENFORCE(source.Property.Height == uint32(len(g.Vertices)), "source Height != # of vertices")
+	enforce.ENFORCE(sink.Property.InitHeight == 0, "sink InitHeight != 0")
+	enforce.ENFORCE(sink.Property.Height == 0, "sink Height != 0")
+
+	for vi := range g.Vertices {
+		v := &g.Vertices[vi]
+		if v.Property.Type == Normal {
+			enforce.ENFORCE(v.Property.Excess == 0, fmt.Sprintf("normal vertex index %d ID %d has a non-zero excess of %d", vi, v.Id, v.Property.Excess))
+		}
+	}
+
+	sinkInFlow := sink.Property.Excess
+	sourceOutFlow := uint32(0)
+	for i := range source.OutEdges {
+		edge := &source.OutEdges[i]
+		sourceOutFlow += edge.Property.Capacity
+	}
+	sourceOutFlow -= source.Property.Excess
+	enforce.ENFORCE(sourceOutFlow == sinkInFlow, fmt.Sprintf("sourceOutFlow (%d) != sinkInFlow (%d)", sourceOutFlow, sinkInFlow))
+
 	g.ComputeInEdges()
 	// TODO: check in flow == out flow for all vertices
-	// TODO: check source out == sink in
-	// TODO: check max-flow is correct?
+	// TODO: check excess == 0 for normal vertices
+	// TODO: check Neighbours
 	return nil
 }
 
