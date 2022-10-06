@@ -24,7 +24,7 @@ func assertEqual(t *testing.T, expected any, actual any, prefix string) {
 	if prefix == "" {
 		t.Fatalf("%v != %v", expected, actual)
 	} else {
-		t.Fatalf("%v - %v != %v", prefix, expected, actual)
+		t.Fatalf("%v - expected %v, got %v", prefix, expected, actual)
 	}
 }
 
@@ -35,8 +35,8 @@ func TestSyncStatic(t *testing.T) {
 			graph.THREADS = rand.Intn(8-1) + 1
 			g := LaunchGraphExecution(testGraph.Filename, false, false, testGraph.Source, testGraph.Sink)
 			g.PrintVertexProperty("Sync maxflow: ")
-			// TODO: extract the computed max flow value
-			assertEqual(t, testGraph.MaxFlow, 0, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
+			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
+			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
 	}
 }
