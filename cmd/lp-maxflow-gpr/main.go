@@ -17,7 +17,7 @@ import (
 )
 
 func info(args ...any) {
-	log.Println("[Colouring]\t", fmt.Sprint(args...))
+	log.Println("[MaxFlowGPR]\t", fmt.Sprint(args...))
 }
 
 func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
@@ -55,6 +55,12 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 	enforce.ENFORCE(source.Property.Height == uint32(len(g.Vertices)), "source Height != # of vertices")
 	enforce.ENFORCE(sink.Property.InitHeight == 0, "sink InitHeight != 0")
 	enforce.ENFORCE(sink.Property.Height == 0, "sink Height != 0")
+
+	// Make sure all messages are processed
+	for vi := range g.Vertices {
+		v := &g.Vertices[vi]
+		enforce.ENFORCE(len(v.Property.MessageBuffer) == 0, fmt.Sprintf("vertex index %d ID %d has outstanding messages", vi, v.Id))
+	}
 
 	// Check Excess
 	for vi := range g.Vertices {

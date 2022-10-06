@@ -82,7 +82,7 @@ type Message struct {
 
 type MessageValue []Message
 
-func initPush(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
+func initPush(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
 	v := &g.Vertices[vidx]
 	enforce.ENFORCE(v.Property.Type == Source)
 	excess := uint32(0)
@@ -91,30 +91,32 @@ func initPush(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx u
 		excess += edge.Property.Capacity
 	}
 	v.Property.Excess = excess
-	push(g, vidx)
+	return push(g, vidx)
 }
 
-func clearExcess(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
+func clearExcess(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
 	v := &g.Vertices[vidx]
 	if v.Property.Excess == 0 || v.Property.Type == Sink {
-		return
+		return 0
 	}
 	// TODO: it might be more efficient if we combine lift and push and use a heap, new_height and push_request can be combined as well
-	push(g, vidx)
+	nMessages := push(g, vidx)
 	if v.Property.Type != Normal {
-		return
+		return nMessages
 	}
 	for v.Property.Excess > 0 {
-		lift(g, vidx)
-		push(g, vidx)
+		nMessages += lift(g, vidx)
+		nMessages += push(g, vidx)
 	}
+	return nMessages
 }
 
-func push(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
+func push(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
 	v := &g.Vertices[vidx]
 	if v.Property.Type == Sink || v.Property.Excess == 0 {
-		return
+		return 0
 	}
+	nMessages := 0
 	for neighbourIndex, neighbourProperty := range v.Property.Neighbours {
 		// TODO: what happens if we prioritize vertices with lower height?
 		if v.Property.Height > neighbourProperty.Height && neighbourProperty.ResidualCapacity > 0 {
@@ -124,14 +126,16 @@ func push(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 			v.Property.Neighbours[neighbourIndex] = neighbourProperty
 
 			g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: PushRequest, Height: v.Property.Height, Value: additionalFlow}})
+			nMessages += 1
 		}
 		if v.Property.Excess == 0 {
 			break
 		}
 	}
+	return nMessages
 }
 
-func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
+func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
 	v := &g.Vertices[vidx]
 	enforce.ENFORCE(v.Property.Type == Normal)
 	// TODO: this is different from the one proposed by Pham et al
@@ -146,27 +150,28 @@ func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 	for neighbourIndex := range v.Property.Neighbours {
 		g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: NewHeight, Height: v.Property.Height}})
 	}
+	return len(v.Property.Neighbours)
 }
 
-func onPushRequest(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) {
+func onPushRequest(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) int {
 	v := &g.Vertices[vidx]
 	if height <= v.Property.Height {
 		g.OnQueueVisit(g, vidx, source, []Message{{Source: vidx, Type: RejectPush, Height: v.Property.Height, Value: flow}})
-		return
+		return 1
 	}
 	v.Property.Neighbours[source] = Neighbour{
 		Height:           height,
 		ResidualCapacity: v.Property.Neighbours[source].ResidualCapacity + flow,
 	}
 	v.Property.Excess += flow
-	clearExcess(g, vidx)
+	return clearExcess(g, vidx)
 }
 
-func onPushRejected(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) {
+func onPushRejected(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) int {
 	v := &g.Vertices[vidx]
 	v.Property.Excess += flow
 	v.Property.Neighbours[source] = Neighbour{height, v.Property.Neighbours[source].ResidualCapacity + flow}
-	clearExcess(g, vidx)
+	return clearExcess(g, vidx)
 }
 
 func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
@@ -219,7 +224,7 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 
 func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, VisitMsg MessageValue) int {
 	v := &g.Vertices[vidx]
-	// TODO: need a way to mark source and sink
+	nMessages := 0
 	for messageIndex := range VisitMsg {
 		m := &VisitMsg[messageIndex]
 		switch m.Type {
@@ -229,7 +234,7 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 			v.Property.Type = Source
 			v.Property.Height = m.Value
 			v.Property.InitHeight = m.Value
-			initPush(g, vidx)
+			nMessages += initPush(g, vidx)
 		case InitSink:
 			v.Property.Type = Sink
 			v.Property.Height = 0
@@ -237,12 +242,12 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 		case NewHeight:
 			v.Property.Neighbours[m.Source] = Neighbour{m.Height, v.Property.Neighbours[m.Source].ResidualCapacity}
 		case PushRequest:
-			onPushRequest(g, vidx, m.Source, m.Height, m.Value)
+			nMessages += onPushRequest(g, vidx, m.Source, m.Height, m.Value)
 		case RejectPush:
-			onPushRejected(g, vidx, m.Source, m.Height, m.Value)
+			nMessages += onPushRejected(g, vidx, m.Source, m.Height, m.Value)
 		}
 	}
-	return 0
+	return nMessages
 }
 
 func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
