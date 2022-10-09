@@ -94,7 +94,7 @@ func initPush(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx u
 	return push(g, vidx)
 }
 
-func clearExcess(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
+func discharge(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
 	v := &g.Vertices[vidx]
 	if v.Property.Excess == 0 || v.Property.Type == Sink {
 		return 0
@@ -164,14 +164,14 @@ func onPushRequest(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 		ResidualCapacity: v.Property.Neighbours[source].ResidualCapacity + flow,
 	}
 	v.Property.Excess += flow
-	return clearExcess(g, vidx)
+	return discharge(g, vidx)
 }
 
 func onPushRejected(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) int {
 	v := &g.Vertices[vidx]
 	v.Property.Excess += flow
 	v.Property.Neighbours[source] = Neighbour{height, v.Property.Neighbours[source].ResidualCapacity + flow}
-	return clearExcess(g, vidx)
+	return discharge(g, vidx)
 }
 
 func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {

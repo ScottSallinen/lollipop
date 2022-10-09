@@ -37,9 +37,9 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 	var sourceIndex, sinkIndex uint32
 	for mi, m := range g.Options.InitMessages {
 		if m[0].Type == InitSource {
-			sourceIndex = mi
+			sourceIndex = g.VertexMap[mi]
 		} else if m[0].Type == InitSink {
-			sinkIndex = mi
+			sinkIndex = g.VertexMap[mi]
 		} else {
 			enforce.ENFORCE(false, "unknown initial message")
 		}
@@ -132,10 +132,10 @@ func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw uint32) (frame framew
 	enforce.ENFORCE(sinkOk)
 
 	g.Options.InitMessages = map[uint32]MessageValue{
-		source: {{
+		sourceRaw: {{
 			Source: source, Type: InitSource, Height: sourceHeight, Value: sourceHeight,
 		}},
-		sink: {{
+		sinkRaw: {{
 			Source: sink, Type: InitSink, Height: 0, Value: 0,
 		}},
 	}
