@@ -141,6 +141,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 
 	g.TerminateData[VOTES-1] = int64(len(g.Vertices)) // overestimate so we don't accidentally terminate early. This is resolved when initial msgs are finished.
 	// Send initial visit message(s)
+	// This is done in a separate goroutine, so it is not guaranteed that initial visits will arrive before other visits
 	go frame.SendInitialVisists(g, VOTES, &wg)
 	lock := g.Options.OracleCompare // Only need to lock if we are comparing against an oracle.
 

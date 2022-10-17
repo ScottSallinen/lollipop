@@ -20,6 +20,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitSync(g *graph
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeSync(g *graph.Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup) {
 	info("ConvergeSync")
 	if g.Options.SourceInit {
+		// Initial visits might arrive after other visits
 		for vid, message := range g.Options.InitMessages {
 			vidx, ok := g.VertexMap[vid]
 			enforce.ENFORCE(ok)
