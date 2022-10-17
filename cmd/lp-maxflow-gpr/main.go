@@ -33,18 +33,7 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{uint32(capacity)}}
 }
 
-func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	var sourceIndex, sinkIndex uint32
-	for mi, m := range g.Options.InitMessages {
-		if m[0].Type == InitSource {
-			sourceIndex = g.VertexMap[mi]
-		} else if m[0].Type == InitSink {
-			sinkIndex = g.VertexMap[mi]
-		} else {
-			enforce.ENFORCE(false, "unknown initial message")
-		}
-	}
-
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sourceIndex, sinkIndex uint32) error {
 	source := &g.Vertices[sourceIndex]
 	sink := &g.Vertices[sinkIndex]
 	enforce.ENFORCE(source.Property.Type == Source)
@@ -104,10 +93,8 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 }
 
 func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw uint32) (frame framework.Framework[VertexProperty, EdgeProperty, MessageValue], g graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
-	frame.OnInitVertex = OnInitVertex
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
-	frame.OnCheckCorrectness = OnCheckCorrectness
 	frame.OnEdgeAdd = OnEdgeAdd
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
@@ -124,6 +111,7 @@ func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw uint32) (frame framew
 
 	g.VertexMap = make(map[uint32]uint32)
 	g.LoadVertexMap(gName, EdgeParser) // TODO: find a better way to determine the initial height of the source vertex
+
 	sourceHeight := uint32(len(g.VertexMap))
 	source, sourceOk := g.VertexMap[sourceRaw]
 	sink, sinkOk := g.VertexMap[sinkRaw]
@@ -133,11 +121,22 @@ func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw uint32) (frame framew
 
 	g.Options.InitMessages = map[uint32]MessageValue{
 		sourceRaw: {{
-			Source: source, Type: InitSource, Height: sourceHeight, Value: sourceHeight,
+			Source: source, Type: InitSource,
 		}},
-		sinkRaw: {{
-			Source: sink, Type: InitSink, Height: 0, Value: 0,
-		}},
+	}
+
+	frame.OnInitVertex = func(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
+		switch vidx {
+		case source:
+			OnInitVertex(g, vidx, Source, sourceHeight)
+		case sink:
+			OnInitVertex(g, vidx, Sink, 0)
+		default:
+			OnInitVertex(g, vidx, Normal, 0)
+		}
+	}
+	frame.OnCheckCorrectness = func(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
+		return OnCheckCorrectness(g, source, sink)
 	}
 	return frame, g
 }

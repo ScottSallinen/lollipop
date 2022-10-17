@@ -174,15 +174,15 @@ func onPushRejected(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], 
 	return discharge(g, vidx)
 }
 
-func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
+func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, vertexType VertexType, initHeight uint32) {
 	v := &g.Vertices[vidx]
 
 	v.Property.MessageBuffer = make([]Message, 0)
 
-	v.Property.Type = Normal
+	v.Property.Type = vertexType
 	v.Property.Excess = 0
-	v.Property.Height = 0
-	v.Property.InitHeight = 0
+	v.Property.Height = initHeight
+	v.Property.InitHeight = initHeight
 
 	v.Property.Neighbours = make(map[uint32]Neighbour)
 	for i := range v.OutEdges {
@@ -231,14 +231,10 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 		case Unspecified:
 			enforce.ENFORCE(false)
 		case InitSource:
-			v.Property.Type = Source
-			v.Property.Height = m.Value
-			v.Property.InitHeight = m.Value
+			enforce.ENFORCE(v.Property.Type == Source)
 			nMessages += initPush(g, vidx)
 		case InitSink:
-			v.Property.Type = Sink
-			v.Property.Height = 0
-			v.Property.InitHeight = 0
+			enforce.ENFORCE(v.Property.Type == Sink)
 		case NewHeight:
 			v.Property.Neighbours[m.Source] = Neighbour{m.Height, v.Property.Neighbours[m.Source].ResidualCapacity}
 		case PushRequest:
