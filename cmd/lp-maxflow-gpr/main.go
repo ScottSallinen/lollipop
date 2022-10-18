@@ -90,6 +90,10 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 	// g.ComputeInEdges()
 	// TODO: check Neighbours
 	// TODO: Check inflow == outflow for all vertices (doesn't seem to be easy)
+
+	for i := uint32(0); i < uint32(len(MessageCounter)); i++ {
+		info(fmt.Sprintf("Type=%v, count=%v", MessageType(i), MessageCounter[i]))
+	}
 	return nil
 }
 

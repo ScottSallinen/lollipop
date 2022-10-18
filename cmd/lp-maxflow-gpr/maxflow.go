@@ -30,6 +30,8 @@ const (
 	Increasing MessageType = 7
 )
 
+var MessageCounter = make([]uint32, 8)
+
 type Neighbour struct {
 	Height           uint32
 	ResidualCapacity uint32
@@ -172,12 +174,11 @@ func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 		}
 	}
 	v.Property.Height = minHeight + 1
-	// TODO: boardcasting height is optional
-	//for neighbourIndex := range v.Property.Neighbours {
-	//	g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: NewHeight, Height: v.Property.Height}})
-	//}
-	//return len(v.Property.Neighbours)
-	return 0
+	// TODO: broadcasting height is optional
+	for neighbourIndex := range v.Property.Neighbours {
+		g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: NewHeight, Height: v.Property.Height}})
+	}
+	return len(v.Property.Neighbours)
 }
 
 func onPushRequest(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) int {
@@ -331,6 +332,7 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 	nMessages := 0
 	for messageIndex := range VisitMsg {
 		m := &VisitMsg[messageIndex]
+		MessageCounter[m.Type] += 1
 		if graph.DEBUG {
 			info(fmt.Sprintf("OnVisitVertex id=%v vidx=%v: m.Type=%v m.Source=%v m.Height=%v m.Value=%v", v.Id, vidx, m.Type, m.Source, m.Height, m.Value))
 		}
