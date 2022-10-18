@@ -173,10 +173,11 @@ func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 	}
 	v.Property.Height = minHeight + 1
 	// TODO: boardcasting height is optional
-	for neighbourIndex := range v.Property.Neighbours {
-		g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: NewHeight, Height: v.Property.Height}})
-	}
-	return len(v.Property.Neighbours)
+	//for neighbourIndex := range v.Property.Neighbours {
+	//	g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: NewHeight, Height: v.Property.Height}})
+	//}
+	//return len(v.Property.Neighbours)
+	return 0
 }
 
 func onPushRequest(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) int {
@@ -347,10 +348,10 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 			nMessages += onPushRequest(g, vidx, m.Source, m.Height, m.Value)
 		case RejectPush:
 			nMessages += onPushRejected(g, vidx, m.Source, m.Height, m.Value)
-		case Increasing:
-			nMessages += onIncreasing(g, vidx, m.Source, m.Height)
 		}
 	}
+	aggregatedMessage := MaxFlowMessageAggregator(g, vidx, VisitMsg)
+	nMessages += ProcessAggregatedMessage(&aggregatedMessage, g, vidx)
 	return nMessages
 }
 
