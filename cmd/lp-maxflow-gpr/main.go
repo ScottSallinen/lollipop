@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 
 	"github.com/ScottSallinen/lollipop/enforce"
@@ -33,9 +34,9 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{uint32(capacity)}}
 }
 
-func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sourceIndex, sinkIndex uint32) error {
-	source := &g.Vertices[sourceIndex]
-	sink := &g.Vertices[sinkIndex]
+func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sourceRaw, sinkRaw uint32) error {
+	source := &g.Vertices[g.VertexMap[sourceRaw]]
+	sink := &g.Vertices[g.VertexMap[sinkRaw]]
 	enforce.ENFORCE(source.Property.Type == Source)
 	enforce.ENFORCE(sink.Property.Type == Sink)
 
@@ -92,7 +93,7 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 	return nil
 }
 
-func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw uint32) (frame framework.Framework[VertexProperty, EdgeProperty, MessageValue], g graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
+func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw, sourceHeight uint32) (frame framework.Framework[VertexProperty, EdgeProperty, MessageValue], g graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
 	frame.OnEdgeAdd = OnEdgeAdd
@@ -109,40 +110,40 @@ func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw uint32) (frame framew
 		SourceInit:    true,
 	}
 
-	g.VertexMap = make(map[uint32]uint32)
-	g.LoadVertexMap(gName, EdgeParser) // TODO: find a better way to determine the initial height of the source vertex
+	//g.VertexMap = make(map[uint32]uint32)
+	//g.LoadVertexMap(gName, EdgeParser) // TODO: find a better way to determine the initial height of the source vertex
 
-	sourceHeight := uint32(len(g.VertexMap))
-	source, sourceOk := g.VertexMap[sourceRaw]
-	sink, sinkOk := g.VertexMap[sinkRaw]
-	enforce.ENFORCE(source != sink)
-	enforce.ENFORCE(sourceOk)
-	enforce.ENFORCE(sinkOk)
+	//sourceHeight := uint32(len(g.VertexMap))
+	//source, sourceOk := g.VertexMap[sourceRaw]
+	//sink, sinkOk := g.VertexMap[sinkRaw]
+	//enforce.ENFORCE(source != sink)
+	//enforce.ENFORCE(sourceOk)
+	//enforce.ENFORCE(sinkOk)
 
 	g.Options.InitMessages = map[uint32]MessageValue{
 		sourceRaw: {{
-			Source: source, Type: InitSource,
+			Source: math.MaxUint32, Type: InitSource,
 		}},
 	}
 
 	frame.OnInitVertex = func(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
-		switch vidx {
-		case source:
+		switch g.Vertices[vidx].Id {
+		case sourceRaw:
 			OnInitVertex(g, vidx, Source, sourceHeight)
-		case sink:
+		case sinkRaw:
 			OnInitVertex(g, vidx, Sink, 0)
 		default:
 			OnInitVertex(g, vidx, Normal, 0)
 		}
 	}
 	frame.OnCheckCorrectness = func(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-		return OnCheckCorrectness(g, source, sink)
+		return OnCheckCorrectness(g, sourceRaw, sinkRaw)
 	}
 	return frame, g
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink uint32) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
-	frame, g := GetFrameworkAndGraph(gName, source, sink)
+func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, sourceHeight uint32) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+	frame, g := GetFrameworkAndGraph(gName, source, sink, sourceHeight)
 	frame.Launch(&g, gName, async, dynamic)
 	return &g
 }
@@ -156,6 +157,7 @@ func main() {
 	tptr := flag.Int("t", 32, "Thread count")
 	source := flag.Uint("source", 0, "Raw ID of the source vertex")
 	sink := flag.Uint("source", 1, "Raw ID of the sink vertex")
+	vertices := flag.Uint("vertices", 1, "Number of vertices") // TODO: remove
 	flag.Parse()
 
 	graph.THREADS = *tptr
@@ -166,7 +168,7 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink))
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*vertices))
 
 	g.ComputeGraphStats(false, false)
 

@@ -26,6 +26,8 @@ const (
 	NewHeight   MessageType = 4
 	PushRequest MessageType = 5 // (PUSH-REQUEST-ANS , δ, NOK)
 	RejectPush  MessageType = 6 // (PUSH-REQUEST-ANS , δ, NOK)
+
+	Increasing MessageType = 7
 )
 
 type Neighbour struct {
@@ -57,6 +59,29 @@ func (t VertexType) String() string {
 	}
 }
 
+func (t MessageType) String() string {
+	switch t {
+	case Unspecified:
+		return "Unspecified"
+	case InitSource:
+		return "InitSource"
+	case InitSink:
+		return "InitSink"
+	case InitHeight:
+		return "InitHeight"
+	case NewHeight:
+		return "NewHeight"
+	case PushRequest:
+		return "PushRequest"
+	case RejectPush:
+		return "RejectPush"
+	case Increasing:
+		return "Increasing"
+	default:
+		return fmt.Sprintf("%d", t)
+	}
+}
+
 func (n Neighbour) String() string {
 	return fmt.Sprintf("{%d,%d}", n.Height, n.ResidualCapacity)
 }
@@ -82,6 +107,7 @@ type Message struct {
 
 type MessageValue []Message
 
+// TODO: rename to sourceInit
 func initPush(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
 	v := &g.Vertices[vidx]
 	enforce.ENFORCE(v.Property.Type == Source)
@@ -146,7 +172,7 @@ func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 		}
 	}
 	v.Property.Height = minHeight + 1
-	// TODO send new height
+	// TODO: boardcasting height is optional
 	for neighbourIndex := range v.Property.Neighbours {
 		g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: NewHeight, Height: v.Property.Height}})
 	}
@@ -174,8 +200,58 @@ func onPushRejected(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], 
 	return discharge(g, vidx)
 }
 
+func onIncreasing(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height uint32) int {
+	v := &g.Vertices[vidx]
+	if v.Property.Type == Sink {
+		return 0
+	}
+
+	neighbour := v.Property.Neighbours[source]
+
+	v.Property.Neighbours[source] = Neighbour{
+		Height:           height,
+		ResidualCapacity: neighbour.ResidualCapacity,
+	}
+
+	if neighbour.ResidualCapacity == 0 {
+		// No flow can be pushed to this neighbour
+		return 0
+	}
+	return fillNeighbours(g, vidx)
+}
+
+func fillNeighbours(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
+	v := &g.Vertices[vidx]
+	enforce.ENFORCE(v.Property.Type != Sink)
+
+	nMessages := 0
+
+	if v.Property.Excess > 0 {
+		nMessages += discharge(g, vidx)
+	}
+
+	if v.Property.Type != Source {
+		// TODO: Optimize. If all neighbours are saturated, there is no need to get more flow
+		// If v.Property.Height == v.Property.InitHeight, then we haven't pushed back any flow, so there is no point to
+		// "pull" flows from other vertices. This significantly improves the performance.
+		// TODO: this optimization is not present in Pham's paper, so it is still not clear if it is correct.
+		if v.Property.Height > v.Property.InitHeight {
+			v.Property.Height = v.Property.InitHeight
+			for neighbourIndex := range v.Property.Neighbours {
+				g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: Increasing, Height: v.Property.Height}})
+			}
+			nMessages += len(v.Property.Neighbours)
+		}
+	}
+
+	return nMessages
+}
+
 func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, vertexType VertexType, initHeight uint32) {
 	v := &g.Vertices[vidx]
+	//if graph.DEBUG {
+	//	info(fmt.Sprintf("OnInitVertex id=%v vidx=%v: vertexType=%v initHeight=%v", v.Id, vidx, vertexType, initHeight))
+	//}
 
 	v.Property.MessageBuffer = make([]Message, 0)
 
@@ -193,7 +269,11 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, VisitMsg MessageValue) (newInfo bool) {
 	enforce.ENFORCE(len(VisitMsg) == 1)
-	enforce.ENFORCE(sidx == VisitMsg[0].Source)
+	if VisitMsg[0].Type == InitSource {
+		enforce.ENFORCE(dst.Property.Type == Source)
+	} else {
+		enforce.ENFORCE(sidx == VisitMsg[0].Source)
+	}
 
 	dst.Mutex.Lock()
 	dst.Property.MessageBuffer = append(dst.Property.MessageBuffer, VisitMsg[0])
@@ -215,7 +295,30 @@ func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) Messa
 }
 
 func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, VisitMsg MessageValue) {
-	enforce.ENFORCE("Not implemented")
+	source := &g.Vertices[sidx]
+
+	for eidx := didxStart; eidx < len(source.OutEdges); eidx++ {
+		dstIndex := source.OutEdges[eidx].Destination
+		neighbour := source.Property.Neighbours[dstIndex]
+		neighbour.ResidualCapacity += source.OutEdges[eidx].Property.Capacity
+		source.Property.Neighbours[dstIndex] = neighbour
+	}
+
+	OnVisitVertex(g, sidx, VisitMsg)
+
+	if source.Property.Type == Sink {
+		return
+	}
+
+	// TODO: Optimize. If the new arcs are not saturated, there is no need to get more flow
+
+	if source.Property.Type == Source {
+		for eidx := didxStart; eidx < len(source.OutEdges); eidx++ {
+			source.Property.Excess += source.OutEdges[eidx].Property.Capacity
+		}
+	}
+
+	fillNeighbours(g, sidx)
 }
 
 func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxs []uint32, VisitMsg MessageValue) {
@@ -227,6 +330,9 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 	nMessages := 0
 	for messageIndex := range VisitMsg {
 		m := &VisitMsg[messageIndex]
+		if graph.DEBUG {
+			info(fmt.Sprintf("OnVisitVertex id=%v vidx=%v: m.Type=%v m.Source=%v m.Height=%v m.Value=%v", v.Id, vidx, m.Type, m.Source, m.Height, m.Value))
+		}
 		switch m.Type {
 		case Unspecified:
 			enforce.ENFORCE(false)
@@ -241,6 +347,8 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 			nMessages += onPushRequest(g, vidx, m.Source, m.Height, m.Value)
 		case RejectPush:
 			nMessages += onPushRejected(g, vidx, m.Source, m.Height, m.Value)
+		case Increasing:
+			nMessages += onIncreasing(g, vidx, m.Source, m.Height)
 		}
 	}
 	return nMessages
