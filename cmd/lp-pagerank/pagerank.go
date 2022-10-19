@@ -111,7 +111,7 @@ func OnEdgeAddBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], 
 	g.OnQueueVisit(g, sidx, didx, MessageValue(distNewEdge))
 }
 
-func OnEdgeDelBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
+func OnEdgeDelBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdge graph.Edge[EdgeProperty], data MessageValue) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -127,11 +127,11 @@ func OnEdgeDelBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], 
 	}
 	distOldEdge := -1.0 * distAllPrev / (float64(len(src.OutEdges) + 1))
 
-	g.OnQueueVisit(g, sidx, didx, MessageValue(distOldEdge))
+	g.OnQueueVisit(g, sidx, deletedEdge.Destination, MessageValue(distOldEdge))
 }
 
 // Version that merges with a visit
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxs []uint32, data MessageValue) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], data MessageValue) {
 	src := &g.Vertices[sidx]
 	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
@@ -143,7 +143,7 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 
 	if len(src.OutEdges) > 0 { /// Still have edges left
 		distribute := toDistribute / float64(len(src.OutEdges))
-		distOld := distAllPrev / (float64(len(src.OutEdges) + len(didxs)))
+		distOld := distAllPrev / (float64(len(src.OutEdges) + len(deletedEdges)))
 		distNew := distAllPrev / (float64(len(src.OutEdges)))
 		distDelta := distNew - distOld
 
@@ -153,9 +153,9 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 		}
 	}
 
-	distOldEdges := -1.0 * distAllPrev / (float64(len(src.OutEdges) + len(didxs)))
-	for _, didx := range didxs {
-		g.OnQueueVisit(g, sidx, didx, MessageValue(distOldEdges))
+	distOldEdges := -1.0 * distAllPrev / (float64(len(src.OutEdges) + len(deletedEdges)))
+	for _, e := range deletedEdges {
+		g.OnQueueVisit(g, sidx, e.Destination, MessageValue(distOldEdges))
 	}
 }
 

@@ -129,7 +129,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				frame.OnEdgeAdd(g, sidx, didxStart, val)
 			}
 
-			var didxDel []uint32
+			var deletedEdges []graph.Edge[EdgeProp]
 			// If we didn't finish, it means we hit a delete. Address it here.
 			for ; changeIdx < len(miniGraph[vRaw]); changeIdx++ {
 				change := miniGraph[vRaw][changeIdx]
@@ -138,20 +138,20 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 					/// Delete edge.. naively find target and swap last element with the hole.
 					for k := range src.OutEdges {
 						if src.OutEdges[k].Destination == didx { // TODO: Multigraph target ?  compare property?
+							deletedEdges = append(deletedEdges, src.OutEdges[k])
 							src.OutEdges[k] = src.OutEdges[len(src.OutEdges)-1]
 							break
 						}
 					}
 					src.OutEdges = src.OutEdges[:len(src.OutEdges)-1]
-					didxDel = append(didxDel, didx)
 				} else {
 					break
 				}
 			}
 			// From the gathered set of consecutive deletes, apply them.
-			if len(didxDel) > 0 {
+			if len(deletedEdges) > 0 {
 				val := frame.AggregateRetrieve(src)
-				frame.OnEdgeDel(g, sidx, didxDel, val)
+				frame.OnEdgeDel(g, sidx, deletedEdges, val)
 			}
 			// Addressed the delete(s), continue the loop (go back to checking for consecutive adds).
 		}
