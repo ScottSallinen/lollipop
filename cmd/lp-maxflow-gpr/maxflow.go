@@ -28,6 +28,7 @@ const (
 	RejectPush  MessageType = 6 // (PUSH-REQUEST-ANS , δ, NOK)
 
 	Increasing MessageType = 7
+	Decreasing MessageType = 8
 )
 
 var MessageCounter = make([]uint32, 8)
@@ -79,6 +80,8 @@ func (t MessageType) String() string {
 		return "RejectPush"
 	case Increasing:
 		return "Increasing"
+	case Decreasing:
+		return "Decreasing"
 	default:
 		return fmt.Sprintf("%d", t)
 	}
@@ -222,6 +225,43 @@ func onIncreasing(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 	return fillNeighbours(g, vidx)
 }
 
+func onDecreasing(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, retiringFlow uint32) int {
+	v := &g.Vertices[vidx]
+
+	neighbour := v.Property.Neighbours[source]
+	enforce.ENFORCE(neighbour.ResidualCapacity > retiringFlow)
+	neighbour.Height = height
+	neighbour.ResidualCapacity -= retiringFlow
+	v.Property.Neighbours[source] = neighbour
+
+	v.Property.Height = v.Property.InitHeight
+
+	// Note: this is different from Pham's
+	min := mathutils.Min(v.Property.Excess, retiringFlow)
+	v.Property.Excess -= min
+	retiringFlow -= min
+	if retiringFlow == 0 {
+		return 0
+	}
+
+	enforce.ENFORCE(v.Property.Type != Sink)
+	nMessages := 0
+	for ni, n := range v.Property.Neighbours {
+		if n.ResidualCapacity == 0 {
+			continue
+		}
+		min = mathutils.Min(n.ResidualCapacity, retiringFlow)
+		n.ResidualCapacity -= min
+		retiringFlow -= min
+		g.OnQueueVisit(g, vidx, ni, []Message{{Source: vidx, Type: Decreasing, Height: v.Property.Height, Value: min}})
+		nMessages += 1
+		if retiringFlow == 0 {
+			break
+		}
+	}
+	return nMessages
+}
+
 func fillNeighbours(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
 	v := &g.Vertices[vidx]
 	enforce.ENFORCE(v.Property.Type != Sink)
@@ -323,8 +363,47 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	fillNeighbours(g, sidx)
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxs []uint32, VisitMsg MessageValue) {
-	enforce.ENFORCE("Not implemented")
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], VisitMsg MessageValue) {
+	OnVisitVertex(g, sidx, VisitMsg)
+
+	source := &g.Vertices[sidx]
+
+	if source.Property.Type == Sink {
+		return
+	}
+
+	type retiringFlow struct {
+		Destination uint32
+		Flow        uint32
+	}
+	retiringFlows := make([]retiringFlow, 0, len(deletedEdges))
+
+	for _, e := range deletedEdges {
+		destination := source.Property.Neighbours[e.Destination]
+		min := mathutils.Min(destination.ResidualCapacity, e.Property.Capacity)
+		destination.ResidualCapacity -= min
+		source.Property.Neighbours[e.Destination] = destination
+		// TODO: should I remove neighbours with 0 residual capacity?
+		if left := e.Property.Capacity - min; left != 0 {
+			retiringFlows = append(retiringFlows, retiringFlow{e.Destination, left})
+		}
+	}
+
+	if len(retiringFlows) == 0 {
+		return
+	}
+
+	if source.Property.Type != Source {
+		source.Property.Height = source.Property.InitHeight // discharge will broadcast the new height
+		for i := range retiringFlows {
+			source.Property.Excess += retiringFlows[i].Flow
+		}
+		discharge(g, sidx)
+	}
+
+	for i := range retiringFlows {
+		g.OnQueueVisit(g, sidx, retiringFlows[i].Destination, []Message{{Source: sidx, Type: Decreasing, Height: source.Property.Height, Value: retiringFlows[i].Flow}})
+	}
 }
 
 func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, VisitMsg MessageValue) int {
@@ -350,6 +429,8 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 			nMessages += onPushRequest(g, vidx, m.Source, m.Height, m.Value)
 		case RejectPush:
 			nMessages += onPushRejected(g, vidx, m.Source, m.Height, m.Value)
+		case Decreasing:
+			nMessages += onDecreasing(g, vidx, m.Source, m.Height, m.Value)
 		}
 	}
 	aggregatedMessage := MaxFlowMessageAggregator(g, vidx, VisitMsg)
