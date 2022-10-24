@@ -129,15 +129,15 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	}
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxs []uint32, VisitMsg MessageValue) {
+func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], VisitMsg MessageValue) {
 	source := &g.Vertices[sidx]
 
 	// Could be optimized by merging
 	OnVisitVertex(g, sidx, VisitMsg)
 
 	myNewColour := source.Property.Colour
-	for _, didx := range didxs {
-		potentialNewColour, ok := source.Property.NbrColours[didx]
+	for _, e := range deletedEdges {
+		potentialNewColour, ok := source.Property.NbrColours[e.Destination]
 		if !ok {
 			continue
 		}
