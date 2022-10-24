@@ -9,8 +9,6 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-const MsgBundleSize = 256
-
 // OnQueueVisitAsync: Async queue applying function; aggregates message values,
 // and only injects a visit marker if none exist already.
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *graph.Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType) {
@@ -28,7 +26,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsync(g *grap
 		select {
 		case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISITEMPTYMSG, Sidx: sidx, Didx: didx}:
 		default:
-			enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
+			enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]), ", try increasing BIGNESS")
 		}
 	}
 }
@@ -40,7 +38,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) OnQueueVisitAsyncMsg(g *g
 	select {
 	case g.MessageQ[target.ToThreadIdx()] <- graph.Message[MsgType]{Type: graph.VISIT, Sidx: sidx, Didx: didx, Message: VisitData}:
 	default:
-		enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]))
+		enforce.ENFORCE(false, "queue error, tidx:", target.ToThreadIdx(), " filled to ", len(g.MessageQ[target.ToThreadIdx()]), ", try increasing BIGNESS")
 	}
 	// must be called by the source vertex's thread
 }
@@ -83,7 +81,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessMessages(g *graph.
 	algCount := 0
 	// Process a batch of messages from the MessageQ
 algLoop:
-	for ; algCount < MsgBundleSize; algCount++ {
+	for ; algCount < len(msgBuffer); algCount++ {
 		select {
 		case msg := <-g.MessageQ[tidx]:
 			msgBuffer[algCount] = msg
@@ -109,7 +107,7 @@ algLoop:
 		for i := 0; i < algCount; i++ {
 			msg := msgBuffer[i]
 			val := frame.AggregateRetrieve(&g.Vertices[msg.Didx])
-			//	if exitCheck && algCount < MsgBundleSize {
+			//	if exitCheck && algCount < len(msgBuffer) {
 			//		info(msg.Sidx, "->", msg.Didx, ": ", val)
 			//	}
 			frame.OnVisitVertex(g, msg.Didx, val)
@@ -143,13 +141,20 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 	g.TerminateData[VOTES-1] = int64(len(g.Vertices)) // overestimate so we don't accidentally terminate early. This is resolved when initial msgs are finished.
 	// Send initial visit message(s)
 	go frame.SendInitialVisists(g, VOTES, &wg)
+	lock := g.Options.OracleCompare // Only need to lock if we are comparing against an oracle.
 
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
-			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
+			msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
 			completed := false
 			for !completed {
+				if lock {
+					g.Mutex.RLock()
+				}
 				completed = frame.ProcessMessages(g, tidx, msgBuffer, false, true)
+				if lock {
+					g.Mutex.RUnlock()
+				}
 			}
 			wg.Done()
 		}(uint32(t), &wg)

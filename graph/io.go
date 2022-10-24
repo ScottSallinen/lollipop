@@ -148,7 +148,7 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) LoadGraphStatic(graphName string,
 	var deqWg sync.WaitGroup
 	deqWg.Add(int(deqCount))
 	for i := uint64(0); i < deqCount; i++ {
-		queuechans[i] = make(chan RawEdge[EdgeProp], 4096)
+		queuechans[i] = make(chan RawEdge[EdgeProp], 4096*128)
 		go g.EdgeDequeuer(queuechans[i], &deqWg)
 	}
 

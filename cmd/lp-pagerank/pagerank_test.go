@@ -25,18 +25,21 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 }
 
 func TestAsyncDynamic(t *testing.T) {
+	logTimestampPos = 0
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		LaunchGraphExecution("../../data/test.txt", true, true, false, false, false, false)
 	}
 }
 func TestAsyncStatic(t *testing.T) {
+	logTimestampPos = 0
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		LaunchGraphExecution("../../data/test.txt", true, false, false, false, false, false)
 	}
 }
 func TestSyncStatic(t *testing.T) {
+	logTimestampPos = 0
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
 		LaunchGraphExecution("../../data/test.txt", false, false, false, false, false, false)
@@ -70,13 +73,15 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], undir
 
 	go frame.Run(g, &feederWg, &frameWait)
 
-	count := 0
+	count := uint64(0)
 	for _, v := range sc {
 		switch v.Type {
 		case graph.ADD:
-			g.SendAdd(v.SrcRaw, v.DstRaw, EdgeProperty(count))
+			ep := *new(EdgeProperty)
+			SetTimestamp(&ep, count)
+			g.SendAdd(v.SrcRaw, v.DstRaw, ep)
 			if undirected {
-				g.SendAdd(v.DstRaw, v.SrcRaw, EdgeProperty(count))
+				g.SendAdd(v.DstRaw, v.SrcRaw, ep)
 			}
 			count++
 			info("add ", v.SrcRaw, v.DstRaw)
@@ -183,7 +188,7 @@ func DynamicCreation(undirected bool, t *testing.T) {
 			}
 		}
 
-		largestDiff := graph.ResultCompare(a, b)
+		_, _, largestDiff := graph.ResultCompare(a, b, 0)
 
 		if largestDiff > allowedVariance*100 { // is percent
 			t.Error("largestDiff", largestDiff, "iteration", tcount)
@@ -255,7 +260,7 @@ func DynamicWithDelete(undirected bool, t *testing.T) {
 			}
 		}
 
-		largestDiff := graph.ResultCompare(a, b)
+		_, _, largestDiff := graph.ResultCompare(a, b, 0)
 
 		if largestDiff > allowedVariance*100 { // is percent
 			t.Error("largestDiff", largestDiff)

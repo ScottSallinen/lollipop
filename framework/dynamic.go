@@ -10,8 +10,6 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
-const GscBundleSize = 4 * 4096
-
 var tsLast = uint64(0)
 var threadAtTimestamp []uint64
 
@@ -113,7 +111,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 				if change.Type == graph.ADD {
 					didx := g.VertexMap[change.DstRaw]
 					edge := graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: didx}
-					if g.Options.LogTimeseries {
+					if g.Options.LogTimeseries || (g.Options.InsertDeleteOnExpire > 0) {
 						latestTime = mathutils.Max(frame.GetTimestamp(edge.Property), latestTime)
 						threadAtTimestamp[tidx] = latestTime
 					}
@@ -210,8 +208,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
-			msgBuffer := make([]graph.Message[MsgType], MsgBundleSize)
-			structureChangeBuffer := make([]graph.StructureChange[EdgeProp], GscBundleSize)
+			msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
+			structureChangeBuffer := make([]graph.StructureChange[EdgeProp], graph.GscBundleSize)
 			expiredEdges := make([]graph.StructureChange[EdgeProp], 0)
 			completed := false
 			strucClosed := false // true indicates the StructureChanges channel is closed
@@ -237,8 +235,12 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 
 					if tidx == 0 && !strucClosed {
 						if timeNow >= (infoTimer + 1.0) {
-							allRateSince := float64(allEdgeCount-allEdgeCountLast) / 1.0
-							info("Edges ", allEdgeCount, " TotalRate ", uint64(allRate), " InstRate ", uint64(allRateSince), " AllRateAchieved ", fmt.Sprintf("%.3f", (allRate*100.0)/float64(graph.TARGETRATE)))
+							allRateSince := float64(allEdgeCount-allEdgeCountLast) / (timeNow - infoTimer)
+							if graph.TARGETRATE == 1e16 {
+								info("Edges ", allEdgeCount, " TotalRate ", uint64(allRate), " CurrentRate ", uint64(allRateSince))
+							} else {
+								info("Edges ", allEdgeCount, " TotalRate ", uint64(allRate), " CurrentRate ", uint64(allRateSince), " AllRateAchieved ", fmt.Sprintf("%.3f", (allRate*100.0)/float64(graph.TARGETRATE)))
+							}
 							infoTimer = timeNow
 							allEdgeCountLast = allEdgeCount
 						}
@@ -246,7 +248,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 
 					edgeCount := int64(0)
 				fillLoop: // Read a batch of StructureChanges
-					for ; edgeCount < incEdgeCount && edgeCount < GscBundleSize; edgeCount++ {
+					for ; edgeCount < incEdgeCount && edgeCount < int64(len(structureChangeBuffer)); edgeCount++ {
 						select {
 						case msg, ok := <-g.ThreadStructureQ[tidx]:
 							if ok {
@@ -256,7 +258,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 								if doneCount == int32(graph.THREADS) {
 									info("T", tidx, " all edges consumed at ", g.Watch.Elapsed().Milliseconds())
 									if g.Options.OracleCompare {
-										frame.CompareToOracle(g, false)
+										go frame.CompareToOracle(g, true, false, time.Duration(g.Watch.Elapsed().Milliseconds()/10))
 									}
 								}
 								strucClosed = true
@@ -272,14 +274,23 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 
 						// If we are lagging behind the target ingestion rate, and we filled our bundle (implies more edges are available),
 						// then we should loop back to ingest more edges rather than process algorithm messages.
-						if allRate/float64(graph.TARGETRATE) < 0.99 && edgeCount == GscBundleSize {
+						if allRate/float64(graph.TARGETRATE) < 0.99 && edgeCount == int64(len(structureChangeBuffer)) {
 							continue
 						}
 					}
 				}
 
-				// Process algorithm messages. Need to rlock, and check for termination only if we have no more edges to consume.
-				completed = frame.ProcessMessages(g, tidx, msgBuffer, true, strucClosed)
+				// Need to move rlock outside to avoid buffered msgs when comparing to oracle or logging a timeseries.
+				rLockOutside := g.Options.OracleCompare || g.Options.LogTimeseries
+				if rLockOutside {
+					g.Mutex.RLock()
+				}
+				// Process algorithm messages. Need to rlock (due to potential graph structure changes)
+				// Also will only check for termination if we have no more edges to consume.
+				completed = frame.ProcessMessages(g, tidx, msgBuffer, !rLockOutside, strucClosed)
+				if rLockOutside {
+					g.Mutex.RUnlock()
+				}
 			}
 			wg.Done()
 		}(uint32(t), &wg)

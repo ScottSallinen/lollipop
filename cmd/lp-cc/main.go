@@ -69,7 +69,7 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 		copy(ia, *resultCache)
 	}
 	info("vertexCount ", uint64(len(g.Vertices)), " edgeCount ", numEdges)
-	graph.ResultCompare(ia, ib)
+	graph.ResultCompare(ia, ib, 0)
 }
 
 func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool, oracleFin bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
@@ -96,7 +96,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.Launch(g, gName, async, dynamic)
 
 	if oracleFin {
-		frame.CompareToOracle(g, true)
+		frame.CompareToOracle(g, false, true, 0)
 	}
 
 	return g

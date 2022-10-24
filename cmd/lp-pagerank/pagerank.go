@@ -11,9 +11,12 @@ import (
 const DAMPINGFACTOR = float64(0.85)
 const INITMASS = 100.0
 const EMPTYVAL = 0.0
-const EPSILON = float64(INITMASS * 0.001)
 
 const NORMALIZE = true
+const PPR = false
+
+const EPSILON = float64(INITMASS * 1e-3) // Default value for democratic PR
+//const EPSILON = float64(INITMASS * 1e-9)  // Default value for PPR
 
 type VertexProperty struct {
 	Residual float64
@@ -31,9 +34,9 @@ type MessageValue float64
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
 	old := mathutils.AtomicAddFloat64(&dst.Property.Scratch, float64(data))
-	//newInfo = math.Abs(old) < EPSILON && math.Abs(old+float64(data)) > EPSILON
-	//return newInfo
-	return old == 0.0
+	newInfo = math.Abs(old) < EPSILON && math.Abs(old+float64(data)) > EPSILON
+	return newInfo
+	//return old == 0.0
 }
 
 func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
@@ -239,7 +242,7 @@ func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error 
 			toAbsorb += (1.0 - DAMPINGFACTOR) * (NormalQuota) * (geometricLatentSum) * (retainSumPct) * (relativeSinkPowerPct)
 		}
 		g.Vertices[vidx].Property.Value += toAbsorb
-		if NORMALIZE {
+		if NORMALIZE && !PPR {
 			g.Vertices[vidx].Property.Value /= float64(len(g.Vertices))
 		}
 	}

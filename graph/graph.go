@@ -21,13 +21,17 @@ var THREADS = 32
 var TARGETRATE = float64(0)
 var DEBUG = false
 
+const BIGNESS = 4 // Multiplier on elements like queue size and bundle size. e.g. suggest 64 for billion-edge graphs.
+const MsgBundleSize = 256
+const GscBundleSize = (1 << 12) * BIGNESS
+
 // Graph t
 type Graph[VertexProp, EdgeProp, MsgType any] struct {
 	Mutex            sync.RWMutex
 	VertexMap        map[uint32]uint32 // Raw to internal
 	Vertices         []Vertex[VertexProp, EdgeProp]
-	OnQueueVisit     OnQueueVisitFunc[VertexProp, EdgeProp, MsgType]
-	AlgConverge      ConvergeFunc[VertexProp, EdgeProp, MsgType]
+	OnQueueVisit     func(g *Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
+	AlgConverge      func(g *Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup)
 	MessageQ         []chan Message[MsgType]
 	ThreadStructureQ []chan StructureChange[EdgeProp]
 	MsgSend          []uint32 // number of messages sent by each thread
@@ -40,15 +44,18 @@ type Graph[VertexProp, EdgeProp, MsgType any] struct {
 }
 
 type GraphOptions[MsgType any] struct {
-	Undirected           bool               // Declares if the graph should be treated as undirected (e.g. for construction)
-	LogTimeseries        bool               // Uses timestamps to log a timeseries of vertex properties.
-	TimeSeriesInterval   uint64             // Interval (seconds) for how often to log timeseries.
-	OracleCompare        bool               // Will compare to computed oracle results, either from an interval or, if creating a timeseries, each time a timeseries is logged.
-	EmptyVal             MsgType            // Value used to represent "empty" or "no work to do"
-	SourceInit           bool               // If set to true, InitMessages defines how initial messages will be sent. Otherwise, all vertices will receive InitAllMessage.
-	InitMessages         map[uint32]MsgType // Mapping from raw vertex ID to the initial messages they receive
-	InitAllMessage       MsgType            // Value to initialize when SourceInit is set to false
-	InsertDeleteOnExpire uint64             // If non-zero, will insert delete edges that were added before, after passing the expiration duration. (Create a sliding window graph). Needs (Get/Set)Timestamp defined.
+	Undirected            bool               // Declares if the graph should be treated as undirected (e.g. for construction)
+	LogTimeseries         bool               // Uses timestamps to log a timeseries of vertex properties.
+	TimeSeriesInterval    uint64             // Interval (seconds) for how often to log timeseries.
+	OracleCompare         bool               // Will compare to computed oracle results, either from an interval or, if creating a timeseries, each time a timeseries is logged.
+	EmptyVal              MsgType            // Value used to represent "empty" or "no work to do"
+	SourceInit            bool               // If set to true, InitMessages defines how initial messages will be sent. Otherwise, all vertices will receive InitAllMessage.
+	InitMessages          map[uint32]MsgType // Mapping from raw vertex ID to the initial messages they receive
+	InitAllMessage        MsgType            // Value to initialize when SourceInit is set to false
+	InsertDeleteOnExpire  uint64             // If non-zero, will insert delete edges that were added before, after passing the expiration duration. (Create a sliding window graph). Needs (Get/Set)Timestamp defined.
+	OracleInterval        int64              // If OracleCompare, will compare to oracle results every OracleInterval milliseconds.
+	AsyncContinuationTime int64              // If non-zero, will continue the algorithm for AsyncContinuationTime milliseconds before collecting a state (logging a timeseries).
+	OracleCompareSync     bool               // Compares to oracle results on every iteration, when using a synchronous strategy.
 }
 
 type VisitType int
@@ -74,8 +81,6 @@ type StructureChange[EdgeProp any] struct {
 	EdgeProperty EdgeProp
 }
 
-type OnQueueVisitFunc[VertexProp, EdgeProp, MsgType any] func(g *Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
-type ConvergeFunc[VertexProp, EdgeProp, MsgType any] func(g *Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup)
 type EdgeParserFunc[EdgeProp any] func(lineText string) RawEdge[EdgeProp]
 
 // Edge: Basic edge type for a graph, with a user-defined property; can be empty struct{}
@@ -160,32 +165,48 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) ComputeGraphStats(inDeg bool, out
 	info("----EndStats----")
 }
 
-func ResultCompare(a []float64, b []float64) float64 {
-	largestDiff := float64(0)
-	smallestDiff := float64(0)
-	avgDiff := float64(0)
+// Compares two arrays: showcases average and L1 differences.
+// IgnoreSize: some number to ignore when computing 95th percentile. (i.e., for ignoring singletons)
+// Returns: (Average L1 diff, 95th percentile L1 diff, Largest Absolute percent diff)
+func ResultCompare(a []float64, b []float64, ignoreSize int) (float64, float64, float64) {
+	largestRelativeDiff := float64(0)
+	avgRelativeDiff := float64(0)
 	listDiff := []float64{}
+	largestL1Diff := float64(0)
+	avgL1Diff := float64(0)
+	listL1Diff := []float64{}
 
 	for idx := range a {
 		delta := math.Abs((b[idx] - a[idx]) * 100.0 / math.Min(a[idx], b[idx]))
 		listDiff = append(listDiff, delta)
-		avgDiff += delta
-		largestDiff = mathutils.Max(largestDiff, delta)
-		smallestDiff = mathutils.Min(smallestDiff, delta)
+		avgRelativeDiff += delta
+		largestRelativeDiff = mathutils.Max(largestRelativeDiff, delta)
+
+		l1delta := math.Abs(b[idx] - a[idx])
+		listL1Diff = append(listL1Diff, l1delta)
+		avgL1Diff += l1delta
+		largestL1Diff = mathutils.Max(largestL1Diff, l1delta)
 	}
-	avgDiff = avgDiff / float64(len(a))
+	avgRelativeDiff = avgRelativeDiff / float64(len(a))
+	avgL1Diff = avgL1Diff / float64(len(a))
 
 	sort.Float64s(listDiff)
+	sort.Float64s(listL1Diff)
 
 	medianIdx := len(listDiff) / 2
 	medianDiff := listDiff[medianIdx]
+	medianL1Diff := listL1Diff[medianIdx]
 	if len(listDiff)%2 == 1 { // odd
 		medianDiff = (listDiff[medianIdx-1] + listDiff[medianIdx]) / 2
+		medianL1Diff = (listL1Diff[medianIdx-1] + listL1Diff[medianIdx]) / 2
 	}
 	percentile95 := listDiff[int(float64(len(listDiff))*0.95)]
+	//percentile95L1 := listL1Diff[int(float64(len(listDiff))*0.95)]
+	percentile95L1 := listL1Diff[int(float64(len(listDiff)-ignoreSize)*0.95)+ignoreSize]
 
-	info("Average ", avgDiff, " Median ", medianDiff, " 95p ", percentile95, " Largest ", largestDiff)
-	return largestDiff
+	info(fmt.Sprintf("AverageRel %.5f MedianRel %.5f 95pRel %.5f LargestRel %.5f", avgRelativeDiff, medianDiff, percentile95, largestRelativeDiff))
+	info(fmt.Sprintf("AverageL1 %.3e MedianL1 %.3e 95pL1 %.3e LargestL1 %.3e", avgL1Diff, medianL1Diff, percentile95L1, largestL1Diff))
+	return avgL1Diff, percentile95L1, largestRelativeDiff
 }
 
 func (g *Graph[VertexProp, EdgeProp, MsgType]) PrintStructure() {
