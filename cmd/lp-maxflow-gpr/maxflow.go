@@ -1,132 +1,26 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 // TODO: handle self loop and multi-graphs
 
-type MessageType uint8
-type VertexType uint8
-
-const (
-	Normal VertexType = 0
-	Source VertexType = 1
-	Sink   VertexType = 2
-
-	Unspecified MessageType = 0
-	InitSource  MessageType = 1
-	InitSink    MessageType = 2
-	InitHeight  MessageType = 3 // TODO: implement 2PPR instead of GPR
-	NewHeight   MessageType = 4
-	PushRequest MessageType = 5 // (PUSH-REQUEST-ANS , δ, NOK)
-	RejectPush  MessageType = 6 // (PUSH-REQUEST-ANS , δ, NOK)
-
-	Increasing MessageType = 7
-	Decreasing MessageType = 8
-)
-
-var MessageCounter = make([]uint32, 9)
-
-type Neighbour struct {
-	Height           uint32
-	ResidualCapacity uint32
-}
-
-type VertexProperty struct {
-	MessageBuffer []Message
-
-	Type       VertexType
-	Excess     uint32
-	Height     uint32
-	InitHeight uint32 // Or distance to sink, set in breadth first search way, or 0 in GPR
-
-	Neighbours map[uint32]Neighbour
-}
-
-func (t VertexType) String() string {
-	switch t {
-	case Normal:
-		return "Normal"
-	case Source:
-		return "Source"
-	case Sink:
-		return "Sink"
-	default:
-		return fmt.Sprintf("%d", t)
-	}
-}
-
-func (t MessageType) String() string {
-	switch t {
-	case Unspecified:
-		return "Unspecified"
-	case InitSource:
-		return "InitSource"
-	case InitSink:
-		return "InitSink"
-	case InitHeight:
-		return "InitHeight"
-	case NewHeight:
-		return "NewHeight"
-	case PushRequest:
-		return "PushRequest"
-	case RejectPush:
-		return "RejectPush"
-	case Increasing:
-		return "Increasing"
-	case Decreasing:
-		return "Decreasing"
-	default:
-		return fmt.Sprintf("%d", t)
-	}
-}
-
-func (n Neighbour) String() string {
-	return fmt.Sprintf("{%d,%d}", n.Height, n.ResidualCapacity)
-}
-
-func (p *VertexProperty) String() string {
-	s := fmt.Sprintf("{%v,%v,%v,%v,[", p.Type, p.Excess, p.Height, p.InitHeight)
-	for k, v := range p.Neighbours {
-		s += fmt.Sprintf("%d:%v,", k, v)
-	}
-	return s + "]}"
-}
-
-type EdgeProperty struct {
-	Capacity uint32
-}
-
-type Message struct {
-	Source uint32
-	Type   MessageType
-	Height uint32 // TODO: maybe there is no need to carry both height and value in a message
-	Value  uint32 // flow?
-}
-
-type MessageValue []Message
-
 // TODO: rename to sourceInit
-func initPush(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
-	v := &g.Vertices[vidx]
+func sourceInit(g *Graph, v *Vertex, vidx uint32) int {
 	enforce.ENFORCE(v.Property.Type == Source)
-	excess := uint32(0)
 	for i := range v.OutEdges {
 		edge := &v.OutEdges[i]
-		excess += edge.Property.Capacity
+		v.Property.Excess += edge.Property.Capacity
 	}
-	v.Property.Excess = excess
 	return push(g, vidx)
 }
 
-func discharge(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
+func discharge(g *Graph, vidx uint32) int {
 	v := &g.Vertices[vidx]
 	if v.Property.Excess == 0 || v.Property.Type == Sink {
 		return 0
@@ -146,7 +40,7 @@ func discharge(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx 
 	return nMessages
 }
 
-func push(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
+func push(g *Graph, vidx uint32) int {
 	v := &g.Vertices[vidx]
 	if v.Property.Type == Sink || v.Property.Excess == 0 {
 		return 0
@@ -170,7 +64,7 @@ func push(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 	return nMessages
 }
 
-func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
+func lift(g *Graph, vidx uint32) int {
 	v := &g.Vertices[vidx]
 	enforce.ENFORCE(v.Property.Type == Normal)
 	// TODO: this is different from the one proposed by Pham et al
@@ -191,29 +85,26 @@ func lift(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint3
 	return len(v.Property.Neighbours)
 }
 
-func onPushRequest(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) int {
+func onPushRequest(g *Graph, vidx, source, height, flow uint32) int {
 	v := &g.Vertices[vidx]
 	if height <= v.Property.Height {
 		g.OnQueueVisit(g, vidx, source, []Message{{Source: vidx, Type: RejectPush, Height: v.Property.Height, Value: flow}})
 		return 1
 	}
 	//info(fmt.Sprintf("Push accepted: vidx=%v, v.Id=%v, source=%v, source.Id=%v, height=%v, flow=%v", vidx, v.Id, source, g.Vertices[source].Id, height, flow))
-	v.Property.Neighbours[source] = Neighbour{
-		Height:           height,
-		ResidualCapacity: v.Property.Neighbours[source].ResidualCapacity + flow,
-	}
 	v.Property.Excess += flow
+	v.Property.Neighbours[source] = Neighbour{height, v.Property.Neighbours[source].ResidualCapacity + flow}
 	return discharge(g, vidx)
 }
 
-func onPushRejected(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, flow uint32) int {
+func onPushRejected(g *Graph, vidx, source, height, flow uint32) int {
 	v := &g.Vertices[vidx]
 	v.Property.Excess += flow
 	v.Property.Neighbours[source] = Neighbour{height, v.Property.Neighbours[source].ResidualCapacity + flow}
 	return discharge(g, vidx)
 }
 
-func onDecreasing(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx, source, height, retiringFlow uint32, deletedEdges []graph.Edge[EdgeProperty]) int {
+func onDecreasing(g *Graph, vidx, source, height, retiringFlow uint32, deletedEdges []Edge) int {
 	v := &g.Vertices[vidx]
 	nMessages := 0
 
@@ -290,18 +181,13 @@ func onDecreasing(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 	return nMessages
 }
 
-func fillNeighbours(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) int {
+func fillNeighbours(g *Graph, vidx uint32) int {
 	v := &g.Vertices[vidx]
 	enforce.ENFORCE(v.Property.Type != Sink)
 
-	nMessages := 0
-
-	if v.Property.Excess > 0 {
-		nMessages += discharge(g, vidx)
-	}
+	nMessages := discharge(g, vidx)
 
 	if v.Property.Type != Source {
-		// TODO: Optimize. If all neighbours are saturated, there is no need to get more flow
 		// If v.Property.Height == v.Property.InitHeight, then we haven't pushed back any flow, so there is no point to
 		// "pull" flows from other vertices. This significantly improves the performance.
 		// TODO: this optimization is not present in Pham's paper, so it is still not clear if it is correct.
@@ -317,7 +203,7 @@ func fillNeighbours(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], 
 	return nMessages
 }
 
-func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, vertexType VertexType, initHeight uint32) {
+func OnInitVertex(g *Graph, vidx uint32, vertexType VertexType, initHeight uint32) {
 	v := &g.Vertices[vidx]
 	//if graph.DEBUG {
 	//	info(fmt.Sprintf("OnInitVertex id=%v vidx=%v: vertexType=%v initHeight=%v", v.Id, vidx, vertexType, initHeight))
@@ -337,7 +223,7 @@ func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vi
 	}
 }
 
-func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, VisitMsg MessageValue) (newInfo bool) {
+func MessageAggregator(dst *Vertex, didx, sidx uint32, VisitMsg MessageValue) (newInfo bool) {
 	enforce.ENFORCE(len(VisitMsg) == 1)
 	if VisitMsg[0].Type == InitSource {
 		enforce.ENFORCE(dst.Property.Type == Source)
@@ -355,7 +241,7 @@ func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, si
 	return active
 }
 
-func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
+func AggregateRetrieve(target *Vertex) MessageValue {
 	atomic.StoreInt32(&target.IsActive, 0) // TODO: why necessary
 	target.Mutex.Lock()
 	ret := target.Property.MessageBuffer
@@ -364,7 +250,7 @@ func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) Messa
 	return ret
 }
 
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, VisitMsg MessageValue) {
+func OnEdgeAdd(g *Graph, sidx uint32, didxStart int, VisitMsg MessageValue) {
 	source := &g.Vertices[sidx]
 	//for i := didxStart; i < len(source.OutEdges); i++ {
 	//	dstIdx := source.OutEdges[i].Destination
@@ -396,7 +282,7 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	fillNeighbours(g, sidx)
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], VisitMsg MessageValue) {
+func OnEdgeDel(g *Graph, sidx uint32, deletedEdges []Edge, VisitMsg MessageValue) {
 	doOnVisitVertex(g, sidx, VisitMsg, deletedEdges)
 	source := &g.Vertices[sidx]
 	//for _, e := range deletedEdges {
@@ -445,11 +331,11 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 	}
 }
 
-func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, VisitMsg MessageValue) int {
-	return doOnVisitVertex(g, vidx, VisitMsg, make([]graph.Edge[EdgeProperty], 0))
+func OnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue) int {
+	return doOnVisitVertex(g, vidx, VisitMsg, make([]Edge, 0))
 }
 
-func doOnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, VisitMsg MessageValue, deletedEdges []graph.Edge[EdgeProperty]) int {
+func doOnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue, deletedEdges []Edge) int {
 	v := &g.Vertices[vidx]
 	nMessages := 0
 	for messageIndex := range VisitMsg {
@@ -467,12 +353,13 @@ func doOnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue],
 			enforce.ENFORCE(false)
 		case InitSource:
 			enforce.ENFORCE(v.Property.Type == Source)
-			nMessages += initPush(g, vidx)
+			nMessages += sourceInit(g, v, vidx)
 		case InitSink:
 			enforce.ENFORCE(v.Property.Type == Sink)
 		case NewHeight:
 			v.Property.Neighbours[m.Source] = Neighbour{m.Height, v.Property.Neighbours[m.Source].ResidualCapacity}
 			if v.Property.Type == Source {
+				// TODO: push to m.Source only
 				nMessages += push(g, vidx)
 			}
 		case PushRequest:
@@ -488,6 +375,6 @@ func doOnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue],
 	return nMessages
 }
 
-func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
+func OnFinish(g *Graph) error {
 	return nil
 }

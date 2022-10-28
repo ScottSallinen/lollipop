@@ -140,7 +140,7 @@ func loadAllStructureChanges(path string) []graph.StructureChange[EdgeProperty] 
 	return result
 }
 
-func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], source, sink, sourceHeight uint32) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
+func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], source, sink, sourceHeight uint32) *Graph {
 	frame, g := GetFrameworkAndGraph(source, sink, sourceHeight)
 
 	frame.Init(g, true, true)
