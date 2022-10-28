@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/ScottSallinen/lollipop/graph"
+	"math"
 )
 
 type VertexType uint8
@@ -38,6 +39,8 @@ type Vertex = graph.Vertex[VertexProperty, EdgeProperty]
 type Edge = graph.Edge[EdgeProperty]
 
 const (
+	PrintNewHeight bool = false
+
 	Normal VertexType = 0
 	Source VertexType = 1
 	Sink   VertexType = 2
@@ -106,6 +109,10 @@ func (p *VertexProperty) String() string {
 	return s + "]}"
 }
 
+func CountMessage(m *Message) {
+	MessageCounter[m.Type] += 1
+}
+
 func ResetMessageCounts() {
 	for i := uint32(0); i < uint32(len(MessageCounter)); i++ {
 		MessageCounter[i] = 0
@@ -115,5 +122,21 @@ func ResetMessageCounts() {
 func PrintMessageCounts() {
 	for i := uint32(0); i < uint32(len(MessageCounter)); i++ {
 		info(fmt.Sprintf("%11v: %v", MessageType(i), MessageCounter[i]))
+	}
+}
+
+func (m *Message) String(g *Graph, v *Vertex, vertexIndex uint32) string {
+	if m.Source != math.MaxUint32 {
+		return fmt.Sprintf("OnVisitVertex RawID=%v->%v Index=%v->%v: m.Type=%v m.Height=%v m.Value=%v", g.Vertices[m.Source].Id, v.Id, m.Source, vertexIndex, m.Type, m.Height, m.Value)
+	} else {
+		return fmt.Sprintf("OnVisitVertex RawID=non->%v Index=none->%v: m.Type=%v m.Height=%v m.Value=%v", v.Id, vertexIndex, m.Type, m.Height, m.Value)
+	}
+}
+
+func (m *Message) PrintIfNeeded(g *Graph, v *Vertex, vertexIndex uint32) {
+	if true {
+		if m.Type != NewHeight || PrintNewHeight {
+			info(m.String(g, v, vertexIndex))
+		}
 	}
 }

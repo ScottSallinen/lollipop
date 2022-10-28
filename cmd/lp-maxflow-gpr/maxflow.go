@@ -223,7 +223,7 @@ func OnInitVertex(g *Graph, vidx uint32, vertexType VertexType, initHeight uint3
 	}
 }
 
-func MessageAggregator(dst *Vertex, didx, sidx uint32, VisitMsg MessageValue) (newInfo bool) {
+func MessageAggregator(dst *Vertex, _, sidx uint32, VisitMsg MessageValue) (newInfo bool) {
 	enforce.ENFORCE(len(VisitMsg) == 1)
 	if VisitMsg[0].Type == InitSource {
 		enforce.ENFORCE(dst.Property.Type == Source)
@@ -340,14 +340,9 @@ func doOnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue, deletedEdges 
 	nMessages := 0
 	for messageIndex := range VisitMsg {
 		m := &VisitMsg[messageIndex]
-		MessageCounter[m.Type] += 1
-		//if graph.DEBUG {
-		//	if m.Source != math.MaxUint32 {
-		//		info(fmt.Sprintf("OnVisitVertex id=%v sid=%v vidx=%v sidx=%v: m.Type=%v m.Height=%v m.Value=%v", v.Id, g.Vertices[m.Source].Id, vidx, m.Source, m.Type, m.Height, m.Value))
-		//	} else {
-		//		info(fmt.Sprintf("OnVisitVertex id=%v vidx=%v: m.Type=%v m.Height=%v m.Value=%v", v.Id, vidx, m.Type, m.Height, m.Value))
-		//	}
-		//}
+		m.PrintIfNeeded(g, v, vidx)
+		CountMessage(m)
+
 		switch m.Type {
 		case Unspecified:
 			enforce.ENFORCE(false)
