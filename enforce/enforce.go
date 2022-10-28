@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 )
 
 func init() {
@@ -46,4 +47,12 @@ func checkCompiler() {
 	myint := int(math.MaxInt64) // Shouldn't compile on a 32 bit system.
 	myint64 := int64(math.MaxInt64)
 	ENFORCE(uint64(myint) == uint64(myint64), "Must be on 64 bit system.")
+}
+
+func Close(file *os.File) {
+	err := file.Close()
+	if err != nil {
+		log.Println("ENFORCE: error when closing a file: ", err)
+		panic(err)
+	}
 }

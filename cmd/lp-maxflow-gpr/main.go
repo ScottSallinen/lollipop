@@ -21,6 +21,13 @@ func info(args ...any) {
 	log.Println("[MaxFlowGPR]\t", fmt.Sprint(args...))
 }
 
+func printMessageCounts() {
+	for i := uint32(0); i < uint32(len(MessageCounter)); i++ {
+		info(fmt.Sprintf("Type=%v, count=%v", MessageType(i), MessageCounter[i]))
+		MessageCounter[i] = 0
+	}
+}
+
 func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 	stringFields := strings.Fields(lineText)
 
@@ -91,13 +98,12 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 	// TODO: check Neighbours
 	// TODO: Check inflow == outflow for all vertices (doesn't seem to be easy)
 
-	for i := uint32(0); i < uint32(len(MessageCounter)); i++ {
-		info(fmt.Sprintf("Type=%v, count=%v", MessageType(i), MessageCounter[i]))
-	}
+	printMessageCounts()
 	return nil
 }
 
-func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw, sourceHeight uint32) (frame framework.Framework[VertexProperty, EdgeProperty, MessageValue], g graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw, sourceHeight uint32) (*framework.Framework[VertexProperty, EdgeProperty, MessageValue], *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
+	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
 	frame.OnEdgeAdd = OnEdgeAdd
@@ -106,6 +112,7 @@ func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw, sourceHeight uint32)
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.EdgeParser = EdgeParser
 
+	g := graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.Options = graph.GraphOptions[MessageValue]{
 		Undirected:    false,
 		EmptyVal:      nil,
@@ -143,13 +150,13 @@ func GetFrameworkAndGraph(gName string, sourceRaw, sinkRaw, sourceHeight uint32)
 	frame.OnCheckCorrectness = func(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
 		return OnCheckCorrectness(g, sourceRaw, sinkRaw)
 	}
-	return frame, g
+	return &frame, &g
 }
 
 func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, sourceHeight uint32) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
-	frame, g := GetFrameworkAndGraph(gName, source, sink, sourceHeight)
-	frame.Launch(&g, gName, async, dynamic)
-	return &g
+	frame, g := GetFrameworkAndGraph(source, sink, sourceHeight)
+	frame.Launch(g, gName, async, dynamic)
+	return g
 }
 
 func main() {
