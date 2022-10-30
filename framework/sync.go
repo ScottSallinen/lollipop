@@ -4,6 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
@@ -20,7 +21,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeSync(g *graph.Gra
 	info("ConvergeSync")
 	if g.Options.SourceInit {
 		for vid, message := range g.Options.InitMessages {
-			vidx := g.VertexMap[vid]
+			vidx, ok := g.VertexMap[vid]
+			enforce.ENFORCE(ok)
 			frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, message)
 			aggregated := frame.AggregateRetrieve(&g.Vertices[vidx])
 			frame.OnVisitVertex(g, vidx, aggregated)
@@ -62,7 +64,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeSyncPrevOnly(g *g
 	info("ConvergeSyncPrevOnly")
 	if g.Options.SourceInit {
 		for vid, message := range g.Options.InitMessages {
-			vidx := g.VertexMap[vid]
+			vidx, ok := g.VertexMap[vid]
+			enforce.ENFORCE(ok)
 			frame.MessageAggregator(&g.Vertices[vidx], vidx, vidx, message)
 			aggregated := frame.AggregateRetrieve(&g.Vertices[vidx])
 			frame.OnVisitVertex(g, vidx, aggregated)
