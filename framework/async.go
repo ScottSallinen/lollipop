@@ -61,7 +61,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) SendInitialVisists(g *gra
 		}
 	} else { // Target specific vertices: send the algorithm defined initial visit value as a message.
 		for vid, message := range g.Options.InitMessages {
-			vidx := g.VertexMap[vid]
+			vidx, ok := g.VertexMap[vid]
+			enforce.ENFORCE(ok)
 			v := &g.Vertices[vidx]
 			newInfo := frame.MessageAggregator(v, vidx, vidx, message)
 			if newInfo {
