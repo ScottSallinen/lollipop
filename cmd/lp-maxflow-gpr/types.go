@@ -134,7 +134,7 @@ func (m *Message) String(g *Graph, v *Vertex, vertexIndex uint32) string {
 }
 
 func (m *Message) PrintIfNeeded(g *Graph, v *Vertex, vertexIndex uint32) {
-	if true {
+	if graph.DEBUG {
 		if m.Type != NewHeight || PrintNewHeight {
 			info(m.String(g, v, vertexIndex))
 		}

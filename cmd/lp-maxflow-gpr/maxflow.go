@@ -121,18 +121,22 @@ func onDecreasing(g *Graph, vidx, source, height, retiringFlow uint32, deletedEd
 	neighbour.ResidualCapacity -= retiringFlow
 	v.Property.Neighbours[source] = neighbour
 
-	if v.Property.Height != v.Property.InitHeight {
-		v.Property.Height = v.Property.InitHeight
-		for neighbourIndex := range v.Property.Neighbours {
-			g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: NewHeight, Height: v.Property.Height}})
-		}
-		nMessages += len(v.Property.Neighbours)
-	}
+	//if v.Property.Height != v.Property.InitHeight {
+	//	v.Property.Height = v.Property.InitHeight
+	//	for neighbourIndex := range v.Property.Neighbours {
+	//		g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: NewHeight, Height: v.Property.Height}})
+	//	}
+	//	nMessages += len(v.Property.Neighbours)
+	//}
 
-	// Note: this is different from Pham's
 	min := mathutils.Min(v.Property.Excess, retiringFlow)
 	v.Property.Excess -= min
 	retiringFlow -= min
+
+	if v.Property.Type != Sink {
+		nMessages += fillNeighbours(g, vidx, map[uint32]bool{source: true})
+	}
+
 	if retiringFlow == 0 {
 		return nMessages
 	}
@@ -181,22 +185,26 @@ func onDecreasing(g *Graph, vidx, source, height, retiringFlow uint32, deletedEd
 	return nMessages
 }
 
-func fillNeighbours(g *Graph, vidx uint32) int {
+func fillNeighbours(g *Graph, vidx uint32, skip map[uint32]bool) int {
 	v := &g.Vertices[vidx]
 	enforce.ENFORCE(v.Property.Type != Sink)
 
+	// TODO: try skipping broadcasting INCREASING when excess > 0
 	nMessages := discharge(g, vidx)
 
 	if v.Property.Type != Source {
 		// If v.Property.Height == v.Property.InitHeight, then we haven't pushed back any flow, so there is no point to
 		// "pull" flows from other vertices. This significantly improves the performance.
-		// TODO: this optimization is not present in Pham's paper, so it is still not clear if it is correct.
 		if v.Property.Height > v.Property.InitHeight {
-			v.Property.Height = v.Property.InitHeight
-			for neighbourIndex := range v.Property.Neighbours {
-				g.OnQueueVisit(g, vidx, neighbourIndex, []Message{{Source: vidx, Type: Increasing, Height: v.Property.Height}})
+			for ni, n := range v.Property.Neighbours {
+				if n.Height > v.Property.Height+1 || skip[ni] {
+					// +1 is because a height difference >= 2 implies the other vertex has no flow to push to this vertex
+					continue
+				}
+				g.OnQueueVisit(g, vidx, ni, []Message{{Source: vidx, Type: Increasing, Height: v.Property.InitHeight}})
 			}
 			nMessages += len(v.Property.Neighbours)
+			v.Property.Height = v.Property.InitHeight
 		}
 	}
 
@@ -279,7 +287,7 @@ func OnEdgeAdd(g *Graph, sidx uint32, didxStart int, VisitMsg MessageValue) {
 		}
 	}
 
-	fillNeighbours(g, sidx)
+	fillNeighbours(g, sidx, map[uint32]bool{})
 }
 
 func OnEdgeDel(g *Graph, sidx uint32, deletedEdges []Edge, VisitMsg MessageValue) {
@@ -353,10 +361,10 @@ func doOnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue, deletedEdges 
 			enforce.ENFORCE(v.Property.Type == Sink)
 		case NewHeight:
 			v.Property.Neighbours[m.Source] = Neighbour{m.Height, v.Property.Neighbours[m.Source].ResidualCapacity}
-			if v.Property.Type == Source {
-				// TODO: push to m.Source only
-				nMessages += push(g, vidx)
-			}
+			//if v.Property.Type == Source {
+			//	// TODO: push to m.Source only
+			//	nMessages += push(g, vidx)
+			//}
 		case PushRequest:
 			nMessages += onPushRequest(g, vidx, m.Source, m.Height, m.Value)
 		case RejectPush:
@@ -366,7 +374,7 @@ func doOnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue, deletedEdges 
 		}
 	}
 	aggregatedMessage := MaxFlowMessageAggregator(g, vidx, VisitMsg)
-	nMessages += ProcessAggregatedMessage(&aggregatedMessage, g, vidx)
+	nMessages += ProcessAggregatedMessage(aggregatedMessage, g, vidx)
 	return nMessages
 }
 
