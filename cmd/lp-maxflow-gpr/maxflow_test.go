@@ -23,13 +23,43 @@ type TestGraph struct {
 	VertexCount uint32
 }
 
-var testGraphs = [...]TestGraph{
-	{2, 0, 3, "../../data/maxflow/test-1.txt", 4},
-	{8, 0, 2, "../../data/maxflow/test-2.txt", 3},
-	{1, 0, 1, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-	//{0, 5000, 10000, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500}, // takes 3889976 ms
-	{1087, 1568, 363, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+type DynamicTestGraph struct {
+	MaxFlow          uint32
+	Source           uint32
+	Sink             uint32
+	VertexCount      uint32
+	StructureChanges []graph.StructureChange[EdgeProperty]
 }
+
+var (
+	testGraphs = [...]TestGraph{
+		{2, 0, 3, "../../data/maxflow/test-1.txt", 4},
+		{8, 0, 2, "../../data/maxflow/test-2.txt", 3},
+
+		{23, 1367, 2361, "../../data/maxflow/comment-graph-sample-merged-shuffled-5percent.txt", 6260},
+		{1, 16239, 7662, "../../data/maxflow/comment-graph-sample-merged-shuffled-5percent.txt", 6260},
+		//{1, 0, 1, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		//{0, 5000, 10000, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500}, // takes 3889976 ms
+		//{1087, 1568, 363, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+	}
+	dynamicTestGraphs = [...]DynamicTestGraph{
+		// Test INCREASING messages in cycles
+		{1, 0, 1, 5, []graph.StructureChange[EdgeProperty]{
+			{graph.ADD, 0, 1, EdgeProperty{1}},
+			{graph.ADD, 2, 3, EdgeProperty{1}},
+			{graph.ADD, 3, 4, EdgeProperty{1}},
+			{graph.ADD, 4, 2, EdgeProperty{1}},
+		}},
+		// Check if upstream vertices are also updated when a vertex receives a DECREASING event
+		{1, 0, 2, 4, []graph.StructureChange[EdgeProperty]{
+			{graph.ADD, 0, 1, EdgeProperty{2}},
+			{graph.ADD, 1, 2, EdgeProperty{1}},
+			{graph.ADD, 0, 3, EdgeProperty{1}},
+			{graph.ADD, 3, 1, EdgeProperty{1}},
+			{graph.DEL, 0, 1, EdgeProperty{}},
+		}},
+	}
+)
 
 func assertEqual(t *testing.T, expected any, actual any, prefix string) {
 	if reflect.DeepEqual(expected, actual) {
@@ -64,6 +94,20 @@ func TestAsyncStatic(t *testing.T) {
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
 	}
+}
+
+func TestDynamicGraphs(t *testing.T) {
+	graph.DEBUG = true
+	graph.TARGETRATE = 1 // Set this to prevent edge change events being merged
+	graph.THREADS = 1
+	for i := range dynamicTestGraphs {
+		testGraph := &dynamicTestGraphs[i]
+		g := dynamicGraphExecutionFromSC(testGraph.StructureChanges, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
+		maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
+		assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("DynamicGraph %v Max flow", i))
+	}
+	graph.DEBUG = false
+	graph.TARGETRATE = 0
 }
 
 func TestAsyncDynamicIncremental(t *testing.T) {
