@@ -322,12 +322,14 @@ func OnEdgeDel(g *Graph, sidx uint32, deletedEdges []Edge, VisitMsg MessageValue
 		source.Property.Neighbours[e.Destination] = destination
 	}
 
+	if source.Property.Type == Source {
+		for _, e := range deletedEdges {
+			source.Property.Excess -= e.Property.Capacity
+		}
+	}
+
 	if len(retiringFlows) != 0 {
-		if source.Property.Type == Source {
-			for _, e := range deletedEdges {
-				source.Property.Excess -= e.Property.Capacity
-			}
-		} else {
+		if source.Property.Type != Source {
 			source.Property.Height = source.Property.InitHeight // discharge will broadcast the new height
 			discharge(g, sidx)
 		}
@@ -378,6 +380,6 @@ func doOnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue, deletedEdges 
 	return nMessages
 }
 
-func OnFinish(g *Graph) error {
+func OnFinish(_ *Graph) error {
 	return nil
 }
