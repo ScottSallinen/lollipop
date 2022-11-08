@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"sync"
 	"testing"
@@ -28,9 +27,9 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 // Expectation when 1 is src.
 // TODO: Test other sources!
 func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
-	allowedVariance := float64(0.000000000000001) // ?????
+	allowedVariance := float64(0.001) // ?????
 
-	expectations := []float64{1.963404656878941, 1.0, 1.648466181139459, 1.64447566797514, 1.333808200695334, 1.640735877125469, EMPTYVAL}
+	expectations := []float64{27, 1, 24, 25, 21, 26, EMPTYVAL}
 	for i := range expectations {
 		if !mathutils.FloatEquals(g.Vertices[g.VertexMap[uint32(i)]].Property.Value, expectations[i], allowedVariance) {
 		//if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
@@ -134,7 +133,7 @@ func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, E
 
 func TestDynamicCreation(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	allowedVariance := float64(0.000000000000001) // ?????
+	allowedVariance := float64(0.001) // ?????
 
 	testFail := false
 
@@ -144,14 +143,14 @@ func TestDynamicCreation(t *testing.T) {
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{1/math.Log(20)}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{1/math.Log(21)}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{1/math.Log(22)}},
-			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{1/math.Log(23)}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{1/math.Log(24)}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{1/math.Log(25)}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{1/math.Log(26)}},
-			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{1/math.Log(27)}},
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{21}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{22}},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{23}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{24}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{25}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{26}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{27}},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{28}},
 		}
 		framework.ShuffleSC(rawTestGraph)
 

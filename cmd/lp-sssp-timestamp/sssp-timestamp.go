@@ -59,7 +59,10 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 			// Message only new edges.
 			for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
 				target := src.OutEdges[eidx].Destination
-				g.OnQueueVisit(g, sidx, target, MessageValue(src.Property.Value+src.OutEdges[eidx].Property.Weight))
+				// The edges' timestamps on the path are not descending.
+				if src.OutEdges[eidx].Property.Weight >= src.Property.Value {
+					g.OnQueueVisit(g, sidx, target, MessageValue(src.OutEdges[eidx].Property.Weight))
+				}
 			}
 		}
 	}
@@ -78,7 +81,10 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 		// Send an update to all neighbours.
 		for eidx := range src.OutEdges {
 			target := src.OutEdges[eidx].Destination
-			g.OnQueueVisit(g, vidx, target, MessageValue(src.Property.Value+src.OutEdges[eidx].Property.Weight))
+			// The edges' timestamps on the path are not descending.
+			if src.OutEdges[eidx].Property.Weight >= src.Property.Value {
+				g.OnQueueVisit(g, vidx, target, MessageValue(src.OutEdges[eidx].Property.Weight))
+			}
 		}
 		return len(src.OutEdges)
 	}

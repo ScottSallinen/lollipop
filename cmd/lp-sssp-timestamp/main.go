@@ -34,17 +34,9 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 	if sflen >= 3 {
 		weight, err = strconv.ParseFloat(stringFields[2], 32)
 		enforce.ENFORCE(err, "Text file parse error: weight not floats?")
-		// We assume that the value of the timestamp is large enough, 
-		// at least greater than 10.
-		if weight >= 10 {
-			// We set the edge weight to 1/ln(timestamp),
-			// so that newer edges are better and more likely to be selected.
-			weight = 1 / math.Log(weight)
-			//if graph.DEBUG {
-				info("# src = ", src, " dst = ", dst, " weight = ", weight)
-			//}
-		} else {
-			info("Warning: weight should be greater than 10!")
+		// We assume the edge weight is timestamp.
+		if graph.DEBUG {
+			info("# src = ", src, " dst = ", dst, " weight = ", weight)
 		}
 	}
 
@@ -57,9 +49,9 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
 	for vidx := range g.Vertices {
 		ourValue := g.Vertices[vidx].Property.Value
-		//if graph.DEBUG {
+		if graph.DEBUG {
 			info("# vidx = ", vidx, " Id = ", g.Vertices[vidx].Id, " value = ", g.Vertices[vidx].Property.Value)
-		//}
+		}
 		if ourValue < EMPTYVAL {
 			maxValue = math.Max(maxValue, ourValue)
 		}
@@ -72,7 +64,10 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 		} else {
 			for eidx := range g.Vertices[vidx].OutEdges {
 				target := g.Vertices[vidx].OutEdges[eidx].Destination
-				enforce.ENFORCE(g.Vertices[target].Property.Value <= (ourValue + g.Vertices[vidx].OutEdges[eidx].Property.Weight))
+				// The edges' timestamps on the path are not descending.
+				if g.Vertices[vidx].OutEdges[eidx].Property.Weight >= ourValue {
+					enforce.ENFORCE(g.Vertices[target].Property.Value <= (g.Vertices[vidx].OutEdges[eidx].Property.Weight))
+				}
 			}
 		}
 	}
