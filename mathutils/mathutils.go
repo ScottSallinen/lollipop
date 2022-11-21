@@ -2,6 +2,7 @@ package mathutils
 
 import (
 	"math"
+	"math/rand"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -116,4 +117,11 @@ func BatchParallelFor(size int, threads int, applicator func(int, int)) {
 		}(t)
 	}
 	wg.Wait()
+}
+
+func RemoveRandomElement[T any](slice []T) (T, []T) {
+	idx := rand.Intn(len(slice))
+	ret := slice[idx]
+	slice[idx] = slice[len(slice)-1]
+	return ret, slice[:len(slice)-1]
 }
