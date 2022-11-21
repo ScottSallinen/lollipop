@@ -324,21 +324,16 @@ func InjectDeletesRetainFinalStructure[EdgeProp any](sc []graph.StructureChange[
 	ShuffleSC(availableAdds)
 
 	for len(availableAdds) > 0 {
+		var current graph.StructureChange[EdgeProp]
 		if len(previousAdds) > 0 && rand.Float64() < chance {
-			// chance for del
-			ShuffleSC(previousAdds)
-			idx := len(previousAdds) - 1
-			injDel := graph.StructureChange[EdgeProp]{Type: graph.DEL, SrcRaw: previousAdds[idx].SrcRaw, DstRaw: previousAdds[idx].DstRaw, EdgeProperty: previousAdds[idx].EdgeProperty}
-			returnSC = append(returnSC, injDel)
-			availableAdds = append(availableAdds, previousAdds[idx])
-			previousAdds = previousAdds[:idx]
+			current, previousAdds = mathutils.RemoveRandomElement(previousAdds)
+			availableAdds = append(availableAdds, current)
+			current.Type = graph.DEL
 		} else {
-			ShuffleSC(availableAdds)
-			idx := len(availableAdds) - 1
-			returnSC = append(returnSC, availableAdds[idx])
-			previousAdds = append(previousAdds, availableAdds[idx])
-			availableAdds = availableAdds[:idx]
+			current, availableAdds = mathutils.RemoveRandomElement(availableAdds)
+			previousAdds = append(previousAdds, current)
 		}
+		returnSC = append(returnSC, current)
 	}
 	return returnSC
 }
