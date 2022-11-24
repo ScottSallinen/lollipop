@@ -77,7 +77,7 @@ func TestSyncStatic(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 10; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, false, false, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
+			g := LaunchGraphExecution(testGraph.Filename, false, false, testGraph.Source, testGraph.Sink)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -89,7 +89,7 @@ func TestAsyncStatic(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 10; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, true, false, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
+			g := LaunchGraphExecution(testGraph.Filename, true, false, testGraph.Source, testGraph.Sink)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -102,7 +102,7 @@ func TestDynamicGraphs(t *testing.T) {
 	graph.THREADS = 1
 	for i := range dynamicTestGraphs {
 		testGraph := &dynamicTestGraphs[i]
-		g := dynamicGraphExecutionFromSC(testGraph.StructureChanges, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
+		g := dynamicGraphExecutionFromSC(testGraph.StructureChanges, testGraph.Source, testGraph.Sink)
 		maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 		assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("DynamicGraph %v Max flow", i))
 	}
@@ -115,7 +115,7 @@ func TestAsyncDynamicIncremental(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 3; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
+			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -129,7 +129,7 @@ func TestAsyncDynamicIncrementalShuffled(t *testing.T) {
 			graph.THREADS = rand.Intn(8-1) + 1
 			sc := loadAllStructureChanges(testGraph.Filename)
 			framework.ShuffleSC(sc)
-			g := dynamicGraphExecutionFromSC(sc, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
+			g := dynamicGraphExecutionFromSC(sc, testGraph.Source, testGraph.Sink)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -145,7 +145,7 @@ func TestAsyncDynamicWithDelete(t *testing.T) {
 			adjustedStructureChanges := framework.InjectDeletesRetainFinalStructure(rawStructureChanges, 0.33)
 			info(fmt.Sprintf("Number of structure changes with deletes: %v", len(adjustedStructureChanges)))
 
-			g := dynamicGraphExecutionFromSC(adjustedStructureChanges, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
+			g := dynamicGraphExecutionFromSC(adjustedStructureChanges, testGraph.Source, testGraph.Sink)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -183,8 +183,8 @@ func loadAllStructureChanges(path string) []graph.StructureChange[EdgeProp] {
 	return result
 }
 
-func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, sink, sourceHeight uint32) *Graph {
-	frame, g := GetFrameworkAndGraph(source, sink, sourceHeight)
+func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, sink uint32) *Graph {
+	frame, g := GetFrameworkAndGraph(source, sink)
 
 	frame.Init(g, true, true)
 

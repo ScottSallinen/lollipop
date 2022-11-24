@@ -59,7 +59,8 @@ const (
 	RetractRequest    MessageType = 7
 	RetractConfirm    MessageType = 8
 	RetractReject     MessageType = 9
-	MessageTypesCount             = 10
+	NewMaxVertexCount MessageType = 10
+	MessageTypesCount             = 11
 )
 
 var MessageCounter = make([]uint64, MessageTypesCount)
@@ -99,6 +100,8 @@ func (t MessageType) String() string {
 		return "RetractConfirm"
 	case RetractReject:
 		return "RetractReject"
+	case NewMaxVertexCount:
+		return "NewMaxVertexCount"
 	default:
 		return fmt.Sprintf("%d", t)
 	}

@@ -57,11 +57,38 @@ func OnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue) (msgSent int) {
 		m := &VisitMsg[messageIndex]
 		m.PrintIfNeeded(g, v, vidx)
 		CountMessage(m)
-		msgSent += onReceivingMessage(g, vidx, m)
+		if m.Type == NewMaxVertexCount {
+			msgSent += onNewMaxVertexCount(g, vidx, m.Value)
+		} else {
+			if m.Type == Init {
+				if v.Property.Type == Source {
+					msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
+				}
+				msgSent += VertexCountHelper.NewVertex(g, vidx)
+			}
+			msgSent += onReceivingMessage(g, vidx, m)
+		}
 	}
+	//if v.Property.Type != Source && v.Property.Excess >= 0 {
+	//	msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, false)
+	//}
 	return
 }
 
 func OnFinish(_ *Graph) error {
 	return nil
+}
+
+func send(g *Graph, m MessageType, sidx, didx uint32, value int64) (msgSent int) {
+	g.OnQueueVisit(g, sidx, didx, []Message{{
+		Type:   m,
+		Source: sidx,
+		Height: g.Vertices[sidx].Property.Height,
+		Value:  value,
+	}})
+	return 1
+}
+
+func getVertexCount() int64 {
+	return VertexCountHelper.GetVertexCount()
 }

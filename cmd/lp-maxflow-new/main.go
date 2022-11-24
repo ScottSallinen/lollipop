@@ -39,7 +39,7 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	enforce.ENFORCE(sink.Property.Type == Sink)
 
 	// Check heights
-	enforce.ENFORCE(source.Property.Height == int64(len(g.Vertices)), "source height != # of vertices")
+	enforce.ENFORCE(source.Property.Height >= int64(len(g.Vertices)), "source height < # of vertices")
 	enforce.ENFORCE(sink.Property.Height == 0, "sink height != 0")
 
 	// Make sure all messages are processed
@@ -91,9 +91,8 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	return nil
 }
 
-func GetFrameworkAndGraph(sourceRaw, sinkRaw, sourceHeight uint32) (*framework.Framework[VertexProp, EdgeProp, MessageValue], *Graph) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw uint32) (*framework.Framework[VertexProp, EdgeProp, MessageValue], *Graph) {
 	enforce.ENFORCE(sourceRaw != sinkRaw)
-	tempVertexCount = sourceHeight
 
 	g := Graph{}
 	g.Options = graph.GraphOptions[MessageValue]{
@@ -123,7 +122,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, sourceHeight uint32) (*framework.F
 		switch v.Id {
 		case sourceRaw:
 			v.Property.Type = Source
-			v.Property.Height = int64(sourceHeight)
+			v.Property.Height = 0
 		case sinkRaw:
 			v.Property.Type = Sink
 			v.Property.Height = 0
@@ -138,11 +137,13 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, sourceHeight uint32) (*framework.F
 		return OnCheckCorrectness(g, sourceRaw, sinkRaw)
 	}
 
+	VertexCountHelper.Reset()
+
 	return &frame, &g
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, sourceHeight uint32) *Graph {
-	frame, g := GetFrameworkAndGraph(source, sink, sourceHeight)
+func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink uint32) *Graph {
+	frame, g := GetFrameworkAndGraph(source, sink)
 	frame.Launch(g, gName, async, dynamic)
 	return g
 }
@@ -156,7 +157,6 @@ func main() {
 	tptr := flag.Int("t", 32, "Thread count")
 	source := flag.Uint("source", 0, "Raw ID of the source vertex")
 	sink := flag.Uint("source", 1, "Raw ID of the sink vertex")
-	vertices := flag.Uint("vertices", 1, "Number of vertices") // TODO: remove
 	flag.Parse()
 
 	graph.THREADS = *tptr
@@ -167,7 +167,7 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*vertices))
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink))
 
 	g.ComputeGraphStats(false, false)
 

@@ -6,18 +6,6 @@ import (
 	"math"
 )
 
-var tempVertexCount uint32
-
-func send(g *Graph, m MessageType, sidx, didx uint32, value int64) (msgSent int) {
-	g.OnQueueVisit(g, sidx, didx, []Message{{
-		Type:   m,
-		Source: sidx,
-		Height: g.Vertices[sidx].Property.Height,
-		Value:  value,
-	}})
-	return 1
-}
-
 func discharge(g *Graph, vidx uint32) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	if v.Excess <= 0 {
@@ -99,14 +87,17 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 	return onMsg[m.Type](g, vidx, m.Source, m.Value)
 }
 
-func onNewMaxVertexCount(g *Graph, vidx uint32, newCount uint32) (msgSent int) {
+func onNewMaxVertexCount(g *Graph, vidx uint32, newCount int64) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	if v.Type == Source {
-		v.Height = int64(newCount)
+		v.Height = newCount
+		for n := range v.Nbrs {
+			msgSent += send(g, NewHeight, vidx, n, EmptyValue)
+		}
 		msgSent += discharge(g, vidx)
 	}
 	if v.Excess < 0 {
-		msgSent += descendAndPull(g, vidx, -int64(newCount))
+		msgSent += descendAndPull(g, vidx, -newCount)
 	}
 	return
 }
@@ -134,10 +125,6 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 	return
 }
 
-func getVertexCount() uint32 {
-	return tempVertexCount // TODO
-}
-
 // Message Handlers
 
 var onMsg = []func(g *Graph, vidx, sidx uint32, value int64) (msgSent int){
@@ -147,12 +134,6 @@ var onMsg = []func(g *Graph, vidx, sidx uint32, value int64) (msgSent int){
 
 func onMsgInit(g *Graph, vidx, _ uint32, _ int64) (msgSent int) {
 	v := &g.Vertices[vidx]
-	switch v.Property.Type {
-	case Source:
-		v.Property.Height = int64(getVertexCount())
-	case Sink:
-		v.Property.Height = 0
-	}
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
 		if e.Property.Capacity > 0 {
@@ -213,7 +194,10 @@ func onMsgPull(g *Graph, vidx, sidx uint32, _ int64) (msgSent int) {
 }
 
 func onMsgCapacityIncreased(g *Graph, vidx, sidx uint32, _ int64) (msgSent int) {
-	return send(g, Pull, vidx, sidx, EmptyValue)
+	if g.Vertices[vidx].Property.Type != Source { // OPTIMIZED, TODO: Update proof for this
+		msgSent += send(g, Pull, vidx, sidx, EmptyValue)
+	}
+	return
 }
 
 func onMsgRetractRequest(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
@@ -229,7 +213,8 @@ func onMsgRetractRequest(g *Graph, vidx, sidx uint32, amount int64) (msgSent int
 			ResCap: v.Nbrs[sidx].ResCap - succAmt,
 		}
 		if v.Excess < 0 {
-			msgSent += descendAndPull(g, vidx, -int64(getVertexCount()))
+			msgSent += descendAndPull(g, vidx, -getVertexCount())
+			msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
 		}
 	}
 
