@@ -10,26 +10,111 @@ import (
 
 const EMPTYVAL = math.MaxFloat64
 
-type VertexProperty struct {
-	Value   float64
-	Scratch float64 // Intermediary accumulator
+// use struct{} instead of bool to save memory
+type VoidItem struct{}
+
+var void_member VoidItem
+
+type PathProperty struct {
+	Weight float64
+	Timestamp float64
 }
 
-func (p *VertexProperty) String() string {
-	return fmt.Sprintf("%.4f", p.Value)
+type PathMap map[PathProperty]VoidItem
+
+type VertexProperty struct {
+	Value   PathMap
+	Scratch PathMap // Intermediary accumulator
 }
+
+type MessageValue PathMap
 
 type EdgeProperty struct {
 	Weight float64
+	Timestamp float64
 }
 
-type MessageValue float64
+func (p *VertexProperty) String() string {
+	var str string
+	for path := range p.Value {
+		str += fmt.Sprintf("{weight: %.4f timestamp: %.4f} ", path.Weight, path.Timestamp)
+	}
+	return "{" + str + "}"
+}
+
+func IsAbleForward(set PathMap, timestamp float64) bool {
+	for path := range set {
+		if path.Timestamp <= timestamp {
+			return true
+		}
+	}
+	return false
+}
+
+func ForwardPathSet(set PathMap, edge EdgeProperty) PathMap {
+	newset := make(PathMap)
+	for path := range set {
+		if path.Timestamp <= edge.Timestamp {
+			newset[PathProperty{Weight: path.Weight + edge.Weight, Timestamp: edge.Timestamp}] = void_member
+		}
+	}
+	return newset
+}
+
+func IsAlbeUpdate(set PathMap, data PathMap) bool {
+	if len(data) == 0 {
+		return false
+	}
+	for message := range data {
+		_, exists := set[message]
+		if (exists) {
+			continue
+		}
+		if (len(set) == 0) {
+			return true;
+		}
+		for path := range set {
+			// remove from set
+			if (message.Weight <= path.Weight) && (message.Timestamp <= path.Timestamp) && (!(message.Weight == path.Weight) && (message.Timestamp == path.Timestamp)) {
+				return true
+			}
+			// add_message
+			if (message.Weight < path.Weight) || (message.Timestamp < path.Timestamp) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func UpdatePathSet(set PathMap, data MessageValue) (newInfo bool) {
+	newInfo = false
+	for message := range data {
+		_, exists := set[message]
+		if (exists) {
+			continue
+		}
+		add_message := len(set) == 0
+		for path := range set {
+			if (message.Weight <= path.Weight) && (message.Timestamp <= path.Timestamp) && (!(message.Weight == path.Weight) && (message.Timestamp == path.Timestamp)) {
+				delete(set, path)
+				newInfo = true
+			}
+			if !add_message && ((message.Weight < path.Weight) || (message.Timestamp < path.Timestamp)) {
+				add_message = true
+			}
+		}
+		if add_message {
+			set[message] = void_member
+			newInfo = true
+		}
+	}
+	return newInfo
+}
 
 func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
 	dst.Mutex.Lock()
-	tmp := dst.Property.Scratch
-	dst.Property.Scratch = math.Min(dst.Property.Scratch, float64(data))
-	newInfo = tmp != dst.Property.Scratch
+	newInfo = UpdatePathSet(dst.Property.Scratch, data)
 	dst.Mutex.Unlock()
 	return newInfo
 }
@@ -43,8 +128,8 @@ func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) Messa
 }
 
 func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
-	g.Vertices[vidx].Property.Value = EMPTYVAL
-	g.Vertices[vidx].Property.Scratch = EMPTYVAL
+	g.Vertices[vidx].Property.Value = make(PathMap)
+	g.Vertices[vidx].Property.Scratch = make(PathMap)
 }
 
 // OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
@@ -55,13 +140,13 @@ func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 		// do nothing, we had messaged all edges
 	} else {
 		src := &g.Vertices[sidx]
-		if src.Property.Value < EMPTYVAL { // Only useful if we are connected
+		if len(src.Property.Value) > 0 { // Only useful if we are connected
 			// Message only new edges.
 			for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
 				target := src.OutEdges[eidx].Destination
 				// The edges' timestamps on the path are not descending.
-				if src.OutEdges[eidx].Property.Weight >= src.Property.Value {
-					g.OnQueueVisit(g, sidx, target, MessageValue(src.OutEdges[eidx].Property.Weight))
+				if IsAbleForward(src.Property.Value, src.OutEdges[eidx].Property.Timestamp) {
+					g.OnQueueVisit(g, sidx, target, MessageValue(ForwardPathSet(src.Property.Value, src.OutEdges[eidx].Property)))
 				}
 			}
 		}
@@ -75,15 +160,15 @@ func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx 
 func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
 	src := &g.Vertices[vidx]
 	// Only act on an improvement to shortest path.
-	if src.Property.Value > float64(data) {
-		// Update our own value.
-		src.Property.Value = float64(data)
+	// Update our own value.
+	isUpdate := UpdatePathSet(src.Property.Value, data)
+	if isUpdate {
 		// Send an update to all neighbours.
 		for eidx := range src.OutEdges {
 			target := src.OutEdges[eidx].Destination
 			// The edges' timestamps on the path are not descending.
-			if src.OutEdges[eidx].Property.Weight >= src.Property.Value {
-				g.OnQueueVisit(g, vidx, target, MessageValue(src.OutEdges[eidx].Property.Weight))
+			if IsAbleForward(src.Property.Value, src.OutEdges[eidx].Property.Timestamp) {
+				g.OnQueueVisit(g, vidx, target, MessageValue(ForwardPathSet(src.Property.Value, src.OutEdges[eidx].Property)))
 			}
 		}
 		return len(src.OutEdges)

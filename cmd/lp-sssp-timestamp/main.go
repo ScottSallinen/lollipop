@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,54 +23,55 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 	stringFields := strings.Fields(lineText)
 
 	sflen := len(stringFields)
-	enforce.ENFORCE(sflen == 2 || sflen == 3)
+	enforce.ENFORCE(sflen == 2 || sflen == 3 || sflen == 4)
 
 	src, _ := strconv.Atoi(stringFields[0])
 	dst, _ := strconv.Atoi(stringFields[1])
 
 	weight := 1.0
+	timestamp := 0.0
 	var err error
-	if sflen >= 3 {
+	if sflen >= 4 {
 		weight, err = strconv.ParseFloat(stringFields[2], 32)
 		enforce.ENFORCE(err, "Text file parse error: weight not floats?")
+		timestamp, err = strconv.ParseFloat(stringFields[3], 32)
+		enforce.ENFORCE(err, "Text file parse error: timestamp not floats?")
 		// We assume the edge weight is timestamp.
 		if graph.DEBUG {
-			info("# src = ", src, " dst = ", dst, " weight = ", weight)
+			info("# src = ", src, " dst = ", dst, " weight = ", weight, " timestamp = ", timestamp)
 		}
 	}
 
-	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{Weight: weight}}
+	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{Weight: weight, Timestamp: timestamp}}
 }
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
 func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	maxValue := 0.0
 	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
 	for vidx := range g.Vertices {
 		ourValue := g.Vertices[vidx].Property.Value
-		if graph.DEBUG {
+		//if graph.DEBUG {
 			info("# vidx = ", vidx, " Id = ", g.Vertices[vidx].Id, " value = ", g.Vertices[vidx].Property.Value)
-		}
-		if ourValue < EMPTYVAL {
-			maxValue = math.Max(maxValue, ourValue)
-		}
-
+		//}
 		if initVal, ok := g.Options.InitMessages[g.Vertices[vidx].Id]; ok {
-			enforce.ENFORCE(ourValue == float64(initVal), ourValue)
+			enforce.ENFORCE(len(ourValue) == 1, ourValue)
+			for item := range ourValue {
+				_, exists := initVal[item]
+				enforce.ENFORCE(exists, ourValue)
+			}
 		}
-		if ourValue == EMPTYVAL { // we were never visted
+		if len(ourValue) == 0 { // we were never visted
 
 		} else {
 			for eidx := range g.Vertices[vidx].OutEdges {
 				target := g.Vertices[vidx].OutEdges[eidx].Destination
 				// The edges' timestamps on the path are not descending.
-				if g.Vertices[vidx].OutEdges[eidx].Property.Weight >= ourValue {
-					enforce.ENFORCE(g.Vertices[target].Property.Value <= (g.Vertices[vidx].OutEdges[eidx].Property.Weight))
+				if IsAbleForward(ourValue, g.Vertices[vidx].OutEdges[eidx].Property.Timestamp) {
+					enforce.ENFORCE(!IsAlbeUpdate(g.Vertices[target].Property.Value, ForwardPathSet(ourValue, g.Vertices[vidx].OutEdges[eidx].Property)))
 				}
 			}
 		}
 	}
-	info("maxValue ", maxValue)
 	return nil
 }
 
@@ -81,8 +81,14 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 	numEdges := uint64(0)
 
 	for v := range g.Vertices {
-		ia[v] = oracle.Vertices[v].Property.Value
-		ib[v] = g.Vertices[v].Property.Value
+		for path := range oracle.Vertices[v].Property.Value {
+			ia[v] = path.Weight
+			break
+		}
+		for path := range g.Vertices[v].Property.Value {
+			ib[v] = path.Weight
+			break
+		}
 		numEdges += uint64(len(g.Vertices[v].OutEdges))
 	}
 
@@ -110,13 +116,20 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.OracleComparison = OracleComparison
 	frame.EdgeParser = EdgeParser
 
+	empty_set := make(PathMap)
+	empty_set[PathProperty{Weight: EMPTYVAL, Timestamp: EMPTYVAL}] = void_member
+	initial_set := make(PathMap)
+	initial_set[PathProperty{Weight: 1.0, Timestamp: 0}] = void_member
+	initial_map := make(map[uint32]MessageValue)
+	initial_map[1] = MessageValue(initial_set)
+
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.Options = graph.GraphOptions[MessageValue]{
 		Undirected:    undirected,
 		OracleCompare: oracleRun,
 		SourceInit:    true,
-		InitMessages:  map[uint32]MessageValue{rawSrc: 1.0},
-		EmptyVal:      EMPTYVAL,
+		InitMessages:  initial_map,
+		EmptyVal:      MessageValue(empty_set),
 	}
 
 	frame.Launch(g, gName, async, dynamic)
@@ -129,7 +142,7 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 }
 
 func main() {
-	gptr := flag.String("g", "data/test.txt", "Graph file")
+	gptr := flag.String("g", "data/test-weight-timestamp.txt", "Graph file")
 	aptr := flag.Bool("a", false, "Use async")
 	dptr := flag.Bool("d", false, "Dynamic")
 	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")

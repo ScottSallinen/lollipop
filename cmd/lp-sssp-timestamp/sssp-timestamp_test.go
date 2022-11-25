@@ -11,15 +11,24 @@ import (
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
 	top := prefix
 	sum := 0.0
 	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Scratch)
-		sum += g.Vertices[vidx].Property.Value
+		Value := 0.0
+		Scratch := 0.0
+		for path := range g.Vertices[vidx].Property.Value {
+			Value = path.Weight
+			break
+		}
+		for path := range g.Vertices[vidx].Property.Scratch {
+			Scratch = path.Weight
+			break
+		}
+		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, Value, Scratch)
+		sum += Value
 	}
 	info(top + " : " + fmt.Sprintf("%.3f", sum))
 }
@@ -27,13 +36,37 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 // Expectation when 1 is src.
 // TODO: Test other sources!
 func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
-	allowedVariance := float64(0.001) // ?????
+	//allowedVariance := float64(0.001) // ?????
 
-	expectations := []float64{27, 1, 24, 25, 21, 26, EMPTYVAL}
+	expectation0 := make(PathMap)
+	expectation0[PathProperty{Weight: 3.5, Timestamp: 27}] = void_member
+	expectation0[PathProperty{Weight: 4, Timestamp: 26}] = void_member
+	expectation1 := make(PathMap)
+	expectation1[PathProperty{Weight: 1, Timestamp: 0}] = void_member
+	expectation2 := make(PathMap)
+	expectation2[PathProperty{Weight: 3, Timestamp: 23}] = void_member
+	expectation3 := make(PathMap)
+	expectation3[PathProperty{Weight: 3, Timestamp: 24}] = void_member
+	expectation4 := make(PathMap)
+	expectation4[PathProperty{Weight: 2, Timestamp: 21}] = void_member
+	expectation5 := make(PathMap)
+	expectation5[PathProperty{Weight: 3, Timestamp: 25}] = void_member
+	expectation6 := make(PathMap)
+	expectations := make(map[uint32]MessageValue)
+	expectations[0] = MessageValue(expectation0)
+	expectations[1] = MessageValue(expectation1)
+	expectations[2] = MessageValue(expectation2)
+	expectations[3] = MessageValue(expectation3)
+	expectations[4] = MessageValue(expectation4)
+	expectations[5] = MessageValue(expectation5)
+	expectations[6] = MessageValue(expectation6)
+
 	for i := range expectations {
-		if !mathutils.FloatEquals(g.Vertices[g.VertexMap[uint32(i)]].Property.Value, expectations[i], allowedVariance) {
-		//if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
-			t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value, " expected ", expectations[i])
+		for item := range expectations[i] {
+			_, exists := g.Vertices[g.VertexMap[uint32(i)]].Property.Value[item]
+			if exists {
+				t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value[item], " expected ", 1)
+			}
 		}
 	}
 }
@@ -41,7 +74,7 @@ func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue],
 func TestAsyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test-timestamp.txt", true, false, false, false, 1, false)
+		g := LaunchGraphExecution("../../data/test-weight-timestamp.txt", true, false, false, false, 1, false)
 		PrintVertexProps(g, "")
 		testGraphExpect(g, t)
 	}
@@ -49,7 +82,7 @@ func TestAsyncStatic(t *testing.T) {
 func TestSyncStatic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test-timestamp.txt", false, false, false, false, 1, false)
+		g := LaunchGraphExecution("../../data/test-weight-timestamp.txt", false, false, false, false, 1, false)
 		PrintVertexProps(g, "")
 		testGraphExpect(g, t)
 	}
@@ -57,7 +90,7 @@ func TestSyncStatic(t *testing.T) {
 func TestAsyncDynamic(t *testing.T) {
 	for tcount := 0; tcount < 10; tcount++ {
 		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test-timestamp.txt", true, true, false, false, 1, false)
+		g := LaunchGraphExecution("../../data/test-weight-timestamp.txt", true, true, false, false, 1, false)
 		testGraphExpect(g, t)
 		PrintVertexProps(g, "")
 	}
@@ -74,11 +107,18 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSr
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 
+	empty_set := make(PathMap)
+	empty_set[PathProperty{Weight: EMPTYVAL, Timestamp: EMPTYVAL}] = void_member
+	initial_set := make(PathMap)
+	initial_set[PathProperty{Weight: 1.0, Timestamp: 0}] = void_member
+	initial_map := make(map[uint32]MessageValue)
+	initial_map[1] = MessageValue(initial_set)
+
 	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
 	g.Options = graph.GraphOptions[MessageValue]{
 		SourceInit:   true,
-		InitMessages: map[uint32]MessageValue{rawSrc: 1.0},
-		EmptyVal:     EMPTYVAL,
+		InitMessages:  initial_map,
+		EmptyVal:      MessageValue(empty_set),
 	}
 
 	frame.Init(g, true, true)
@@ -133,7 +173,7 @@ func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, E
 
 func TestDynamicCreation(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	allowedVariance := float64(0.001) // ?????
+	//allowedVariance := float64(0.001) // ?????
 
 	testFail := false
 
@@ -143,23 +183,23 @@ func TestDynamicCreation(t *testing.T) {
 		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
 
 		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{21}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{22}},
-			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{23}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{24}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{25}},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{26}},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{27}},
-			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{28}},
+			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4, EdgeProperty: EdgeProperty{Weight: 1, Timestamp:21}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1, EdgeProperty: EdgeProperty{Weight: 1, Timestamp:22}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2, EdgeProperty: EdgeProperty{Weight: 1, Timestamp:23}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3, EdgeProperty: EdgeProperty{Weight: 1, Timestamp:24}},
+			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5, EdgeProperty: EdgeProperty{Weight: 1, Timestamp:25}},
+			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0, EdgeProperty: EdgeProperty{Weight: 1, Timestamp:26}},
+			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0, EdgeProperty: EdgeProperty{Weight: 0.5, Timestamp:27}},
+			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2, EdgeProperty: EdgeProperty{Weight: 1, Timestamp:28}},
 		}
 		framework.ShuffleSC(rawTestGraph)
 
 		gDyn := DynamicGraphExecutionFromSC(rawTestGraph, 1)
 
-		gStatic := LaunchGraphExecution("../../data/test-timestamp.txt", true, false, false, false, 1, false)
+		gStatic := LaunchGraphExecution("../../data/test-weight-timestamp.txt", true, false, false, false, 1, false)
 
-		a := make([]float64, len(gDyn.Vertices))
-		b := make([]float64, len(gStatic.Vertices))
+		//a := make([]float64, len(gDyn.Vertices))
+		//b := make([]float64, len(gStatic.Vertices))
 
 		CheckGraphStructureEquality(t, gDyn, gStatic)
 
@@ -170,10 +210,10 @@ func TestDynamicCreation(t *testing.T) {
 			g1values := &gDyn.Vertices[vidx]
 			g2values := &gStatic.Vertices[g2idx]
 
-			a[vidx] = g1values.Property.Value
-			b[vidx] = g2values.Property.Value
+			//a[vidx] = g1values.Property.Value
+			//b[vidx] = g2values.Property.Value
 
-			if !mathutils.FloatEquals(g1values.Property.Value, g2values.Property.Value, allowedVariance) {
+			if IsAlbeUpdate(g1values.Property.Value, g2values.Property.Value) || IsAlbeUpdate(g2values.Property.Value, g1values.Property.Value) {
 				PrintVertexProps(gStatic, "S ")
 				PrintVertexProps(gDyn, "D ")
 				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
