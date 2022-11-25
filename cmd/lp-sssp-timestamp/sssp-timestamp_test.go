@@ -64,7 +64,7 @@ func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue],
 	for i := range expectations {
 		for item := range expectations[i] {
 			_, exists := g.Vertices[g.VertexMap[uint32(i)]].Property.Value[item]
-			if exists {
+			if !exists {
 				t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value[item], " expected ", 1)
 			}
 		}
