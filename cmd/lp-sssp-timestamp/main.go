@@ -47,22 +47,26 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
 
 // OnCheckCorrectness: Performs some sanity checks for correctness.
 func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide
+	// Denote vertices that claim unvisted, and ensure out edges are at least as good as we could provide\
+	g.ComputeInEdges()
 	for vidx := range g.Vertices {
 		ourValue := g.Vertices[vidx].Property.Value
 		//if graph.DEBUG {
 			info("# vidx = ", vidx, " Id = ", g.Vertices[vidx].Id, " value = ", g.Vertices[vidx].Property.Value)
 		//}
+		isInitVal := 0
 		if initVal, ok := g.Options.InitMessages[g.Vertices[vidx].Id]; ok {
 			enforce.ENFORCE(len(ourValue) == 1, ourValue)
 			for item := range ourValue {
 				_, exists := initVal[item]
 				enforce.ENFORCE(exists, ourValue)
 			}
-		}
+			isInitVal = 1
+		}	
 		if len(ourValue) == 0 { // we were never visted
 
 		} else {
+			enforce.ENFORCE(len(ourValue) <= len(g.Vertices[vidx].InEdges) + isInitVal)
 			for eidx := range g.Vertices[vidx].OutEdges {
 				target := g.Vertices[vidx].OutEdges[eidx].Destination
 				// The edges' timestamps on the path are not descending.
