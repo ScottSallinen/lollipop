@@ -54,24 +54,24 @@ func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValu
 		//if graph.DEBUG {
 			info("# vidx = ", vidx, " Id = ", g.Vertices[vidx].Id, " value = ", g.Vertices[vidx].Property.Value)
 		//}
+		// Check initial point and value
 		isInitVal := 0
 		if initVal, ok := g.Options.InitMessages[g.Vertices[vidx].Id]; ok {
-			enforce.ENFORCE(len(ourValue) == 1, ourValue)
-			for item := range ourValue {
-				_, exists := initVal[item]
-				enforce.ENFORCE(exists, ourValue)
-			}
 			isInitVal = 1
-		}	
+			enforce.ENFORCE(len(initVal) == 1 && len(ourValue) == 1 && 
+				initVal[0].Timestamp == ourValue[0].Timestamp && 
+				initVal[0].Weight == ourValue[0].Weight, ourValue)
+		}
 		if len(ourValue) == 0 { // we were never visted
 
 		} else {
+			// Check that the total possible paths for a given vertex should not exceed the number of incoming edges
 			enforce.ENFORCE(len(ourValue) <= len(g.Vertices[vidx].InEdges) + isInitVal)
 			for eidx := range g.Vertices[vidx].OutEdges {
 				target := g.Vertices[vidx].OutEdges[eidx].Destination
 				// The edges' timestamps on the path are not descending.
 				if IsAbleForward(ourValue, g.Vertices[vidx].OutEdges[eidx].Property.Timestamp) {
-					enforce.ENFORCE(!IsAlbeUpdate(g.Vertices[target].Property.Value, ForwardPathSet(ourValue, g.Vertices[vidx].OutEdges[eidx].Property)))
+					enforce.ENFORCE(!IsAbleUpdate(g.Vertices[target].Property.Value, ForwardPathSet(ourValue, g.Vertices[vidx].OutEdges[eidx].Property)))
 				}
 			}
 		}
@@ -85,13 +85,11 @@ func OracleComparison(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 	numEdges := uint64(0)
 
 	for v := range g.Vertices {
-		for path := range oracle.Vertices[v].Property.Value {
-			ia[v] = path.Weight
-			break
+		if len(oracle.Vertices[v].Property.Value) > 0 {
+			ia[v] = oracle.Vertices[v].Property.Value[0].Weight;
 		}
-		for path := range g.Vertices[v].Property.Value {
-			ib[v] = path.Weight
-			break
+		if len(g.Vertices[v].Property.Value) > 0 {
+			ib[v] = g.Vertices[v].Property.Value[0].Weight;
 		}
 		numEdges += uint64(len(g.Vertices[v].OutEdges))
 	}
@@ -120,10 +118,8 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, oracleRun bool
 	frame.OracleComparison = OracleComparison
 	frame.EdgeParser = EdgeParser
 
-	empty_set := make(PathMap)
-	empty_set[PathProperty{Weight: EMPTYVAL, Timestamp: EMPTYVAL}] = void_member
-	initial_set := make(PathMap)
-	initial_set[PathProperty{Weight: 1.0, Timestamp: 0}] = void_member
+	empty_set := PathSet{PathProperty{Weight: EMPTYVAL, Timestamp: EMPTYVAL}}
+	initial_set := PathSet{PathProperty{Weight: 1.0, Timestamp: 0}}
 	initial_map := make(map[uint32]MessageValue)
 	initial_map[1] = MessageValue(initial_set)
 

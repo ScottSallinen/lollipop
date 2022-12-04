@@ -19,13 +19,11 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 	for vidx := range g.Vertices {
 		Value := 0.0
 		Scratch := 0.0
-		for path := range g.Vertices[vidx].Property.Value {
-			Value = path.Weight
-			break
+		if len(g.Vertices[vidx].Property.Value) > 0 {
+			Value = g.Vertices[vidx].Property.Value[0].Weight;
 		}
-		for path := range g.Vertices[vidx].Property.Scratch {
-			Scratch = path.Weight
-			break
+		if len(g.Vertices[vidx].Property.Scratch) > 0 {
+			Scratch = g.Vertices[vidx].Property.Scratch[0].Weight;
 		}
 		top += fmt.Sprintf("%d:[%.3f,%.3f] ", g.Vertices[vidx].Id, Value, Scratch)
 		sum += Value
@@ -38,34 +36,26 @@ func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]
 func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
 	//allowedVariance := float64(0.001) // ?????
 
-	expectation0 := make(PathMap)
-	expectation0[PathProperty{Weight: 3.5, Timestamp: 27}] = void_member
-	expectation0[PathProperty{Weight: 4, Timestamp: 26}] = void_member
-	expectation1 := make(PathMap)
-	expectation1[PathProperty{Weight: 1, Timestamp: 0}] = void_member
-	expectation2 := make(PathMap)
-	expectation2[PathProperty{Weight: 3, Timestamp: 23}] = void_member
-	expectation3 := make(PathMap)
-	expectation3[PathProperty{Weight: 3, Timestamp: 24}] = void_member
-	expectation4 := make(PathMap)
-	expectation4[PathProperty{Weight: 2, Timestamp: 21}] = void_member
-	expectation5 := make(PathMap)
-	expectation5[PathProperty{Weight: 3, Timestamp: 25}] = void_member
-	expectation6 := make(PathMap)
 	expectations := make(map[uint32]MessageValue)
-	expectations[0] = MessageValue(expectation0)
-	expectations[1] = MessageValue(expectation1)
-	expectations[2] = MessageValue(expectation2)
-	expectations[3] = MessageValue(expectation3)
-	expectations[4] = MessageValue(expectation4)
-	expectations[5] = MessageValue(expectation5)
-	expectations[6] = MessageValue(expectation6)
+	expectations[0] = MessageValue(PathSet{PathProperty{Weight: 4, Timestamp: 26}, PathProperty{Weight: 3.5, Timestamp: 27}})
+	expectations[1] = MessageValue(PathSet{PathProperty{Weight: 1, Timestamp: 0}})
+	expectations[2] = MessageValue(PathSet{PathProperty{Weight: 3, Timestamp: 23}})
+	expectations[3] = MessageValue(PathSet{PathProperty{Weight: 3, Timestamp: 24}})
+	expectations[4] = MessageValue(PathSet{PathProperty{Weight: 2, Timestamp: 21}})
+	expectations[5] = MessageValue(PathSet{PathProperty{Weight: 3, Timestamp: 25}})
+	expectations[6] = MessageValue(PathSet{})
 
 	for i := range expectations {
-		for item := range expectations[i] {
-			_, exists := g.Vertices[g.VertexMap[uint32(i)]].Property.Value[item]
-			if !exists {
-				t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value[item], " expected ", 1)
+		if (len(expectations[i]) != len(g.Vertices[g.VertexMap[uint32(i)]].Property.Value)) {
+			t.Error(g.VertexMap[uint32(i)], " size is ", len(g.Vertices[g.VertexMap[uint32(i)]].Property.Value), " expected ", len(expectations[i]))
+		}
+		if (len(expectations[i]) == 0) {
+			continue
+		}
+		for k, expect := range expectations[i] {
+			ourValue := g.Vertices[g.VertexMap[uint32(i)]].Property.Value[k]
+			if ourValue.Timestamp != expect.Timestamp || ourValue.Weight != expect.Weight {
+				t.Error(g.VertexMap[uint32(i)], " is {Weight: ", ourValue.Weight, ", Timestamp: ", ourValue.Timestamp, "} expected {Weight: ", expect.Weight, ", Timestamp: ", expect.Timestamp, "}")
 			}
 		}
 	}
@@ -106,11 +96,9 @@ func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], rawSr
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
-
-	empty_set := make(PathMap)
-	empty_set[PathProperty{Weight: EMPTYVAL, Timestamp: EMPTYVAL}] = void_member
-	initial_set := make(PathMap)
-	initial_set[PathProperty{Weight: 1.0, Timestamp: 0}] = void_member
+	
+	empty_set := PathSet{PathProperty{Weight: EMPTYVAL, Timestamp: EMPTYVAL}}
+	initial_set := PathSet{PathProperty{Weight: 1.0, Timestamp: 0}}
 	initial_map := make(map[uint32]MessageValue)
 	initial_map[1] = MessageValue(initial_set)
 
@@ -213,7 +201,12 @@ func TestDynamicCreation(t *testing.T) {
 			//a[vidx] = g1values.Property.Value
 			//b[vidx] = g2values.Property.Value
 
-			if IsAlbeUpdate(g1values.Property.Value, g2values.Property.Value) || IsAlbeUpdate(g2values.Property.Value, g1values.Property.Value) {
+			if (len(g1values.Property.Value) == 0 && len(g2values.Property.Value) == 0) {
+				continue
+			}
+			_, flag1 := UpdatePathSet(g1values.Property.Value, MessageValue(g2values.Property.Value))
+			_, flag2 := UpdatePathSet(g2values.Property.Value, MessageValue(g1values.Property.Value))
+			if flag1 || flag2 {
 				PrintVertexProps(gStatic, "S ")
 				PrintVertexProps(gDyn, "D ")
 				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
