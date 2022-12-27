@@ -61,7 +61,11 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 			sumEdgeCapacityOriginal := int64(0)
 			sumEdgeCapacityResidual := int64(0)
 			for ei := range v.OutEdges {
-				sumEdgeCapacityOriginal += int64(v.OutEdges[ei].Property.Capacity)
+				e := &v.OutEdges[ei]
+				// ignore loops and edges to the source
+				if e.Destination != uint32(vi) && e.Destination != g.VertexMap[sourceRaw] {
+					sumEdgeCapacityOriginal += int64(v.OutEdges[ei].Property.Capacity)
+				}
 			}
 			for _, neighbour := range v.Property.Nbrs {
 				sumEdgeCapacityResidual += neighbour.ResCap

@@ -52,15 +52,10 @@ const (
 	Unspecified       MessageType = 0
 	Init              MessageType = 1
 	NewHeight         MessageType = 2
-	PushRequest       MessageType = 3
-	PushReject        MessageType = 4
-	Pull              MessageType = 5
-	CapacityIncreased MessageType = 6
-	RetractRequest    MessageType = 7
-	RetractConfirm    MessageType = 8
-	RetractReject     MessageType = 9
-	NewMaxVertexCount MessageType = 10
-	MessageTypesCount             = 11
+	Push              MessageType = 3
+	RetractRequest    MessageType = 4
+	NewMaxVertexCount MessageType = 5
+	MessageTypesCount             = 6
 )
 
 var MessageCounter = make([]uint64, MessageTypesCount)
@@ -86,20 +81,10 @@ func (t MessageType) String() string {
 		return "Init"
 	case NewHeight:
 		return "NewHeight"
-	case PushRequest:
-		return "PushRequest"
-	case PushReject:
-		return "PushReject"
-	case Pull:
-		return "Pull"
-	case CapacityIncreased:
-		return "CapacityIncreased"
+	case Push:
+		return "Push"
 	case RetractRequest:
 		return "RetractRequest"
-	case RetractConfirm:
-		return "RetractConfirm"
-	case RetractReject:
-		return "RetractReject"
 	case NewMaxVertexCount:
 		return "NewMaxVertexCount"
 	default:

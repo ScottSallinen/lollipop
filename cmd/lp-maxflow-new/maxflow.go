@@ -43,7 +43,7 @@ func push(g *Graph, sidx, didx uint32) (msgSent int) {
 				Height: s.Nbrs[didx].Height,
 				ResCap: s.Nbrs[didx].ResCap - amount,
 			}
-			msgSent += send(g, PushRequest, sidx, didx, amount)
+			msgSent += send(g, Push, sidx, didx, amount)
 		}
 	}
 	return
@@ -65,12 +65,12 @@ func lift(g *Graph, vidx uint32) (msgSent int) {
 	return
 }
 
-func descendAndPull(g *Graph, vidx uint32, height int64) (msgSent int) {
+func descend(g *Graph, vidx uint32, height int64) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	if v.Type == Normal && v.Height > height {
 		v.Height = height
 		for n := range v.Nbrs {
-			msgSent += send(g, Pull, vidx, n, EmptyValue)
+			msgSent += send(g, NewHeight, vidx, n, EmptyValue)
 		}
 	}
 	return
@@ -78,13 +78,32 @@ func descendAndPull(g *Graph, vidx uint32, height int64) (msgSent int) {
 
 func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 	v := &g.Vertices[vidx].Property
-	if m.Type != Init {
-		v.Nbrs[m.Source] = Nbr{
-			Height: m.Height,
-			ResCap: v.Nbrs[m.Source].ResCap,
+	if m.Type == Init {
+		msgSent += initVertex(g, vidx)
+	} else {
+		n, exist := v.Nbrs[m.Source]
+		if !exist {
+			msgSent += send(g, NewHeight, vidx, m.Source, EmptyValue)
+		}
+		v.Nbrs[m.Source] = Nbr{m.Height, n.ResCap}
+
+		if v.Excess > 0 {
+			enforce.ENFORCE(v.Type != Normal)
+			msgSent += push(g, vidx, m.Source)
+		}
+
+		msgSent += onMsg[m.Type](g, vidx, m.Source, m.Value)
+
+		if v.Excess < 0 {
+			msgSent += descend(g, vidx, -getVertexCount())
+			msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
+		}
+
+		if v.Nbrs[m.Source].ResCap > 0 {
+			msgSent += descend(g, vidx, v.Nbrs[m.Source].Height+1)
 		}
 	}
-	return onMsg[m.Type](g, vidx, m.Source, m.Value)
+	return
 }
 
 func onNewMaxVertexCount(g *Graph, vidx uint32, newCount int64) (msgSent int) {
@@ -97,30 +116,41 @@ func onNewMaxVertexCount(g *Graph, vidx uint32, newCount int64) (msgSent int) {
 		msgSent += discharge(g, vidx)
 	}
 	if v.Excess < 0 {
-		msgSent += descendAndPull(g, vidx, -newCount)
+		msgSent += descend(g, vidx, -newCount)
 	}
 	return
 }
 
 func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 	s := &g.Vertices[sidx].Property
-	s.Nbrs[didx] = Nbr{
-		Height: s.Nbrs[didx].Height,
-		ResCap: s.Nbrs[didx].ResCap + delta,
+
+	// ignore loops and edges to the source
+	if sidx == didx || g.Vertices[didx].Property.Type == Source {
+		return
 	}
 
+	// Update residual capacity
+	n, exist := s.Nbrs[didx]
+	if !exist {
+		n.Height = InitialHeight
+		msgSent += send(g, NewHeight, sidx, didx, EmptyValue)
+	}
+	s.Nbrs[didx] = Nbr{n.Height, n.ResCap + delta}
+
+	// Update excess for source
 	if s.Type == Source {
 		// s.Excess < 0 ==> s.Nbrs[didx].ResCap < 0
 		s.Excess += delta
+		if s.Excess > 0 {
+			msgSent += push(g, sidx, didx)
+		}
 	}
 
-	if delta > 0 { // Increased
-		msgSent += send(g, CapacityIncreased, sidx, didx, EmptyValue)
-	} else { // Decreased
-		retractAmount := mathutils.Max(0, -s.Nbrs[didx].ResCap)
-		if retractAmount > 0 {
-			msgSent += send(g, RetractRequest, sidx, didx, retractAmount)
-		}
+	// Make sure it will be in a legal state
+	if s.Nbrs[didx].ResCap < 0 {
+		msgSent += send(g, RetractRequest, sidx, didx, -s.Nbrs[didx].ResCap)
+	} else if s.Nbrs[didx].ResCap > 0 {
+		msgSent += descend(g, sidx, s.Nbrs[didx].Height+1)
 	}
 	return
 }
@@ -128,24 +158,16 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 // Message Handlers
 
 var onMsg = []func(g *Graph, vidx, sidx uint32, value int64) (msgSent int){
-	nil, onMsgInit, onMsgNewHeight, onMsgPushRequest, onMsgPushReject, onMsgPull, onMsgCapacityIncreased,
-	onMsgRetractRequest, onMsgRetractConfirm, onMsgRetractReject,
+	nil, nil, onMsgNewHeight, onMsgPush, onMsgRetractRequest,
 }
 
-func onMsgInit(g *Graph, vidx, _ uint32, _ int64) (msgSent int) {
+func initVertex(g *Graph, vidx uint32) (msgSent int) {
 	v := &g.Vertices[vidx]
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
 		if e.Property.Capacity > 0 {
-			v.Property.Nbrs[e.Destination] = Nbr{Height: InitialHeight, ResCap: int64(e.Property.Capacity)}
-			msgSent += send(g, CapacityIncreased, vidx, e.Destination, EmptyValue) // OPTIMIZATION
+			msgSent += onCapacityChanged(g, vidx, e.Destination, int64(e.Property.Capacity))
 		}
-	}
-	if v.Property.Type == Source {
-		for eidx := range v.OutEdges {
-			v.Property.Excess += int64(v.OutEdges[eidx].Property.Capacity)
-		}
-		msgSent += discharge(g, vidx)
 	}
 	return
 }
@@ -154,48 +176,17 @@ func onMsgNewHeight(_ *Graph, _, _ uint32, _ int64) (msgSent int) {
 	return // Do nothing
 }
 
-func onMsgPushRequest(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
+func onMsgPush(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
 	enforce.ENFORCE(amount > 0)
-	v := &g.Vertices[vidx].Property
-	if v.Nbrs[sidx].Height > v.Height {
-		// Note: src.Height > v.Height+ 1 ==> there is an in-flight Pull from v to src
-		//       This is unusual but nothing needs to be done
-		v.Nbrs[sidx] = Nbr{
-			Height: v.Nbrs[sidx].Height,
-			ResCap: v.Nbrs[sidx].ResCap + amount,
-		}
-		v.Excess += amount
-		msgSent += discharge(g, vidx)
-	} else {
-		msgSent += send(g, PushReject, vidx, sidx, amount)
-	}
-	return
-}
-
-func onMsgPushReject(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	v.Nbrs[sidx] = Nbr{
 		Height: v.Nbrs[sidx].Height,
 		ResCap: v.Nbrs[sidx].ResCap + amount,
 	}
 	v.Excess += amount
-	return discharge(g, vidx)
-}
-
-func onMsgPull(g *Graph, vidx, sidx uint32, _ int64) (msgSent int) {
-	v := &g.Vertices[vidx].Property
 	if v.Excess > 0 {
 		msgSent += push(g, vidx, sidx)
-	}
-	if v.Nbrs[sidx].ResCap > 0 { // OPTIMIZATION?
-		msgSent += descendAndPull(g, vidx, v.Nbrs[sidx].Height+1)
-	}
-	return
-}
-
-func onMsgCapacityIncreased(g *Graph, vidx, sidx uint32, _ int64) (msgSent int) {
-	if g.Vertices[vidx].Property.Type != Source { // OPTIMIZED, TODO: Update proof for this
-		msgSent += send(g, Pull, vidx, sidx, EmptyValue)
+		msgSent += discharge(g, vidx)
 	}
 	return
 }
@@ -206,37 +197,18 @@ func onMsgRetractRequest(g *Graph, vidx, sidx uint32, amount int64) (msgSent int
 	// Compute the amount successfully retracted
 	succAmt := mathutils.Min(amount, v.Nbrs[sidx].ResCap)
 	if succAmt > 0 {
-		msgSent += send(g, RetractConfirm, vidx, sidx, succAmt)
+		msgSent += send(g, Push, vidx, sidx, succAmt)
 		v.Excess -= succAmt
 		v.Nbrs[sidx] = Nbr{
 			Height: v.Nbrs[sidx].Height,
 			ResCap: v.Nbrs[sidx].ResCap - succAmt,
 		}
-		if v.Excess < 0 {
-			msgSent += descendAndPull(g, vidx, -getVertexCount())
-			msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
-		}
 	}
 
 	// RetractReject does nothing
-	amount -= succAmt
-	if amount > 0 {
-		msgSent += send(g, RetractReject, vidx, sidx, amount)
-	}
-	return
-}
-
-func onMsgRetractConfirm(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
-	v := &g.Vertices[vidx].Property
-	v.Nbrs[sidx] = Nbr{
-		Height: v.Nbrs[sidx].Height,
-		ResCap: v.Nbrs[sidx].ResCap + amount,
-	}
-	v.Excess += amount
-	return discharge(g, vidx)
-}
-
-func onMsgRetractReject(_ *Graph, _, _ uint32, _ int64) (msgSent int) {
-	// Do nothing
+	//amount -= succAmt
+	//if amount > 0 {
+	//	msgSent += send(g, RetractReject, vidx, sidx, amount)
+	//}
 	return
 }
