@@ -148,7 +148,7 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 
 	// Make sure it will be in a legal state
 	if s.Nbrs[didx].ResCap < 0 {
-		msgSent += send(g, RetractRequest, sidx, didx, -s.Nbrs[didx].ResCap)
+		msgSent += send(g, Push, sidx, didx, s.Nbrs[didx].ResCap)
 	} else if s.Nbrs[didx].ResCap > 0 {
 		msgSent += descend(g, sidx, s.Nbrs[didx].Height+1)
 	}
@@ -158,7 +158,7 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 // Message Handlers
 
 var onMsg = []func(g *Graph, vidx, sidx uint32, value int64) (msgSent int){
-	nil, nil, onMsgNewHeight, onMsgPush, onMsgRetractRequest,
+	nil, nil, onMsgNewHeight, onMsgPush,
 }
 
 func initVertex(g *Graph, vidx uint32) (msgSent int) {
@@ -177,38 +177,28 @@ func onMsgNewHeight(_ *Graph, _, _ uint32, _ int64) (msgSent int) {
 }
 
 func onMsgPush(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
-	enforce.ENFORCE(amount > 0)
+	enforce.ENFORCE(amount != 0)
 	v := &g.Vertices[vidx].Property
+
+	if amount < 0 { // Retract Request
+		if v.Nbrs[sidx].ResCap < 0 {
+			// Cannot fulfill this request since the ResCap is already < 0
+			return
+		}
+		amount = mathutils.Max(amount, -v.Nbrs[sidx].ResCap)
+	}
+
 	v.Nbrs[sidx] = Nbr{
 		Height: v.Nbrs[sidx].Height,
 		ResCap: v.Nbrs[sidx].ResCap + amount,
 	}
 	v.Excess += amount
-	if v.Excess > 0 {
+
+	if amount < 0 { // Retract Request
+		msgSent += send(g, Push, vidx, sidx, -amount) // fulfill (or partly fulfill) this request
+	} else if v.Excess > 0 {
 		msgSent += push(g, vidx, sidx)
 		msgSent += discharge(g, vidx)
 	}
-	return
-}
-
-func onMsgRetractRequest(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
-	enforce.ENFORCE(amount > 0)
-	v := &g.Vertices[vidx].Property
-	// Compute the amount successfully retracted
-	succAmt := mathutils.Min(amount, v.Nbrs[sidx].ResCap)
-	if succAmt > 0 {
-		msgSent += send(g, Push, vidx, sidx, succAmt)
-		v.Excess -= succAmt
-		v.Nbrs[sidx] = Nbr{
-			Height: v.Nbrs[sidx].Height,
-			ResCap: v.Nbrs[sidx].ResCap - succAmt,
-		}
-	}
-
-	// RetractReject does nothing
-	//amount -= succAmt
-	//if amount > 0 {
-	//	msgSent += send(g, RetractReject, vidx, sidx, amount)
-	//}
 	return
 }
