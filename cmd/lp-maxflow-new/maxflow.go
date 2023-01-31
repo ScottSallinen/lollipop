@@ -43,7 +43,7 @@ func push(g *Graph, sidx, didx uint32) (msgSent int) {
 				Height: s.Nbrs[didx].Height,
 				ResCap: s.Nbrs[didx].ResCap - amount,
 			}
-			msgSent += send(g, Push, sidx, didx, amount)
+			msgSent += send(g, sidx, didx, amount)
 		}
 	}
 	return
@@ -60,7 +60,7 @@ func lift(g *Graph, vidx uint32) (msgSent int) {
 	}
 	v.Height = minHeight + 1
 	for n := range v.Nbrs {
-		msgSent += send(g, NewHeight, vidx, n, EmptyValue)
+		msgSent += send(g, vidx, n, 0)
 	}
 	return
 }
@@ -70,7 +70,7 @@ func descend(g *Graph, vidx uint32, height int64) (msgSent int) {
 	if v.Type == Normal && v.Height > height {
 		v.Height = height
 		for n := range v.Nbrs {
-			msgSent += send(g, NewHeight, vidx, n, EmptyValue)
+			msgSent += send(g, vidx, n, 0)
 		}
 	}
 	return
@@ -78,30 +78,29 @@ func descend(g *Graph, vidx uint32, height int64) (msgSent int) {
 
 func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 	v := &g.Vertices[vidx].Property
-	if m.Type == Init {
-		msgSent += initVertex(g, vidx)
-	} else {
-		n, exist := v.Nbrs[m.Source]
-		if !exist {
-			msgSent += send(g, NewHeight, vidx, m.Source, EmptyValue)
-		}
-		v.Nbrs[m.Source] = Nbr{m.Height, n.ResCap}
+	enforce.ENFORCE(m.Type == Flow)
+	n, exist := v.Nbrs[m.Source]
+	if !exist {
+		msgSent += send(g, vidx, m.Source, 0)
+	}
+	v.Nbrs[m.Source] = Nbr{m.Height, n.ResCap}
 
-		if v.Excess > 0 {
-			enforce.ENFORCE(v.Type != Normal)
-			msgSent += push(g, vidx, m.Source)
-		}
+	if v.Excess > 0 {
+		enforce.ENFORCE(v.Type != Normal)
+		msgSent += push(g, vidx, m.Source)
+	}
 
-		msgSent += onMsg[m.Type](g, vidx, m.Source, m.Value)
+	if m.Value != 0 {
+		msgSent += handleFlow(g, vidx, m.Source, m.Value)
+	}
 
-		if v.Excess < 0 {
-			msgSent += descend(g, vidx, -getVertexCount())
-			msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
-		}
+	if v.Excess < 0 {
+		msgSent += descend(g, vidx, -getVertexCount())
+		msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
+	}
 
-		if v.Nbrs[m.Source].ResCap > 0 {
-			msgSent += descend(g, vidx, v.Nbrs[m.Source].Height+1)
-		}
+	if v.Nbrs[m.Source].ResCap > 0 {
+		msgSent += descend(g, vidx, v.Nbrs[m.Source].Height+1)
 	}
 	return
 }
@@ -111,7 +110,7 @@ func onNewMaxVertexCount(g *Graph, vidx uint32, newCount int64) (msgSent int) {
 	if v.Type == Source {
 		v.Height = newCount
 		for n := range v.Nbrs {
-			msgSent += send(g, NewHeight, vidx, n, EmptyValue)
+			msgSent += send(g, vidx, n, 0)
 		}
 		msgSent += discharge(g, vidx)
 	}
@@ -133,7 +132,7 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 	n, exist := s.Nbrs[didx]
 	if !exist {
 		n.Height = InitialHeight
-		msgSent += send(g, NewHeight, sidx, didx, EmptyValue)
+		msgSent += send(g, sidx, didx, 0)
 	}
 	s.Nbrs[didx] = Nbr{n.Height, n.ResCap + delta}
 
@@ -148,20 +147,14 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 
 	// Make sure it will be in a legal state
 	if s.Nbrs[didx].ResCap < 0 {
-		msgSent += send(g, Push, sidx, didx, s.Nbrs[didx].ResCap)
+		msgSent += send(g, sidx, didx, s.Nbrs[didx].ResCap)
 	} else if s.Nbrs[didx].ResCap > 0 {
 		msgSent += descend(g, sidx, s.Nbrs[didx].Height+1)
 	}
 	return
 }
 
-// Message Handlers
-
-var onMsg = []func(g *Graph, vidx, sidx uint32, value int64) (msgSent int){
-	nil, nil, onMsgNewHeight, onMsgPush,
-}
-
-func initVertex(g *Graph, vidx uint32) (msgSent int) {
+func onInit(g *Graph, vidx uint32) (msgSent int) {
 	v := &g.Vertices[vidx]
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
@@ -172,11 +165,7 @@ func initVertex(g *Graph, vidx uint32) (msgSent int) {
 	return
 }
 
-func onMsgNewHeight(_ *Graph, _, _ uint32, _ int64) (msgSent int) {
-	return // Do nothing
-}
-
-func onMsgPush(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
+func handleFlow(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
 	enforce.ENFORCE(amount != 0)
 	v := &g.Vertices[vidx].Property
 
@@ -195,7 +184,7 @@ func onMsgPush(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
 	v.Excess += amount
 
 	if amount < 0 { // Retract Request
-		msgSent += send(g, Push, vidx, sidx, -amount) // fulfill (or partly fulfill) this request
+		msgSent += send(g, vidx, sidx, -amount) // (partly) fulfill this request
 	} else if v.Excess > 0 {
 		msgSent += push(g, vidx, sidx)
 		msgSent += discharge(g, vidx)

@@ -57,15 +57,16 @@ func OnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue) (msgSent int) {
 		m := &VisitMsg[messageIndex]
 		m.PrintIfNeeded(g, v, vidx)
 		CountMessage(m)
+		enforce.ENFORCE(m.Type != Unspecified)
 		if m.Type == NewMaxVertexCount {
 			msgSent += onNewMaxVertexCount(g, vidx, m.Value)
-		} else {
-			if m.Type == Init {
-				if v.Property.Type == Source {
-					msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
-				}
-				msgSent += VertexCountHelper.NewVertex(g, vidx)
+		} else if m.Type == Init {
+			if v.Property.Type == Source {
+				msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
 			}
+			msgSent += VertexCountHelper.NewVertex(g, vidx)
+			msgSent += onInit(g, vidx)
+		} else {
 			msgSent += onReceivingMessage(g, vidx, m)
 		}
 	}
@@ -79,9 +80,17 @@ func OnFinish(_ *Graph) error {
 	return nil
 }
 
-func send(g *Graph, m MessageType, sidx, didx uint32, value int64) (msgSent int) {
+func sendNewMaxVertexCount(g *Graph, sidx, didx uint32, value int64) (msgSent int) {
+	return sendMsg(g, NewMaxVertexCount, sidx, didx, value)
+}
+
+func send(g *Graph, sidx, didx uint32, amount int64) (msgSent int) {
+	return sendMsg(g, Flow, sidx, didx, amount)
+}
+
+func sendMsg(g *Graph, t MessageType, sidx, didx uint32, value int64) (msgSent int) {
 	g.OnQueueVisit(g, sidx, didx, []Message{{
-		Type:   m,
+		Type:   t,
 		Source: sidx,
 		Height: g.Vertices[sidx].Property.Height,
 		Value:  value,

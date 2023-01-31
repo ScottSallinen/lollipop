@@ -26,7 +26,7 @@ func (vc *VertexCount) NewVertex(g *Graph, sidx uint32) (msgSent int) {
 		vc.estimatedCount += 100 // OPTIMIZED
 		for vidx, subscribing := range vc.subscribers {
 			if subscribing {
-				msgSent += send(g, NewMaxVertexCount, sidx, vidx, vc.estimatedCount)
+				msgSent += sendNewMaxVertexCount(g, sidx, vidx, vc.estimatedCount)
 			}
 		}
 	}
@@ -38,7 +38,7 @@ func (vc *VertexCount) UpdateSubscriber(g *Graph, vidx uint32, subscribe bool) (
 	vc.lock.Lock()
 	if subscribe {
 		vc.subscribers[vidx] = true
-		msgSent += send(g, NewMaxVertexCount, vidx, vidx, vc.estimatedCount)
+		msgSent += sendNewMaxVertexCount(g, vidx, vidx, vc.estimatedCount)
 	} else {
 		delete(vc.subscribers, vidx)
 	}

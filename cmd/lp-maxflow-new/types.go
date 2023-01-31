@@ -40,8 +40,6 @@ type Vertex = graph.Vertex[VertexProp, EdgeProp]
 type Edge = graph.Edge[EdgeProp]
 
 const (
-	PrintNewHeight bool = false
-
 	EmptyValue    = 0
 	InitialHeight = math.MaxUint32
 
@@ -51,10 +49,9 @@ const (
 
 	Unspecified       MessageType = 0
 	Init              MessageType = 1
-	NewHeight         MessageType = 2
-	Push              MessageType = 3
-	NewMaxVertexCount MessageType = 4
-	MessageTypesCount             = 5
+	Flow              MessageType = 2
+	NewMaxVertexCount MessageType = 3
+	MessageTypesCount             = 4
 )
 
 var MessageCounter = make([]uint64, MessageTypesCount)
@@ -78,10 +75,8 @@ func (t MessageType) String() string {
 		return "Unspecified"
 	case Init:
 		return "Init"
-	case NewHeight:
-		return "NewHeight"
-	case Push:
-		return "Push"
+	case Flow:
+		return "Flow"
 	case NewMaxVertexCount:
 		return "NewMaxVertexCount"
 	default:
@@ -127,7 +122,7 @@ func (m *Message) String(g *Graph, v *Vertex, vertexIndex uint32) string {
 
 func (m *Message) PrintIfNeeded(g *Graph, v *Vertex, vertexIndex uint32) {
 	if graph.DEBUG {
-		if m.Type != NewHeight || PrintNewHeight {
+		if m.Value != 0 {
 			info(m.String(g, v, vertexIndex))
 		}
 	}
