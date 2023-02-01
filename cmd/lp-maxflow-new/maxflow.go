@@ -14,19 +14,15 @@ func discharge(g *Graph, vidx uint32) (msgSent int) {
 	if v.Type != Normal {
 		for n := range v.Nbrs {
 			msgSent += push(g, vidx, n)
-			if v.Excess == 0 {
-				return
-			}
 		}
 	} else {
 		for v.Excess > 0 {
 			for n := range v.Nbrs {
 				msgSent += push(g, vidx, n)
-				if v.Excess == 0 {
-					return
-				}
 			}
-			msgSent += lift(g, vidx)
+			if v.Excess > 0 {
+				msgSent += lift(g, vidx)
+			}
 		}
 	}
 	return
@@ -34,7 +30,6 @@ func discharge(g *Graph, vidx uint32) (msgSent int) {
 
 func push(g *Graph, sidx, didx uint32) (msgSent int) {
 	s := &g.Vertices[sidx].Property
-	enforce.ENFORCE(s.Excess > 0)
 	if s.Height > s.Nbrs[didx].Height {
 		amount := mathutils.Min(s.Excess, s.Nbrs[didx].ResCap)
 		if amount > 0 {
@@ -51,13 +46,17 @@ func push(g *Graph, sidx, didx uint32) (msgSent int) {
 
 func lift(g *Graph, vidx uint32) (msgSent int) {
 	v := &g.Vertices[vidx].Property
-	enforce.ENFORCE(v.Type == Normal)
+	enforce.ENFORCE(v.Type == Normal && v.Excess > 0)
+
 	minHeight := int64(math.MaxInt64)
 	for _, n := range v.Nbrs {
 		if n.ResCap > 0 && n.Height < minHeight {
 			minHeight = n.Height
 		}
 	}
+	enforce.ENFORCE(minHeight != int64(math.MaxInt64))
+
+	enforce.ENFORCE(v.Height < minHeight+1)
 	v.Height = minHeight + 1
 	for n := range v.Nbrs {
 		msgSent += send(g, vidx, n, 0)
@@ -85,16 +84,12 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 	}
 	v.Nbrs[m.Source] = Nbr{m.Height, n.ResCap}
 
+	msgSent += handleFlow(g, vidx, m.Source, m.Value)
+
 	if v.Excess > 0 {
-		enforce.ENFORCE(v.Type != Normal)
 		msgSent += push(g, vidx, m.Source)
-	}
-
-	if m.Value != 0 {
-		msgSent += handleFlow(g, vidx, m.Source, m.Value)
-	}
-
-	if v.Excess < 0 {
+		msgSent += discharge(g, vidx)
+	} else if v.Excess < 0 {
 		msgSent += descend(g, vidx, -getVertexCount())
 		msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
 	}
@@ -140,9 +135,10 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 	if s.Type == Source {
 		// s.Excess < 0 ==> s.Nbrs[didx].ResCap < 0
 		s.Excess += delta
-		if s.Excess > 0 {
-			msgSent += push(g, sidx, didx)
-		}
+	}
+
+	if s.Excess > 0 {
+		msgSent += push(g, sidx, didx)
 	}
 
 	// Make sure it will be in a legal state
@@ -166,7 +162,6 @@ func onInit(g *Graph, vidx uint32) (msgSent int) {
 }
 
 func handleFlow(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
-	enforce.ENFORCE(amount != 0)
 	v := &g.Vertices[vidx].Property
 
 	if amount < 0 { // Retract Request
@@ -185,9 +180,6 @@ func handleFlow(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
 
 	if amount < 0 { // Retract Request
 		msgSent += send(g, vidx, sidx, -amount) // (partly) fulfill this request
-	} else if v.Excess > 0 {
-		msgSent += push(g, vidx, sidx)
-		msgSent += discharge(g, vidx)
 	}
 	return
 }
