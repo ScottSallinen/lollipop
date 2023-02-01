@@ -6,6 +6,58 @@ import (
 	"math"
 )
 
+func onInit(g *Graph, vidx uint32) (msgSent int) {
+	v := &g.Vertices[vidx]
+	for eidx := range v.OutEdges {
+		e := &v.OutEdges[eidx]
+		if e.Property.Capacity > 0 {
+			msgSent += onCapacityChanged(g, vidx, e.Destination, int64(e.Property.Capacity))
+		}
+	}
+	return
+}
+
+func push(g *Graph, sidx, didx uint32) (msgSent int) {
+	s := &g.Vertices[sidx].Property
+	amount := mathutils.Min(s.Excess, s.Nbrs[didx].ResCap)
+	if amount > 0 && s.Height > s.Nbrs[didx].Height {
+		s.Excess -= amount
+		s.Nbrs[didx] = Nbr{
+			Height: s.Nbrs[didx].Height,
+			ResCap: s.Nbrs[didx].ResCap - amount,
+		}
+		msgSent += send(g, sidx, didx, amount)
+	}
+	return
+}
+
+func updateHeight(g *Graph, vidx uint32, newHeight int64) (msgSent int) {
+	v := &g.Vertices[vidx].Property
+	if v.Height != newHeight {
+		v.Height = newHeight
+		for n := range v.Nbrs {
+			msgSent += send(g, vidx, n, 0)
+		}
+	}
+	return
+}
+
+func lift(g *Graph, vidx uint32) (msgSent int) {
+	v := &g.Vertices[vidx].Property
+	enforce.ENFORCE(v.Type == Normal && v.Excess > 0)
+
+	minHeight := int64(math.MaxInt64)
+	for _, n := range v.Nbrs {
+		if n.ResCap > 0 && n.Height < minHeight {
+			minHeight = n.Height
+		}
+	}
+
+	enforce.ENFORCE(minHeight != int64(math.MaxInt64) && v.Height < minHeight+1)
+	msgSent += updateHeight(g, vidx, minHeight+1)
+	return
+}
+
 func discharge(g *Graph, vidx uint32) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	if v.Excess <= 0 {
@@ -28,49 +80,10 @@ func discharge(g *Graph, vidx uint32) (msgSent int) {
 	return
 }
 
-func push(g *Graph, sidx, didx uint32) (msgSent int) {
-	s := &g.Vertices[sidx].Property
-	if s.Height > s.Nbrs[didx].Height {
-		amount := mathutils.Min(s.Excess, s.Nbrs[didx].ResCap)
-		if amount > 0 {
-			s.Excess -= amount
-			s.Nbrs[didx] = Nbr{
-				Height: s.Nbrs[didx].Height,
-				ResCap: s.Nbrs[didx].ResCap - amount,
-			}
-			msgSent += send(g, sidx, didx, amount)
-		}
-	}
-	return
-}
-
-func lift(g *Graph, vidx uint32) (msgSent int) {
-	v := &g.Vertices[vidx].Property
-	enforce.ENFORCE(v.Type == Normal && v.Excess > 0)
-
-	minHeight := int64(math.MaxInt64)
-	for _, n := range v.Nbrs {
-		if n.ResCap > 0 && n.Height < minHeight {
-			minHeight = n.Height
-		}
-	}
-	enforce.ENFORCE(minHeight != int64(math.MaxInt64))
-
-	enforce.ENFORCE(v.Height < minHeight+1)
-	v.Height = minHeight + 1
-	for n := range v.Nbrs {
-		msgSent += send(g, vidx, n, 0)
-	}
-	return
-}
-
 func descend(g *Graph, vidx uint32, height int64) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	if v.Type == Normal && v.Height > height {
-		v.Height = height
-		for n := range v.Nbrs {
-			msgSent += send(g, vidx, n, 0)
-		}
+		msgSent += updateHeight(g, vidx, height)
 	}
 	return
 }
@@ -103,10 +116,7 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 func onNewMaxVertexCount(g *Graph, vidx uint32, newCount int64) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	if v.Type == Source {
-		v.Height = newCount
-		for n := range v.Nbrs {
-			msgSent += send(g, vidx, n, 0)
-		}
+		msgSent += updateHeight(g, vidx, newCount)
 		msgSent += discharge(g, vidx)
 	}
 	if v.Excess < 0 {
@@ -146,17 +156,6 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 		msgSent += send(g, sidx, didx, s.Nbrs[didx].ResCap)
 	} else if s.Nbrs[didx].ResCap > 0 {
 		msgSent += descend(g, sidx, s.Nbrs[didx].Height+1)
-	}
-	return
-}
-
-func onInit(g *Graph, vidx uint32) (msgSent int) {
-	v := &g.Vertices[vidx]
-	for eidx := range v.OutEdges {
-		e := &v.OutEdges[eidx]
-		if e.Property.Capacity > 0 {
-			msgSent += onCapacityChanged(g, vidx, e.Destination, int64(e.Property.Capacity))
-		}
 	}
 	return
 }
