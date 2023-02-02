@@ -99,5 +99,5 @@ func sendMsg(g *Graph, t MessageType, sidx, didx uint32, value int64) (msgSent i
 }
 
 func getVertexCount() int64 {
-	return VertexCountHelper.GetVertexCount()
+	return VertexCountHelper.GetMaxVertexCount()
 }

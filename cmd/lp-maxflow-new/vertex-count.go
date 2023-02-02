@@ -46,7 +46,7 @@ func (vc *VertexCount) UpdateSubscriber(g *Graph, vidx uint32, subscribe bool) (
 	return
 }
 
-func (vc *VertexCount) GetVertexCount() int64 {
+func (vc *VertexCount) GetMaxVertexCount() int64 {
 	vc.lock.Lock()
 	count := vc.estimatedCount
 	vc.lock.Unlock()

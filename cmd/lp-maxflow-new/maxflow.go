@@ -60,9 +60,6 @@ func lift(g *Graph, vidx uint32) (msgSent int) {
 
 func discharge(g *Graph, vidx uint32) (msgSent int) {
 	v := &g.Vertices[vidx].Property
-	if v.Excess <= 0 {
-		return
-	}
 	if v.Type != Normal {
 		for n := range v.Nbrs {
 			msgSent += push(g, vidx, n)
@@ -80,10 +77,14 @@ func discharge(g *Graph, vidx uint32) (msgSent int) {
 	return
 }
 
-func descend(g *Graph, vidx uint32, height int64) (msgSent int) {
+func restoreHeightInvariant(g *Graph, vidx, widx uint32) (msgSent int) {
 	v := &g.Vertices[vidx].Property
-	if v.Type == Normal && v.Height > height {
-		msgSent += updateHeight(g, vidx, height)
+	msgSent += push(g, vidx, widx)
+	if v.Type == Normal && v.Nbrs[widx].ResCap > 0 {
+		maxHeight := v.Nbrs[widx].Height + 1
+		if v.Height > maxHeight {
+			msgSent += updateHeight(g, vidx, maxHeight)
+		}
 	}
 	return
 }
@@ -98,17 +99,13 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 	v.Nbrs[m.Source] = Nbr{m.Height, n.ResCap}
 
 	msgSent += handleFlow(g, vidx, m.Source, m.Value)
+	msgSent += restoreHeightInvariant(g, vidx, m.Source)
 
 	if v.Excess > 0 {
-		msgSent += push(g, vidx, m.Source)
 		msgSent += discharge(g, vidx)
 	} else if v.Excess < 0 {
-		msgSent += descend(g, vidx, -getVertexCount())
+		msgSent += updateHeight(g, vidx, -getVertexCount())
 		msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
-	}
-
-	if v.Nbrs[m.Source].ResCap > 0 {
-		msgSent += descend(g, vidx, v.Nbrs[m.Source].Height+1)
 	}
 	return
 }
@@ -120,7 +117,7 @@ func onNewMaxVertexCount(g *Graph, vidx uint32, newCount int64) (msgSent int) {
 		msgSent += discharge(g, vidx)
 	}
 	if v.Excess < 0 {
-		msgSent += descend(g, vidx, -newCount)
+		msgSent += updateHeight(g, vidx, -newCount)
 	}
 	return
 }
@@ -147,15 +144,11 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 		s.Excess += delta
 	}
 
-	if s.Excess > 0 {
-		msgSent += push(g, sidx, didx)
-	}
-
 	// Make sure it will be in a legal state
 	if s.Nbrs[didx].ResCap < 0 {
 		msgSent += send(g, sidx, didx, s.Nbrs[didx].ResCap)
-	} else if s.Nbrs[didx].ResCap > 0 {
-		msgSent += descend(g, sidx, s.Nbrs[didx].Height+1)
+	} else {
+		msgSent += restoreHeightInvariant(g, sidx, didx)
 	}
 	return
 }
