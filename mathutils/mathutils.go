@@ -37,6 +37,14 @@ func Min[T constraints.Ordered](x, y T) T {
 	return x
 }
 
+func Sum[T constraints.Integer | constraints.Float](slice []T) T {
+	sum := T(0)
+	for _, n := range slice {
+		sum += n
+	}
+	return sum
+}
+
 func Median(n []int) int {
 	sort.Ints(n) // sort numbers
 	idx := len(n) / 2
