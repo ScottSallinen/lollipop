@@ -143,7 +143,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 	// Send initial visit message(s)
 	// This is done in a separate goroutine, so it is not guaranteed that initial visits will arrive before other visits
 	go frame.SendInitialVisists(g, VOTES, &wg)
-	lock := g.Options.OracleCompare // Only need to lock if we are comparing against an oracle.
+	lock := g.Options.OracleCompare || g.Options.ReadLockRequired // Only need to lock if we are comparing against an oracle.
+	lockGranularity := 1 << 12                                    // Larger value => releasing the lock less frequently
 
 	for t := 0; t < graph.THREADS; t++ {
 		go func(tidx uint32, wg *sync.WaitGroup) {
@@ -153,7 +154,9 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 				if lock {
 					g.Mutex.RLock()
 				}
-				completed = frame.ProcessMessages(g, tidx, msgBuffer, false, true)
+				for i := 0; !completed && i < lockGranularity; i++ {
+					completed = frame.ProcessMessages(g, tidx, msgBuffer, false, true)
+				}
 				if lock {
 					g.Mutex.RUnlock()
 				}

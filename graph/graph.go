@@ -56,6 +56,7 @@ type GraphOptions[MsgType any] struct {
 	OracleInterval        int64              // If OracleCompare, will compare to oracle results every OracleInterval milliseconds.
 	AsyncContinuationTime int64              // If non-zero, will continue the algorithm for AsyncContinuationTime milliseconds before collecting a state (logging a timeseries).
 	OracleCompareSync     bool               // Compares to oracle results on every iteration, when using a synchronous strategy.
+	ReadLockRequired      bool               // Requires the Mutex to be held for read when processing messages
 }
 
 type VisitType int

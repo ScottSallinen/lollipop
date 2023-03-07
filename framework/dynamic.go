@@ -10,6 +10,8 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
+// TODO: make sure the use of g.Mutex does not have a significant impact on the performance
+
 var tsLast = uint64(0)
 var threadAtTimestamp []uint64
 
@@ -281,7 +283,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 				}
 
 				// Need to move rlock outside to avoid buffered msgs when comparing to oracle or logging a timeseries.
-				rLockOutside := g.Options.OracleCompare || g.Options.LogTimeseries
+				// TODO: always setting rLockOutside to true would hypothetically results in better performance
+				rLockOutside := g.Options.OracleCompare || g.Options.LogTimeseries || g.Options.ReadLockRequired
 				if rLockOutside {
 					g.Mutex.RLock()
 				}
