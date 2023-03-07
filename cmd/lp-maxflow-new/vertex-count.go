@@ -11,10 +11,10 @@ type VertexCount struct {
 
 var VertexCountHelper VertexCount
 
-func (vc *VertexCount) Reset() {
+func (vc *VertexCount) Reset(realCount int64) {
 	vc.lock.Lock()
 	vc.subscribers = make(map[uint32]bool)
-	vc.realCount = 0
+	vc.realCount = realCount
 	vc.estimatedCount = 0
 	vc.lock.Unlock()
 }

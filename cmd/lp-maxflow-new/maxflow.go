@@ -34,6 +34,9 @@ func push(g *Graph, sidx, didx uint32) (msgSent int) {
 func updateHeight(g *Graph, vidx uint32, newHeight int64) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	if v.Height != newHeight {
+		if newHeight == -getVertexCount() {
+			info("Updating height to -|V|!")
+		}
 		v.Height = newHeight
 		for n := range v.Nbrs {
 			msgSent += send(g, vidx, n, 0)

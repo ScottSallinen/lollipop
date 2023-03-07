@@ -86,6 +86,7 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	}
 	sourceOut -= source.Property.Excess
 	enforce.ENFORCE(sourceOut == sinkIn, fmt.Sprintf("sourceOutFlow (%d) != sinkInFlow (%d)", sourceOut, sinkIn))
+	info("Maximum Flow: ", sourceOut)
 
 	// g.ComputeInEdges()
 	// TODO: Check inflow == outflow for all vertices (doesn't seem to be easy)
@@ -141,7 +142,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw uint32) (*framework.Framework[Verte
 		return OnCheckCorrectness(g, sourceRaw, sinkRaw)
 	}
 
-	VertexCountHelper.Reset()
+	VertexCountHelper.Reset(0)
 
 	return &frame, &g
 }
@@ -160,7 +161,7 @@ func main() {
 	pptr := flag.Bool("p", false, "Save vertex properties to disk")
 	tptr := flag.Int("t", 32, "Thread count")
 	source := flag.Uint("source", 0, "Raw ID of the source vertex")
-	sink := flag.Uint("source", 1, "Raw ID of the sink vertex")
+	sink := flag.Uint("sink", 1, "Raw ID of the sink vertex")
 	flag.Parse()
 
 	graph.THREADS = *tptr

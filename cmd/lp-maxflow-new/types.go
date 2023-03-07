@@ -54,7 +54,7 @@ const (
 	MessageTypesCount             = 4
 )
 
-var MessageCounter = make([]uint64, MessageTypesCount)
+var MessageCounter = make([]uint64, MessageTypesCount) // FIXME: race condition
 
 func (t VertexType) String() string {
 	switch t {
