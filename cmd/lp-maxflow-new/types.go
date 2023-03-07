@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
 	"math"
 )
@@ -35,6 +36,7 @@ type EdgeProp struct {
 
 type MessageValue []Message
 
+type Framework = framework.Framework[VertexProp, EdgeProp, MessageValue]
 type Graph = graph.Graph[VertexProp, EdgeProp, MessageValue]
 type Vertex = graph.Vertex[VertexProp, EdgeProp]
 type Edge = graph.Edge[EdgeProp]
@@ -54,6 +56,7 @@ const (
 	MessageTypesCount             = 4
 )
 
+var resetPhase = false
 var MessageCounter = make([]uint64, MessageTypesCount) // FIXME: race condition
 
 func (t VertexType) String() string {

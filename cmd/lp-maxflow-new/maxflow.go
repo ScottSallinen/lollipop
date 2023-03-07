@@ -102,6 +102,11 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 	v.Nbrs[m.Source] = Nbr{m.Height, n.ResCap}
 
 	msgSent += handleFlow(g, vidx, m.Source, m.Value)
+
+	if resetPhase {
+		return
+	}
+
 	msgSent += restoreHeightInvariant(g, vidx, m.Source)
 
 	if v.Excess > 0 {

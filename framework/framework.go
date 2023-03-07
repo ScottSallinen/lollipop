@@ -255,6 +255,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *
 			wg := sync.WaitGroup{}
 			gExit := false
 			wg.Add(graph.THREADS)
+			// We might be able to use RunProcessMessages to replace this loop
 			for t := 0; t < graph.THREADS; t++ {
 				go func(tidx uint32, exit *bool) {
 					msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
@@ -295,6 +296,21 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *
 		}
 	}
 	close(entries)
+}
+
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) RunProcessMessages(g *graph.Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup, exit *bool) {
+	for t := 0; t < graph.THREADS; t++ {
+		go func(tidx uint32, exit *bool) {
+			msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
+			for !(*exit) {
+				termination := frame.ProcessMessages(g, tidx, msgBuffer, false, true)
+				if termination {
+					break
+				}
+			}
+			wg.Done()
+		}(uint32(t), exit)
+	}
 }
 
 func ExtractGraphName(graphFilename string) (graphName string) {

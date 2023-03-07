@@ -9,6 +9,7 @@ import (
 	_ "net/http/pprof"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
@@ -96,16 +97,17 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	return nil
 }
 
-func GetFrameworkAndGraph(sourceRaw, sinkRaw uint32) (*framework.Framework[VertexProp, EdgeProp, MessageValue], *Graph) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw uint32) (*Framework, *Graph) {
 	enforce.ENFORCE(sourceRaw != sinkRaw)
 
 	g := Graph{}
 	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected:    false,
-		EmptyVal:      nil,
-		LogTimeseries: false,
-		OracleCompare: false,
-		SourceInit:    false,
+		Undirected:       false,
+		EmptyVal:         nil,
+		LogTimeseries:    false,
+		OracleCompare:    false,
+		SourceInit:       false,
+		ReadLockRequired: true,
 		InitAllMessage: MessageValue{{
 			Type:   Init,
 			Source: EmptyValue,
@@ -114,7 +116,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw uint32) (*framework.Framework[Verte
 		}},
 	}
 
-	frame := framework.Framework[VertexProp, EdgeProp, MessageValue]{}
+	frame := Framework{}
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = OnFinish
 	frame.OnEdgeAdd = OnEdgeAdd
@@ -149,7 +151,17 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw uint32) (*framework.Framework[Verte
 
 func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink uint32) *Graph {
 	frame, g := GetFrameworkAndGraph(source, sink)
+
+	exit := false
+	defer func() { exit = true }()
+	if async {
+		go PeriodicGlobalResetRunnable(frame, g, &exit, 10*time.Second)
+	} else {
+		info("Global Reset currently does not work in sync mode")
+	}
+
 	frame.Launch(g, gName, async, dynamic)
+
 	return g
 }
 
