@@ -108,7 +108,6 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 		msgSent += discharge(g, vidx)
 	} else if v.Excess < 0 {
 		msgSent += updateHeight(g, vidx, -getVertexCount())
-		msgSent += VertexCountHelper.UpdateSubscriber(g, vidx, true)
 	}
 	return
 }
@@ -118,9 +117,6 @@ func onNewMaxVertexCount(g *Graph, vidx uint32, newCount int64) (msgSent int) {
 	if v.Type == Source {
 		msgSent += updateHeight(g, vidx, newCount)
 		msgSent += discharge(g, vidx)
-	}
-	if v.Excess < 0 {
-		msgSent += updateHeight(g, vidx, -newCount)
 	}
 	return
 }
