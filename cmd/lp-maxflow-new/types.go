@@ -57,6 +57,7 @@ const (
 )
 
 var resetPhase = false
+var bfsPhase = false
 var MessageCounter = make([]uint64, MessageTypesCount) // FIXME: race condition
 
 func (t VertexType) String() string {

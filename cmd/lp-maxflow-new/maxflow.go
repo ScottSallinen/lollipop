@@ -81,6 +81,9 @@ func discharge(g *Graph, vidx uint32) (msgSent int) {
 }
 
 func restoreHeightInvariant(g *Graph, vidx, widx uint32) (msgSent int) {
+	if vidx == widx {
+		return
+	}
 	v := &g.Vertices[vidx].Property
 	msgSent += push(g, vidx, widx)
 	if v.Type == Normal && v.Nbrs[widx].ResCap > 0 {
@@ -95,13 +98,15 @@ func restoreHeightInvariant(g *Graph, vidx, widx uint32) (msgSent int) {
 func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	enforce.ENFORCE(m.Type == Flow)
-	n, exist := v.Nbrs[m.Source]
-	if !exist {
-		msgSent += send(g, vidx, m.Source, 0)
-	}
-	v.Nbrs[m.Source] = Nbr{m.Height, n.ResCap}
 
-	msgSent += handleFlow(g, vidx, m.Source, m.Value)
+	if m.Source != vidx {
+		n, exist := v.Nbrs[m.Source]
+		if !exist {
+			msgSent += send(g, vidx, m.Source, 0)
+		}
+		v.Nbrs[m.Source] = Nbr{m.Height, n.ResCap}
+		msgSent += handleFlow(g, vidx, m.Source, m.Value)
+	}
 
 	if resetPhase {
 		return
@@ -110,7 +115,9 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 	msgSent += restoreHeightInvariant(g, vidx, m.Source)
 
 	if v.Excess > 0 {
-		msgSent += discharge(g, vidx)
+		if !bfsPhase {
+			msgSent += discharge(g, vidx)
+		}
 	} else if v.Excess < 0 {
 		msgSent += updateHeight(g, vidx, -getVertexCount())
 	}

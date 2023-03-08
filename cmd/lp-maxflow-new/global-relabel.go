@@ -7,17 +7,19 @@ import (
 	"time"
 )
 
+var ENABLE_BFS_PHASE = false
+
 func PeriodicGlobalResetRunnable(f *Framework, g *Graph, exit *bool, period time.Duration) {
 	time.Sleep(period)
 	for !*exit {
-		GlobalReset(f, g)
+		GlobalRelabel(f, g)
 		time.Sleep(period)
 	}
 }
 
-func GlobalReset(f *Framework, g *Graph) {
+func GlobalRelabel(f *Framework, g *Graph) {
 	watch := mathutils.Watch{}
-	info("Starting GlobalReset")
+	info("Starting GlobalRelabel")
 	watch.Start()
 	g.Mutex.Lock()
 	// set a flag to prevent flow push and height change
@@ -43,10 +45,25 @@ func GlobalReset(f *Framework, g *Graph) {
 			}
 		}
 	}
-	// resume flow push and height change
+	resetRuntime := watch.Elapsed()
+	info("    Reset Phase runtime: ", resetRuntime)
 	resetPhase = false
+	// BFS phase
+	if ENABLE_BFS_PHASE {
+		bfsPhase = true
+		processAllMessages(f, g)
+		info("    BFS Phase runtime: ", watch.Elapsed()-resetRuntime)
+		bfsPhase = false
+		// resume flow push and height change
+		for vi := range g.Vertices {
+			v := &g.Vertices[vi].Property
+			if v.Excess != 0 {
+				send(g, uint32(vi), uint32(vi), 0)
+			}
+		}
+	}
 	g.Mutex.Unlock()
-	info("GlobalReset runtime: ", watch.Elapsed())
+	info("    GlobalRelabel runtime: ", watch.Elapsed())
 }
 
 func processAllMessages(f *Framework, g *Graph) {
