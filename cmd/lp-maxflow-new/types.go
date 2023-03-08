@@ -52,8 +52,9 @@ const (
 	Unspecified       MessageType = 0
 	Init              MessageType = 1
 	Flow              MessageType = 2
-	NewMaxVertexCount MessageType = 3
-	MessageTypesCount             = 4
+	ZeroFlow          MessageType = 3
+	NewMaxVertexCount MessageType = 4
+	MessageTypesCount             = 5
 )
 
 var resetPhase = false
@@ -81,6 +82,8 @@ func (t MessageType) String() string {
 		return "Init"
 	case Flow:
 		return "Flow"
+	case ZeroFlow:
+		return "ZeroFlow"
 	case NewMaxVertexCount:
 		return "NewMaxVertexCount"
 	default:
@@ -101,7 +104,11 @@ func (p *VertexProp) String() string {
 }
 
 func CountMessage(m *Message) {
-	MessageCounter[m.Type] += 1
+	if m.Type == Flow && m.Value == 0 {
+		MessageCounter[ZeroFlow] += 1
+	} else {
+		MessageCounter[m.Type] += 1
+	}
 }
 
 func ResetMessageCounts() {

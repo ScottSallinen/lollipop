@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
@@ -77,7 +78,7 @@ func TestSyncStatic(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 10; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, false, false, testGraph.Source, testGraph.Sink)
+			g := LaunchGraphExecution(testGraph.Filename, false, false, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -89,7 +90,7 @@ func TestAsyncStatic(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 10; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, true, false, testGraph.Source, testGraph.Sink)
+			g := LaunchGraphExecution(testGraph.Filename, true, false, testGraph.Source, testGraph.Sink, testGraph.VertexCount)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -115,7 +116,7 @@ func TestAsyncDynamicIncremental(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 3; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink)
+			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink, 0)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -184,7 +185,7 @@ func loadAllStructureChanges(path string) []graph.StructureChange[EdgeProp] {
 }
 
 func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, sink uint32) *Graph {
-	frame, g := GetFrameworkAndGraph(source, sink)
+	frame, g := GetFrameworkAndGraph(source, sink, 0)
 
 	frame.Init(g, true, true)
 

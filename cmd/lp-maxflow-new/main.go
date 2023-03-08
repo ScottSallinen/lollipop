@@ -97,7 +97,7 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	return nil
 }
 
-func GetFrameworkAndGraph(sourceRaw, sinkRaw uint32) (*Framework, *Graph) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32) (*Framework, *Graph) {
 	enforce.ENFORCE(sourceRaw != sinkRaw)
 
 	g := Graph{}
@@ -144,13 +144,13 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw uint32) (*Framework, *Graph) {
 		return OnCheckCorrectness(g, sourceRaw, sinkRaw)
 	}
 
-	VertexCountHelper.Reset(0)
+	VertexCountHelper.Reset(int64(n))
 
 	return &frame, &g
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink uint32) *Graph {
-	frame, g := GetFrameworkAndGraph(source, sink)
+func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32) *Graph {
+	frame, g := GetFrameworkAndGraph(source, sink, n)
 
 	exit := false
 	defer func() { exit = true }()
@@ -174,6 +174,7 @@ func main() {
 	tptr := flag.Int("t", 32, "Thread count")
 	source := flag.Uint("source", 0, "Raw ID of the source vertex")
 	sink := flag.Uint("sink", 1, "Raw ID of the sink vertex")
+	n := flag.Uint("n", 0, "Number of vertices in the graph")
 	flag.Parse()
 
 	graph.THREADS = *tptr
@@ -184,7 +185,7 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink))
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n))
 
 	g.ComputeGraphStats(false, false)
 

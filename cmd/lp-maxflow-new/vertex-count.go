@@ -11,11 +11,11 @@ type VertexCount struct {
 
 var VertexCountHelper VertexCount
 
-func (vc *VertexCount) Reset(realCount int64) {
+func (vc *VertexCount) Reset(estimatedCount int64) {
 	vc.lock.Lock()
 	vc.subscribers = make(map[uint32]bool)
-	vc.realCount = realCount
-	vc.estimatedCount = 0
+	vc.realCount = 0
+	vc.estimatedCount = estimatedCount
 	vc.lock.Unlock()
 }
 
@@ -23,7 +23,7 @@ func (vc *VertexCount) NewVertex(g *Graph, sidx uint32) (msgSent int) {
 	vc.lock.Lock()
 	vc.realCount += 1
 	if vc.realCount > vc.estimatedCount {
-		vc.estimatedCount += 100 // OPTIMIZED
+		vc.estimatedCount = vc.realCount
 		for vidx, subscribing := range vc.subscribers {
 			if subscribing {
 				msgSent += sendNewMaxVertexCount(g, sidx, vidx, vc.estimatedCount)
