@@ -3,6 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/ScottSallinen/lollipop/enforce"
+	"github.com/ScottSallinen/lollipop/framework"
+	"github.com/ScottSallinen/lollipop/graph"
 	"log"
 	"math"
 	"net/http"
@@ -10,10 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/framework"
-	"github.com/ScottSallinen/lollipop/graph"
 )
 
 func info(args ...any) {
@@ -149,13 +148,14 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32) (*Framework, *Graph) {
 	return &frame, &g
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32) *Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration) *Graph {
+	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
 	frame, g := GetFrameworkAndGraph(source, sink, n)
 
 	exit := false
 	defer func() { exit = true }()
 	if async {
-		go PeriodicGlobalResetRunnable(frame, g, &exit, 10*time.Second)
+		go PeriodicGlobalResetRunnable(frame, g, &exit, grInterval)
 	} else {
 		info("Global Reset currently does not work in sync mode")
 	}
@@ -185,7 +185,7 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n))
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n), 10*time.Second)
 
 	g.ComputeGraphStats(false, false)
 
