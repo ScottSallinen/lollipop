@@ -118,7 +118,7 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 		if !bfsPhase {
 			msgSent += discharge(g, vidx)
 		}
-	} else if v.Excess < 0 {
+	} else if v.Excess < 0 && v.Type != Sink {
 		msgSent += updateHeight(g, vidx, -getVertexCount())
 	}
 	return

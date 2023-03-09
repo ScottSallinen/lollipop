@@ -35,7 +35,7 @@ func GlobalRelabel(f *Framework, g *Graph) {
 			// let it broadcast its height after resuming execution
 			updateHeight(g, uint32(vi), oldHeight)
 			if v.Type == Sink {
-				info("Current sink excess: ", v.Excess)
+				info("    Current sink excess: ", v.Excess, " height: ", v.Height)
 			}
 		}
 		for i := range v.Nbrs {

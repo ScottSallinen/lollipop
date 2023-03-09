@@ -38,15 +38,15 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	enforce.ENFORCE(source.Property.Type == Source)
 	enforce.ENFORCE(sink.Property.Type == Sink)
 
-	// Check heights
-	enforce.ENFORCE(source.Property.Height >= int64(len(g.Vertices)), "source height < # of vertices")
-	enforce.ENFORCE(sink.Property.Height == 0, "sink height != 0")
-
 	// Make sure all messages are processed
 	for vi := range g.Vertices {
 		v := &g.Vertices[vi]
 		enforce.ENFORCE(len(v.Property.MessageBuffer) == 0, fmt.Sprintf("vertex index %d ID %d has outstanding messages", vi, v.Id))
 	}
+
+	// Check heights
+	enforce.ENFORCE(source.Property.Height >= int64(len(g.Vertices)), "source height < # of vertices")
+	enforce.ENFORCE(sink.Property.Height == 0, "sink height != 0")
 
 	// Check Excess
 	for vi := range g.Vertices {
