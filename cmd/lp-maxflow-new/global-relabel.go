@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var ENABLE_BFS_PHASE = false
+var ENABLE_BFS_PHASE = true
 
 func PeriodicGlobalResetRunnable(f *Framework, g *Graph, exit *bool, period time.Duration) {
 	time.Sleep(period)
@@ -55,12 +55,15 @@ func GlobalRelabel(f *Framework, g *Graph) {
 		info("    BFS Phase runtime: ", watch.Elapsed()-resetRuntime)
 		bfsPhase = false
 		// resume flow push and height change
+		excessVertices := make([]uint32, 0)
 		for vi := range g.Vertices {
 			v := &g.Vertices[vi].Property
 			if v.Excess != 0 {
 				send(g, uint32(vi), uint32(vi), 0)
+				excessVertices = append(excessVertices, uint32(vi))
 			}
 		}
+		info("    excessVertices ", excessVertices)
 	}
 	g.Mutex.Unlock()
 	info("    GlobalRelabel runtime: ", watch.Elapsed())
