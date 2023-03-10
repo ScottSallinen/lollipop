@@ -1,9 +1,7 @@
 package main
 
 import (
-	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
-	"sync"
 	"time"
 )
 
@@ -25,7 +23,7 @@ func GlobalRelabel(f *Framework, g *Graph) {
 	// set a flag to prevent flow push and height change
 	resetPhase = true
 	// process all existing messages
-	processAllMessages(f, g)
+	f.ProcessAllMessages(g)
 	// Update Vertex height and Nbrs height
 	for vi := range g.Vertices {
 		v := &g.Vertices[vi].Property
@@ -51,7 +49,7 @@ func GlobalRelabel(f *Framework, g *Graph) {
 	// BFS phase
 	if ENABLE_BFS_PHASE {
 		bfsPhase = true
-		processAllMessages(f, g)
+		f.ProcessAllMessages(g)
 		info("    BFS Phase runtime: ", watch.Elapsed()-resetRuntime)
 		bfsPhase = false
 		// resume flow push and height change
@@ -67,12 +65,4 @@ func GlobalRelabel(f *Framework, g *Graph) {
 	}
 	g.Mutex.Unlock()
 	info("    GlobalRelabel runtime: ", watch.Elapsed())
-}
-
-func processAllMessages(f *Framework, g *Graph) {
-	wg := sync.WaitGroup{}
-	exit := false
-	wg.Add(graph.THREADS)
-	f.RunProcessMessages(g, &wg, &exit)
-	wg.Wait()
 }

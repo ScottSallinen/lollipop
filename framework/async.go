@@ -219,12 +219,17 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) PrintTerminationStatus(g 
 	time.Sleep(2 * time.Second)
 	for !*exit {
 		chktermData := make([]int64, graph.THREADS+1)
+		queueMsgCount := make([]int, graph.THREADS)
 		chkRes := int64(0)
 		for i := range chktermData {
 			chktermData[i] = int64(g.MsgSend[i]) - int64(g.MsgRecv[i])
 			chkRes += chktermData[i]
 		}
+		for i := range queueMsgCount {
+			queueMsgCount[i] = len(g.MessageQ[i])
+		}
 		//info("Effective: ", chktermData)
+		info("Messages Queued: ", queueMsgCount)
 		info("Outstanding:  ", chkRes, " Votes: ", g.TerminateVote)
 		time.Sleep(5 * time.Second)
 	}

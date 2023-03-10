@@ -298,19 +298,22 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *
 	close(entries)
 }
 
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) RunProcessMessages(g *graph.Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup, exit *bool) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessages(g *graph.Graph[VertexProp, EdgeProp, MsgType]) {
+	g.ResetVotes()
+	wg := sync.WaitGroup{}
+	wg.Add(graph.THREADS)
 	for t := 0; t < graph.THREADS; t++ {
-		go func(tidx uint32, exit *bool) {
+		go func(tidx uint32) {
 			msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
-			for !(*exit) {
-				termination := frame.ProcessMessages(g, tidx, msgBuffer, false, true)
-				if termination {
-					break
-				}
+			termination := false
+			for !termination {
+				termination = frame.ProcessMessages(g, tidx, msgBuffer, false, true)
 			}
 			wg.Done()
-		}(uint32(t), exit)
+		}(uint32(t))
 	}
+	wg.Wait()
+	g.ResetVotes()
 }
 
 func ExtractGraphName(graphFilename string) (graphName string) {

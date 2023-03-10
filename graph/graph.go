@@ -262,3 +262,13 @@ func (g *Graph[VertexProp, EdgeProp, MsgType]) WriteVertexProps(graphName string
 		enforce.ENFORCE(err)
 	}
 }
+
+// ResetVotes resets the termination votes of all threads except the one for sending initial visits.
+// Useful when restarting the algorithm after previous epoch has terminated
+func (g *Graph[VertexProp, EdgeProp, MsgType]) ResetVotes() {
+	enforce.ENFORCE(g.Mutex.TryRLock() == false)
+	for t := 0; t < len(g.TerminateVote)-1; t += 1 {
+		g.TerminateData[t] = int64(g.MsgSend[t]) - int64(g.MsgRecv[t])
+		g.TerminateVote[t] = -1
+	}
+}
