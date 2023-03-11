@@ -3,6 +3,7 @@ package framework
 import (
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"strings"
 	"sync"
@@ -61,6 +62,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[Verte
 			} else {
 				g.MessageQ[i] = make(chan graph.Message[MsgType], len(g.Vertices)+8)
 			}
+			g.TerminateData[i] = math.MaxUint16 // non-zero at start
 		}
 		if dynamic {
 			g.AlgConverge = frame.ConvergeAsyncDynWithRate
