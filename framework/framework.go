@@ -313,7 +313,6 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessages(g *gra
 		}(uint32(t))
 	}
 	wg.Wait()
-	g.ResetVotes()
 }
 
 func ExtractGraphName(graphFilename string) (graphName string) {

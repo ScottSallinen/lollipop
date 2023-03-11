@@ -69,6 +69,7 @@ func GlobalRelabel(f *Framework, g *Graph) {
 		}
 		info("    excessVertices ", excessVertices)
 	}
+	g.ResetVotes()
 	g.Mutex.Unlock()
 	info("    GlobalRelabel runtime: ", watch.Elapsed())
 }
