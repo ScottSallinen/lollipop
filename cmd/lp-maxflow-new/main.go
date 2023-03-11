@@ -152,10 +152,8 @@ func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, 
 	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
 	frame, g := GetFrameworkAndGraph(source, sink, n)
 
-	exit := false
-	defer func() { exit = true }()
 	if async {
-		go PeriodicGlobalResetRunnable(frame, g, &exit, grInterval)
+		StartPeriodicGlobalReset(frame, g, grInterval)
 	} else {
 		info("Global Reset currently does not work in sync mode")
 	}

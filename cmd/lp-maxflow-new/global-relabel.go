@@ -6,10 +6,16 @@ import (
 )
 
 var ENABLE_BFS_PHASE = true
+var GlobalRelabelExit = false
 
-func PeriodicGlobalResetRunnable(f *Framework, g *Graph, exit *bool, period time.Duration) {
+func StartPeriodicGlobalReset(f *Framework, g *Graph, period time.Duration) {
+	GlobalRelabelExit = false
+	go PeriodicGlobalResetRunnable(f, g, period)
+}
+
+func PeriodicGlobalResetRunnable(f *Framework, g *Graph, period time.Duration) {
 	time.Sleep(period)
-	for !*exit {
+	for !GlobalRelabelExit {
 		GlobalRelabel(f, g)
 		time.Sleep(period)
 	}

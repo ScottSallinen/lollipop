@@ -76,7 +76,10 @@ func OnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue) (msgSent int) {
 	return
 }
 
-func OnFinish(_ *Graph) error {
+func OnFinish(g *Graph) error {
+	g.Mutex.Lock()
+	GlobalRelabelExit = true
+	g.Mutex.Unlock()
 	return nil
 }
 
