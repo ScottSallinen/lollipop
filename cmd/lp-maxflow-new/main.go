@@ -46,7 +46,8 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	}
 
 	// Check heights
-	enforce.ENFORCE(source.Property.Height >= int64(len(g.Vertices)), "source height < # of vertices")
+	enforce.ENFORCE(source.Property.Height >= int64(len(g.Vertices)),
+		"source height ", source.Property.Height, " < # of vertices ", len(g.Vertices))
 	enforce.ENFORCE(sink.Property.Height == 0, "sink height != 0")
 
 	// Check Excess

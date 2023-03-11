@@ -34,9 +34,10 @@ func push(g *Graph, sidx, didx uint32) (msgSent int) {
 func updateHeight(g *Graph, vidx uint32, newHeight int64) (msgSent int) {
 	v := &g.Vertices[vidx].Property
 	if v.Height != newHeight {
-		if newHeight == -getVertexCount() {
-			info("Updating height to -|V|!")
-		}
+		//if newHeight == -getVertexCount() {
+		//	info("Updating height to -|V|!")
+		//}
+		//enforce.ENFORCE(v.Type != Source || int(newHeight) > 0)
 		v.Height = newHeight
 		for n := range v.Nbrs {
 			msgSent += send(g, vidx, n, 0)
@@ -118,7 +119,7 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 		if !bfsPhase {
 			msgSent += discharge(g, vidx)
 		}
-	} else if v.Excess < 0 && v.Type != Sink {
+	} else if v.Excess < 0 && v.Type == Normal {
 		msgSent += updateHeight(g, vidx, -getVertexCount())
 	}
 	return

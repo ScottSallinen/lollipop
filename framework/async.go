@@ -230,7 +230,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) PrintTerminationStatus(g 
 		}
 		//info("Effective: ", chktermData)
 		info("Messages Queued: ", queueMsgCount)
-		info("Outstanding:  ", chkRes, " Votes: ", g.TerminateVote)
+		info("Outstanding:  ", chkRes, " Votes: ", g.TerminateVote, " TermData: ", g.TerminateData)
 		time.Sleep(5 * time.Second)
 	}
 }
