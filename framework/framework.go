@@ -87,11 +87,12 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Run(g *graph.Graph[Vertex
 	info("Termination(ms) ", g.Watch.Elapsed().Milliseconds(), " realtime(ms): ", g.Watch.AbsoluteElapsed().Milliseconds())
 
 	//m2 := time.Now()
-	frame.OnFinish(g)
+	err := frame.OnFinish(g)
+	enforce.ENFORCE(err)
 	//t2 := time.Since(m2)
 	//info("Finalized(ms) ", t2.Milliseconds())
 
-	err := frame.OnCheckCorrectness(g)
+	err = frame.OnCheckCorrectness(g)
 	enforce.ENFORCE(err)
 
 	outputWg.Done()

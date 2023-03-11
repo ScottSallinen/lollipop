@@ -2,23 +2,32 @@ package main
 
 import (
 	"github.com/ScottSallinen/lollipop/mathutils"
+	"sync"
 	"time"
 )
 
 var ENABLE_BFS_PHASE = true
-var GlobalRelabelExit = false
 
-func StartPeriodicGlobalReset(f *Framework, g *Graph, period time.Duration) {
-	GlobalRelabelExit = false
-	go PeriodicGlobalResetRunnable(f, g, period)
+func StartPeriodicGlobalReset(f *Framework, g *Graph, period time.Duration, exit *chan bool) *sync.WaitGroup {
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	resetPhase = false
+	bfsPhase = false
+	go PeriodicGlobalResetRunnable(f, g, period, exit, &wg)
+	return &wg
 }
 
-func PeriodicGlobalResetRunnable(f *Framework, g *Graph, period time.Duration) {
-	time.Sleep(period)
-	for !GlobalRelabelExit {
+func PeriodicGlobalResetRunnable(f *Framework, g *Graph, period time.Duration, exit *chan bool, wg *sync.WaitGroup) {
+loop:
+	for {
+		select {
+		case <-*exit:
+			break loop
+		case <-time.After(period):
+		}
 		GlobalRelabel(f, g)
-		time.Sleep(period)
 	}
+	wg.Done()
 }
 
 func GlobalRelabel(f *Framework, g *Graph) {

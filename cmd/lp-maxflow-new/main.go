@@ -12,6 +12,7 @@ import (
 	_ "net/http/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -96,7 +97,7 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	return nil
 }
 
-func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32) (*Framework, *Graph) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool) (*Framework, *Graph) {
 	enforce.ENFORCE(sourceRaw != sinkRaw)
 
 	g := Graph{}
@@ -117,7 +118,9 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32) (*Framework, *Graph) {
 
 	frame := Framework{}
 	frame.OnVisitVertex = OnVisitVertex
-	frame.OnFinish = OnFinish
+	frame.OnFinish = func(g *Graph) error {
+		return OnFinish(g, exit)
+	}
 	frame.OnEdgeAdd = OnEdgeAdd
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
@@ -150,16 +153,19 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32) (*Framework, *Graph) {
 
 func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration) *Graph {
 	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
-	frame, g := GetFrameworkAndGraph(source, sink, n)
+	globalRelabelExit := make(chan bool, 0)
+	frame, g := GetFrameworkAndGraph(source, sink, n, &globalRelabelExit)
 
+	var grWg *sync.WaitGroup
 	if async {
-		StartPeriodicGlobalReset(frame, g, grInterval)
+		grWg = StartPeriodicGlobalReset(frame, g, grInterval, &globalRelabelExit)
 	} else {
-		info("Global Reset currently does not work in sync mode")
+		enforce.ENFORCE("Global Reset currently does not work in sync mode")
 	}
 
 	frame.Launch(g, gName, async, dynamic)
 
+	grWg.Wait()
 	return g
 }
 

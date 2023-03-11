@@ -186,7 +186,8 @@ func loadAllStructureChanges(path string) []graph.StructureChange[EdgeProp] {
 }
 
 func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, sink uint32) *Graph {
-	frame, g := GetFrameworkAndGraph(source, sink, 0)
+	globalRelabelExit := make(chan bool, 0)
+	frame, g := GetFrameworkAndGraph(source, sink, 0, &globalRelabelExit)
 
 	frame.Init(g, true, true)
 
@@ -195,11 +196,9 @@ func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, s
 	var frameWait sync.WaitGroup
 	frameWait.Add(1)
 
-	go frame.Run(g, &feederWg, &frameWait)
+	var grWg = StartPeriodicGlobalReset(frame, g, 500*time.Millisecond, &globalRelabelExit)
 
-	exit := false
-	defer func() { exit = true }()
-	go PeriodicGlobalResetRunnable(frame, g, &exit, 500*time.Millisecond)
+	go frame.Run(g, &feederWg, &frameWait)
 
 	for _, v := range sc {
 		switch v.Type {
@@ -217,5 +216,6 @@ func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, s
 	}
 	feederWg.Done()
 	frameWait.Wait()
+	grWg.Wait()
 	return g
 }
