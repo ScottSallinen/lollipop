@@ -52,17 +52,17 @@ var (
 	dynamicTestGraphs = [...]DynamicTestGraph{
 		// Test INCREASING messages in cycles
 		{1, 0, 1, 5, []graph.StructureChange[EdgeProp]{
-			{graph.ADD, 0, 1, EdgeProp{1}},
-			{graph.ADD, 2, 3, EdgeProp{1}},
-			{graph.ADD, 3, 4, EdgeProp{1}},
-			{graph.ADD, 4, 2, EdgeProp{1}},
+			{graph.ADD, 0, 1, EdgeProp{1, 0}},
+			{graph.ADD, 2, 3, EdgeProp{1, 0}},
+			{graph.ADD, 3, 4, EdgeProp{1, 0}},
+			{graph.ADD, 4, 2, EdgeProp{1, 0}},
 		}},
 		// Check if upstream vertices are also updated when a vertex receives a DECREASING event
 		{1, 0, 2, 4, []graph.StructureChange[EdgeProp]{
-			{graph.ADD, 0, 1, EdgeProp{2}},
-			{graph.ADD, 1, 2, EdgeProp{1}},
-			{graph.ADD, 0, 3, EdgeProp{1}},
-			{graph.ADD, 3, 1, EdgeProp{1}},
+			{graph.ADD, 0, 1, EdgeProp{2, 0}},
+			{graph.ADD, 1, 2, EdgeProp{1, 0}},
+			{graph.ADD, 0, 3, EdgeProp{1, 0}},
+			{graph.ADD, 3, 1, EdgeProp{1, 0}},
 			{graph.DEL, 0, 1, EdgeProp{}},
 		}},
 	}
@@ -97,7 +97,7 @@ func TestAsyncStatic(t *testing.T) {
 		for ti := 0; ti < 10; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
 			g := LaunchGraphExecution(testGraph.Filename, true, false,
-				testGraph.Source, testGraph.Sink, testGraph.VertexCount, 500*time.Millisecond)
+				testGraph.Source, testGraph.Sink, testGraph.VertexCount, 500*time.Millisecond, 0)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -123,7 +123,7 @@ func TestAsyncDynamicIncremental(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 3; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink, 0, 500*time.Millisecond)
+			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink, 0, 500*time.Millisecond, 0)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -193,7 +193,7 @@ func loadAllStructureChanges(path string) []graph.StructureChange[EdgeProp] {
 
 func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, sink uint32) *Graph {
 	globalRelabelExit := make(chan bool, 0)
-	frame, g := GetFrameworkAndGraph(source, sink, 0, &globalRelabelExit)
+	frame, g := GetFrameworkAndGraph(source, sink, 0, &globalRelabelExit, 0)
 
 	frame.Init(g, true, true)
 

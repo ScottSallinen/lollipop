@@ -24,13 +24,17 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProp] {
 	stringFields := strings.Fields(lineText)
 
 	sflen := len(stringFields)
-	enforce.ENFORCE(sflen == 3)
+	enforce.ENFORCE(sflen == 4)
 
 	src, _ := strconv.Atoi(stringFields[0])
 	dst, _ := strconv.Atoi(stringFields[1])
 	capacity, _ := strconv.Atoi(stringFields[2])
+	timestamp, _ := strconv.Atoi(stringFields[3])
 
-	return graph.RawEdge[EdgeProp]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProp{uint32(capacity)}}
+	return graph.RawEdge[EdgeProp]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProp{
+		Capacity:  uint32(capacity),
+		Timestamp: uint64(timestamp),
+	}}
 }
 
 func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
@@ -98,17 +102,18 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	return nil
 }
 
-func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool) (*Framework, *Graph) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertDeleteDelay uint64) (*Framework, *Graph) {
 	enforce.ENFORCE(sourceRaw != sinkRaw)
 
 	g := Graph{}
 	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected:       false,
-		EmptyVal:         nil,
-		LogTimeseries:    false,
-		OracleCompare:    false,
-		SourceInit:       false,
-		ReadLockRequired: true,
+		Undirected:           false,
+		EmptyVal:             nil,
+		LogTimeseries:        false,
+		OracleCompare:        false,
+		SourceInit:           false,
+		ReadLockRequired:     true,
+		InsertDeleteOnExpire: insertDeleteDelay,
 		InitAllMessage: MessageValue{{
 			Type:   Init,
 			Source: EmptyValue,
@@ -127,6 +132,8 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool) (*Frame
 	frame.MessageAggregator = MessageAggregator
 	frame.AggregateRetrieve = AggregateRetrieve
 	frame.EdgeParser = EdgeParser
+	frame.GetTimestamp = GetTimestamp
+	frame.SetTimestamp = SetTimestamp
 	frame.OnInitVertex = func(g *Graph, vidx uint32) {
 		v := &g.Vertices[vidx]
 		switch v.Id {
@@ -152,10 +159,10 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool) (*Frame
 	return &frame, &g
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration) *Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration, insertDeleteDelay uint64) *Graph {
 	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
 	globalRelabelExit := make(chan bool, 0)
-	frame, g := GetFrameworkAndGraph(source, sink, n, &globalRelabelExit)
+	frame, g := GetFrameworkAndGraph(source, sink, n, &globalRelabelExit, insertDeleteDelay)
 
 	var grWg *sync.WaitGroup
 	if async {
@@ -180,6 +187,8 @@ func main() {
 	source := flag.Uint("source", 0, "Raw ID of the source vertex")
 	sink := flag.Uint("sink", 1, "Raw ID of the sink vertex")
 	n := flag.Uint("n", 0, "Number of vertices in the graph")
+	insertDeleteDelay := flag.Uint("sw", 0,
+		"If non-zero, will insert delete edges that were added before, after passing the expiration duration")
 	flag.Parse()
 
 	graph.THREADS = *tptr
@@ -190,7 +199,7 @@ func main() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n), 10*time.Second)
+	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n), 10*time.Second, uint64(*insertDeleteDelay))
 
 	g.ComputeGraphStats(false, false)
 

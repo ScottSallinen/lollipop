@@ -263,7 +263,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *
 				go func(tidx uint32, exit *bool) {
 					msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
 					for !(*exit) {
-						frame.ProcessMessages(g, tidx, msgBuffer, false, false)
+						frame.ProcessMessages(g, tidx, msgBuffer, false, false, false)
 					}
 					wg.Done()
 				}(uint32(t), &gExit)
@@ -310,7 +310,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessages(g *gra
 			msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
 			termination := false
 			for !termination {
-				termination = frame.ProcessMessages(g, tidx, msgBuffer, false, true)
+				termination = frame.ProcessMessages(g, tidx, msgBuffer, false, true, true)
 			}
 			wg.Done()
 		}(uint32(t))

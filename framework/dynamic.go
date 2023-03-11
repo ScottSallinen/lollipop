@@ -290,7 +290,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsyncDynWithRate(
 				}
 				// Process algorithm messages. Need to rlock (due to potential graph structure changes)
 				// Also will only check for termination if we have no more edges to consume.
-				completed = frame.ProcessMessages(g, tidx, msgBuffer, !rLockOutside, strucClosed)
+				completed = frame.ProcessMessages(g, tidx, msgBuffer, !rLockOutside, strucClosed, false)
 				if rLockOutside {
 					g.Mutex.RUnlock()
 				}

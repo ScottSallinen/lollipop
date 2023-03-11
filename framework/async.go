@@ -78,7 +78,8 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) SendInitialVisists(g *gra
 
 // ProcessMessages will pull a bundle of messages targetting this thread, and then process them all.
 // We can choose to readlock the graph if needed, and will check for termination only if the bool is set.
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessMessages(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32, msgBuffer []graph.Message[MsgType], lock bool, exitCheck bool) bool {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessMessages(g *graph.Graph[VertexProp, EdgeProp, MsgType],
+	tidx uint32, msgBuffer []graph.Message[MsgType], lock bool, exitCheck bool, ignoreLast bool) bool {
 	algCount := 0
 	// Process a batch of messages from the MessageQ
 algLoop:
@@ -118,7 +119,7 @@ algLoop:
 		}
 		g.MsgRecv[tidx] += uint32(algCount)
 	} else if exitCheck {
-		if frame.CheckTermination(g, tidx) {
+		if frame.CheckTermination(g, tidx, ignoreLast) {
 			return true
 		}
 	}
@@ -126,7 +127,7 @@ algLoop:
 }
 
 // ConvergeAsync: Static focused variant of async convergence.
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Graph[VertexProp, EdgeProp, MsgType], feederWg *sync.WaitGroup) {
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Graph[VertexProp, EdgeProp, MsgType], _ *sync.WaitGroup) {
 	// Note: feederWg not used -- only in the function to match the template ConvergeFunc.
 	info("ConvergeAsync")
 	var wg sync.WaitGroup
@@ -155,7 +156,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 					g.Mutex.RLock()
 				}
 				for i := 0; !completed && i < lockGranularity; i++ {
-					completed = frame.ProcessMessages(g, tidx, msgBuffer, false, true)
+					completed = frame.ProcessMessages(g, tidx, msgBuffer, false, true, false)
 				}
 				if lock {
 					g.Mutex.RUnlock()
@@ -172,21 +173,25 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ConvergeAsync(g *graph.Gr
 // If any thread generates new messages they will not vote to quit, update new messages sent,
 // thus kick out others until cons = prod.
 // Works because produced >= consumed at all times.
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) CheckTermination(g *graph.Graph[VertexProp, EdgeProp, MsgType], tidx uint32) bool {
-	VOTES := graph.THREADS + 1
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) CheckTermination(g *graph.Graph[VertexProp, EdgeProp, MsgType],
+	tidx uint32, ignoreLast bool) bool {
+	votes := graph.THREADS
+	if !ignoreLast {
+		votes += 1
+	}
 
 	g.TerminateData[tidx] = int64(g.MsgSend[tidx]) - int64(g.MsgRecv[tidx])
 	allMsgs := int64(0)
-	for v := 0; v < VOTES; v++ {
+	for v := 0; v < votes; v++ {
 		allMsgs += g.TerminateData[v]
 	}
 	if allMsgs == 0 {
 		g.TerminateVote[tidx] = 1
 		allDone := 0
-		for v := 0; v < VOTES; v++ {
+		for v := 0; v < votes; v++ {
 			allDone += g.TerminateVote[v]
 		}
-		if allDone == VOTES {
+		if allDone == votes {
 			return true
 		}
 	}

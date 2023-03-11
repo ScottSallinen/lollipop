@@ -31,7 +31,8 @@ type Message struct {
 }
 
 type EdgeProp struct {
-	Capacity uint32
+	Capacity  uint32
+	Timestamp uint64
 }
 
 type MessageValue []Message
@@ -101,6 +102,18 @@ func (p *VertexProp) String() string {
 		s += fmt.Sprintf("%d:%v,", k, v)
 	}
 	return s + "]}"
+}
+
+func (e EdgeProp) String() string {
+	return fmt.Sprintf("{%d,%d}", e.Capacity, e.Timestamp)
+}
+
+func GetTimestamp(e EdgeProp) uint64 {
+	return e.Timestamp
+}
+
+func SetTimestamp(e *EdgeProp, ts uint64) {
+	e.Timestamp = ts
 }
 
 func CountMessage(m *Message) {
