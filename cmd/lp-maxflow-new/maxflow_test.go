@@ -41,7 +41,13 @@ var (
 		{1, 16239, 7662, "../../data/maxflow/comment-graph-sample-merged-shuffled-5percent.txt", 6260},
 		{1, 0, 1, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
 		{0, 5000, 10000, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		//{1087, 1568, 363, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		{1, 6786, 7895, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		{0, 15358, 9845, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		{162, 6272, 4356, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		{8, 16632, 9492, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		{1087, 1568, 363, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		{21, 3709, 7135, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		{137, 11665, 3721, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
 	}
 	dynamicTestGraphs = [...]DynamicTestGraph{
 		// Test INCREASING messages in cycles
