@@ -44,7 +44,6 @@ type Edge = graph.Edge[EdgeProp]
 
 const (
 	EmptyValue    = 0
-	InitialHeight = math.MaxUint32
 
 	Normal VertexType = 0
 	Source VertexType = 1

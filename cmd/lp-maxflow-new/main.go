@@ -156,16 +156,14 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 		switch v.Id {
 		case sourceRaw:
 			v.Property.Type = Source
-			v.Property.Height = 0
 		case sinkRaw:
 			v.Property.Type = Sink
-			v.Property.Height = 0
 		default:
 			v.Property.Type = Normal
-			v.Property.Height = math.MaxUint32 // OPTIMIZATION
 		}
 		v.Property.Nbrs = make(map[uint32]Nbr)
 		v.Property.Excess = 0
+		v.Property.Height = 0
 	}
 	frame.OnCheckCorrectness = func(g *Graph) error {
 		return OnCheckCorrectness(g, sourceRaw, sinkRaw)
@@ -254,7 +252,7 @@ func main() {
 	}()
 
 	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n),
-		10*time.Second, uint64(*insertDeleteDelay), uint64(*tsi))
+		3*time.Second, uint64(*insertDeleteDelay), uint64(*tsi))
 
 	g.ComputeGraphStats(false, false)
 

@@ -3,11 +3,10 @@ package main
 import (
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/mathutils"
+	"math"
 	"sync"
 	"time"
 )
-
-var ENABLE_BFS_PHASE = true
 
 func StartPeriodicGlobalReset(f *Framework, g *Graph, delay time.Duration, interval time.Duration, lockGraph bool, exit *chan bool) *sync.WaitGroup {
 	wg := sync.WaitGroup{}
@@ -46,6 +45,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	} else {
 		enforce.ENFORCE(g.Mutex.TryLock() == false)
 	}
+
 	// set a flag to prevent flow push and height change
 	resetPhase = true
 	// process all existing messages
@@ -56,7 +56,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	for vi := range g.Vertices {
 		v := &g.Vertices[vi].Property
 		oldHeight := v.Height
-		v.Height = InitialHeight
+		v.Height = math.MaxUint32
 		if v.Type == Source || v.Type == Sink || v.Excess < 0 {
 			// let it broadcast its height after resuming execution
 			updateHeight(g, uint32(vi), oldHeight)
@@ -64,10 +64,10 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 				info("    Current sink excess: ", v.Excess, " height: ", v.Height)
 			}
 		}
-		for i := range v.Nbrs {
+		for i, n := range v.Nbrs {
 			v.Nbrs[i] = Nbr{
-				Height: InitialHeight,
-				ResCap: v.Nbrs[i].ResCap,
+				Height: math.MaxUint32,
+				ResCap: n.ResCap,
 			}
 		}
 		if v.Excess > 0 {
@@ -80,20 +80,20 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	info("    excessVertices count positive ", positiveVertices, " negative ", negativeVertices)
 	info("    Reset Phase runtime: ", resetRuntime)
 	resetPhase = false
+
 	// BFS phase
-	if ENABLE_BFS_PHASE {
-		bfsPhase = true
-		f.ProcessAllMessages(g)
-		info("    BFS Phase runtime: ", watch.Elapsed()-resetRuntime)
-		bfsPhase = false
-		// resume flow push and height change
-		for vi := range g.Vertices {
-			v := &g.Vertices[vi].Property
-			if v.Excess != 0 {
-				send(g, uint32(vi), uint32(vi), 0)
-			}
+	bfsPhase = true
+	f.ProcessAllMessages(g)
+	info("    BFS Phase runtime: ", watch.Elapsed()-resetRuntime)
+	bfsPhase = false
+	// resume flow push and height change
+	for vi := range g.Vertices {
+		v := &g.Vertices[vi].Property
+		if v.Excess != 0 {
+			send(g, uint32(vi), uint32(vi), 0)
 		}
 	}
+
 	g.ResetVotes()
 	if lockGraph {
 		g.Mutex.Unlock()
