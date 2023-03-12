@@ -86,7 +86,9 @@ func restoreHeightInvariant(g *Graph, vidx, widx uint32) (msgSent int) {
 		return
 	}
 	v := &g.Vertices[vidx].Property
-	msgSent += push(g, vidx, widx)
+	if !bfsPhase {
+		msgSent += push(g, vidx, widx)
+	}
 	if v.Type == Normal && v.Nbrs[widx].ResCap > 0 {
 		maxHeight := v.Nbrs[widx].Height + 1
 		if v.Height > maxHeight {
@@ -119,7 +121,7 @@ func onReceivingMessage(g *Graph, vidx uint32, m *Message) (msgSent int) {
 		if !bfsPhase {
 			msgSent += discharge(g, vidx)
 		}
-	} else if v.Excess < 0 && v.Type == Normal {
+	} else if v.Excess < 0 && v.Type == Normal && v.Height > 0 {
 		msgSent += updateHeight(g, vidx, -getVertexCount())
 	}
 	return
@@ -154,6 +156,10 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 	if s.Type == Source {
 		// s.Excess < 0 ==> s.Nbrs[didx].ResCap < 0
 		s.Excess += delta
+	}
+
+	if resetPhase {
+		return
 	}
 
 	// Make sure it will be in a legal state

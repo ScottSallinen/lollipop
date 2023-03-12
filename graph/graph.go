@@ -40,6 +40,7 @@ type Graph[VertexProp, EdgeProp, MsgType any] struct {
 	TerminateData    []int64
 	Watch            mathutils.Watch
 	LogEntryChan     chan time.Time
+	Dynamic          bool
 	Options          GraphOptions[MsgType]
 }
 

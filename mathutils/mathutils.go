@@ -1,11 +1,13 @@
 package mathutils
 
 import (
+	"github.com/ScottSallinen/lollipop/enforce"
 	"math"
 	"math/rand"
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"golang.org/x/exp/constraints"
@@ -52,6 +54,29 @@ func Median(n []int) int {
 		return n[idx]
 	}
 	return (n[idx-1] + n[idx]) / 2
+}
+
+func MinMax[T constraints.Ordered](slice []T) (T, T) {
+	max := slice[0]
+	min := slice[0]
+	for _, e := range slice {
+		if max < e {
+			max = e
+		}
+		if min > e {
+			min = e
+		}
+	}
+	return min, max
+}
+
+func SampleVariance[T constraints.Integer | constraints.Float](slice []T, mean float64) float64 {
+	enforce.ENFORCE(len(slice) > 0)
+	variance := float64(0)
+	for _, l := range slice {
+		variance += (float64(l) - mean) * (float64(l) - mean)
+	}
+	return variance / float64(len(slice)-1)
 }
 
 func AtomicAddFloat64(val *float64, delta float64) (old float64) {
@@ -132,4 +157,19 @@ func RemoveRandomElement[T any](slice []T) (T, []T) {
 	ret := slice[idx]
 	slice[idx] = slice[len(slice)-1]
 	return ret, slice[:len(slice)-1]
+}
+
+// Copied from https://stackoverflow.com/a/32843750
+func WaitWithTimeout(wg *sync.WaitGroup, timeout time.Duration) (complete bool) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		wg.Wait()
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }

@@ -34,12 +34,19 @@ type Framework[VertexProp, EdgeProp, MsgType any] struct {
 	GetTimestamp       func(prop EdgeProp) uint64
 	SetTimestamp       func(prop *EdgeProp, ts uint64)
 	ApplyTimeSeries    func(chan TimeseriesEntry[VertexProp])
+	NewLogTimeSeries   func(f *Framework[VertexProp, EdgeProp, MsgType], g *graph.Graph[VertexProp, EdgeProp, MsgType], entries chan TimeseriesEntry[VertexProp])
 }
 
 type TimeseriesEntry[VertexProp any] struct {
-	Name       time.Time
-	EdgeCount  uint64
-	VertexData []mathutils.Pair[uint32, VertexProp]
+	Name                time.Time
+	VertexCount         int
+	EdgeCount           uint64
+	PositiveVertices    uint32
+	NegativeVertices    uint32
+	SourceApproxMaxFlow int64
+	SinkApproxMaxFlow   int64
+	FinalMaxFlow        int64
+	Latency             time.Duration
 }
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[VertexProp, EdgeProp, MsgType], async bool, dynamic bool) {
@@ -55,6 +62,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[Verte
 		g.TerminateVote = make([]int, graph.THREADS+1)
 		g.TerminateData = make([]int64, graph.THREADS+1)
 		g.LogEntryChan = make(chan time.Time, 512)
+		g.Dynamic = dynamic
 		for i := 0; i < graph.THREADS; i++ {
 			if dynamic {
 				g.MessageQ[i] = make(chan graph.Message[MsgType], ((1 << 19) * graph.BIGNESS))
@@ -129,7 +137,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Launch(g *graph.Graph[Ver
 	// We launch the timeseries consumer thread
 	if g.Options.LogTimeseries {
 		entries := make(chan TimeseriesEntry[VertexProp], 4096)
-		go frame.LogTimeSeriesRunnable(g, entries)
+		go frame.NewLogTimeSeries(frame, g, entries)
 		go frame.ApplyTimeSeries(entries)
 	}
 
@@ -249,57 +257,57 @@ func (originalFrame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracle(g
 // immediately freeze the graph, and copy vertex properties. Then call "Finish" for the algorithm,
 // then stash the finished vertex properties. Will then put back the original state of vertex properties.
 // The stashed finished properties are then sent to the applyTimeSeries func (defined by the algorithm).
-func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], entries chan TimeseriesEntry[VertexProp]) {
-	for entry := range g.LogEntryChan {
-		g.Mutex.Lock()
-
-		// Shall be included in the runtime
-		if g.Options.AsyncContinuationTime > 0 {
-			wg := sync.WaitGroup{}
-			gExit := false
-			wg.Add(graph.THREADS)
-			// We might be able to use RunProcessMessages to replace this loop
-			for t := 0; t < graph.THREADS; t++ {
-				go func(tidx uint32, exit *bool) {
-					msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
-					for !(*exit) {
-						frame.ProcessMessages(g, tidx, msgBuffer, false, false, false)
-					}
-					wg.Done()
-				}(uint32(t), &gExit)
-			}
-			time.Sleep(time.Duration(g.Options.AsyncContinuationTime) * time.Millisecond)
-			gExit = true
-			wg.Wait()
-		}
-
-		g.Watch.Pause()
-
-		numEdges := uint64(0)
-		gVertexStash := make([]mathutils.Pair[uint32, VertexProp], len(g.Vertices))
-		for v := range g.Vertices {
-			numEdges += uint64(len(g.Vertices[v].OutEdges))
-			gVertexStash[v].First = g.Vertices[v].Id
-			gVertexStash[v].Second = g.Vertices[v].Property
-		}
-		frame.OnFinish(g)
-
-		for v := range g.Vertices {
-			// Resetting the effect of the "early finish"
-			tmp := g.Vertices[v].Property
-			g.Vertices[v].Property = gVertexStash[v].Second
-			gVertexStash[v].Second = tmp
-		}
-		entries <- TimeseriesEntry[VertexProp]{entry, numEdges, gVertexStash}
-		g.Watch.UnPause()
-		g.Mutex.Unlock()
-
-		if g.Options.OracleCompare {
-			frame.CompareToOracle(g, true, false, 0)
-		}
-	}
-	close(entries)
-}
+//func (frame *Framework[VertexProp, EdgeProp, MsgType]) LogTimeSeriesRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], entries chan TimeseriesEntry[VertexProp]) {
+//	for entry := range g.LogEntryChan {
+//		g.Mutex.Lock()
+//
+//		// Shall be included in the runtime
+//		if g.Options.AsyncContinuationTime > 0 {
+//			wg := sync.WaitGroup{}
+//			gExit := false
+//			wg.Add(graph.THREADS)
+//			// We might be able to use RunProcessMessages to replace this loop
+//			for t := 0; t < graph.THREADS; t++ {
+//				go func(tidx uint32, exit *bool) {
+//					msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
+//					for !(*exit) {
+//						frame.ProcessMessages(g, tidx, msgBuffer, false, false, false)
+//					}
+//					wg.Done()
+//				}(uint32(t), &gExit)
+//			}
+//			time.Sleep(time.Duration(g.Options.AsyncContinuationTime) * time.Millisecond)
+//			gExit = true
+//			wg.Wait()
+//		}
+//
+//		g.Watch.Pause()
+//
+//		numEdges := uint64(0)
+//		gVertexStash := make([]mathutils.Pair[uint32, VertexProp], len(g.Vertices))
+//		for v := range g.Vertices {
+//			numEdges += uint64(len(g.Vertices[v].OutEdges))
+//			gVertexStash[v].First = g.Vertices[v].Id
+//			gVertexStash[v].Second = g.Vertices[v].Property
+//		}
+//		frame.OnFinish(g)
+//
+//		for v := range g.Vertices {
+//			// Resetting the effect of the "early finish"
+//			tmp := g.Vertices[v].Property
+//			g.Vertices[v].Property = gVertexStash[v].Second
+//			gVertexStash[v].Second = tmp
+//		}
+//		entries <- TimeseriesEntry[VertexProp]{entry, numEdges, gVertexStash}
+//		g.Watch.UnPause()
+//		g.Mutex.Unlock()
+//
+//		if g.Options.OracleCompare {
+//			frame.CompareToOracle(g, true, false, 0)
+//		}
+//	}
+//	close(entries)
+//}
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessages(g *graph.Graph[VertexProp, EdgeProp, MsgType]) {
 	g.ResetVotes()
@@ -310,12 +318,37 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessages(g *gra
 			msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
 			termination := false
 			for !termination {
-				termination = frame.ProcessMessages(g, tidx, msgBuffer, false, true, true)
+				termination = frame.ProcessMessages(g, tidx, msgBuffer, false, true, g.Dynamic)
 			}
 			wg.Done()
 		}(uint32(t))
 	}
 	wg.Wait()
+	g.ResetVotes()
+}
+
+func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessagesWithTimeout(
+	g *graph.Graph[VertexProp, EdgeProp, MsgType], timeout time.Duration) (complete bool) {
+	g.ResetVotes()
+	wg := sync.WaitGroup{}
+	wg.Add(graph.THREADS)
+	exit := false
+	// We might be able to use RunProcessMessages to replace this loop
+	for t := 0; t < graph.THREADS; t++ {
+		go func(tidx uint32) {
+			msgBuffer := make([]graph.Message[MsgType], graph.MsgBundleSize)
+			termination := false
+			for !termination && !exit {
+				termination = frame.ProcessMessages(g, tidx, msgBuffer, false, true, g.Dynamic)
+			}
+			wg.Done()
+		}(uint32(t))
+	}
+	complete = mathutils.WaitWithTimeout(&wg, timeout)
+	exit = true
+	wg.Wait()
+	g.ResetVotes()
+	return complete
 }
 
 func ExtractGraphName(graphFilename string) (graphName string) {

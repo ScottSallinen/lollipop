@@ -176,27 +176,27 @@ type NamedEntry struct {
 var tsDB = make([]NamedEntry, 0)
 
 func ApplyTimeSeries(entries chan framework.TimeseriesEntry[VertexProperty]) {
-	for e := range entries {
-		ia := make([]float64, len(e.VertexData))
-		for v := range e.VertexData {
-			ia[v] = e.VertexData[v].Second.Value
-		}
-		iaRank := mathutils.NewIndexedFloat64Slice(ia)
-		sort.Sort(sort.Reverse(iaRank))
-		topN := 10
-		if len(iaRank.Idx) < topN {
-			topN = len(iaRank.Idx)
-		}
-		newDbEntry := make([]mathutils.Pair[uint32, float64], topN)
-		for i := 0; i < topN; i++ {
-			newDbEntry[i] = mathutils.Pair[uint32, float64]{First: e.VertexData[iaRank.Idx[i]].First, Second: iaRank.Float64Slice[i]}
-			//info(fmt.Sprintf("%d,%10d,\t%10.3f", i, g.Vertices[iaRank.Idx[i]].Id, iaRank.Float64Slice[i]))
-		}
-		entry := NamedEntry{e.Name, uint64(len(e.VertexData)), e.EdgeCount, newDbEntry}
-		//info(entry)
-		tsDB = append(tsDB, entry)
-		PrintTimeSeries(true, false)
-	}
+	//for e := range entries {
+	//	ia := make([]float64, len(e.VertexData))
+	//	for v := range e.VertexData {
+	//		ia[v] = e.VertexData[v].Second.Value
+	//	}
+	//	iaRank := mathutils.NewIndexedFloat64Slice(ia)
+	//	sort.Sort(sort.Reverse(iaRank))
+	//	topN := 10
+	//	if len(iaRank.Idx) < topN {
+	//		topN = len(iaRank.Idx)
+	//	}
+	//	newDbEntry := make([]mathutils.Pair[uint32, float64], topN)
+	//	for i := 0; i < topN; i++ {
+	//		newDbEntry[i] = mathutils.Pair[uint32, float64]{First: e.VertexData[iaRank.Idx[i]].First, Second: iaRank.Float64Slice[i]}
+	//		//info(fmt.Sprintf("%d,%10d,\t%10.3f", i, g.Vertices[iaRank.Idx[i]].Id, iaRank.Float64Slice[i]))
+	//	}
+	//	entry := NamedEntry{e.Name, uint64(len(e.VertexData)), e.EdgeCount, newDbEntry}
+	//	//info(entry)
+	//	tsDB = append(tsDB, entry)
+	//	PrintTimeSeries(true, false)
+	//}
 }
 
 // Spits out top10 for each point in time (entry).
