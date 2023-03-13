@@ -74,13 +74,13 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 			sumEdgeCapacityOriginal := int64(0)
 			sumEdgeCapacityResidual := int64(0)
 			for ei := range v.OutEdges {
-				e := &v.OutEdges[ei]
 				// ignore loops and edges to the source
-				if e.Destination != uint32(vi) && e.Destination != g.VertexMap[sourceRaw] {
+				if e := &v.OutEdges[ei]; e.Destination != uint32(vi) && e.Destination != g.VertexMap[sourceRaw] {
 					sumEdgeCapacityOriginal += int64(v.OutEdges[ei].Property.Capacity)
 				}
 			}
-			for _, neighbour := range v.Property.Nbrs {
+			for i, neighbour := range v.Property.Nbrs {
+				enforce.ENFORCE(neighbour.ResCap >= 0, fmt.Sprintf("Residual capacity is %d for (%d, %d)", neighbour.ResCap, vi, i))
 				sumEdgeCapacityResidual += neighbour.ResCap
 			}
 			enforce.ENFORCE(sumEdgeCapacityOriginal == sumEdgeCapacityResidual, fmt.Sprintf(
@@ -102,10 +102,35 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	info("Maximum Flow: ", sourceOut)
 
 	// g.ComputeInEdges()
-	// TODO: Check inflow == outflow for all vertices (doesn't seem to be easy)
-	// TODO: Check height invariant
-	// TODO: print # of vertices in flow
+	// Check height invariant
+	for vi := range g.Vertices {
+		v := &g.Vertices[vi].Property
+		for i, n := range v.Nbrs {
+			if n.ResCap > 0 {
+				enforce.ENFORCE(v.Height <= n.Height+1,
+					fmt.Sprintf("Height invariant violated. (i=%d, h=%d) -(%d)> (i=%d, h=%d)",
+						vi, v.Height, n.ResCap, i, n.Height))
+			}
+		}
+	}
 
+	// Print # of vertices in flow
+	vertexInFlow := make([]int, 0)
+	for vi := range g.Vertices {
+		v := &g.Vertices[vi]
+		for ei := range v.OutEdges {
+			// ignore loops and edges to the source
+			if e := &v.OutEdges[ei]; e.Destination != uint32(vi) && e.Destination != g.VertexMap[sourceRaw] {
+				if v.Property.Nbrs[e.Destination].ResCap < int64(e.Property.Capacity) {
+					vertexInFlow = append(vertexInFlow, vi)
+					break
+				}
+			}
+		}
+	}
+	info("Number of vertices in max flow: ", len(vertexInFlow))
+
+	// TODO: Check inflow == outflow for all vertices (doesn't seem to be easy)
 	PrintMessageCounts()
 	ResetMessageCounts()
 	return nil
@@ -359,11 +384,11 @@ func SaveTimeSeries() {
 
 	header := "RFC3339,Date,VertexCount,EdgeCount,PositiveVertices,NegativeVertices," +
 		"SourceApproxMaxFlow,SinkApproxMaxFlow,FinalMaxFlow,Latency,"
-	f.WriteString(header + "\n")
+	enforce.ENFORCE(f.WriteString(header + "\n"))
 
 	for i := range tsDB {
 		line := tsEntryLineToStr(&tsDB[i])
-		f.WriteString(line + "\n")
+		enforce.ENFORCE(f.WriteString(line + "\n"))
 	}
 }
 
