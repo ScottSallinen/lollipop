@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/ScottSallinen/lollipop/enforce"
+	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
 	"math"
 	"sync"
@@ -58,15 +59,15 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	// process all existing messages
 	f.ProcessAllMessages(g)
 	// Update Vertex height and Nbrs height
-	positiveVertices := 0
-	negativeVertices := 0
-	for vi := range g.Vertices {
+	positiveVertices := make([]int, graph.THREADS)
+	negativeVertices := make([]int, graph.THREADS)
+	parallelForEachVertex(g, func(vi uint32, ti uint32) {
 		v := &g.Vertices[vi].Property
 		oldHeight := v.Height
 		v.Height = math.MaxUint32
 		if v.Type == Source || v.Type == Sink || v.Excess < 0 {
 			// let it broadcast its height after resuming execution
-			updateHeight(g, uint32(vi), oldHeight)
+			updateHeight(g, vi, oldHeight)
 			if v.Type == Sink {
 				info("    Current sink excess: ", v.Excess, " height: ", v.Height)
 			}
@@ -78,13 +79,13 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 			}
 		}
 		if v.Excess > 0 {
-			positiveVertices += 1
+			positiveVertices[ti] += 1
 		} else if v.Excess < 0 {
-			negativeVertices += 1
+			negativeVertices[ti] += 1
 		}
-	}
+	})
 	resetRuntime := watch.Elapsed()
-	info("    excessVertices count positive ", positiveVertices, " negative ", negativeVertices)
+	info("    excessVertices count positive ", mathutils.Sum(positiveVertices), " negative ", mathutils.Sum(negativeVertices))
 	info("    Reset Phase runtime: ", resetRuntime)
 	resetPhase = false
 
@@ -94,14 +95,31 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	info("    BFS Phase runtime: ", watch.Elapsed()-resetRuntime)
 	bfsPhase = false
 	// resume flow push and height change
-	for vi := range g.Vertices {
+	parallelForEachVertex(g, func(vi uint32, _ uint32) {
 		v := &g.Vertices[vi].Property
 		if v.Excess != 0 {
-			send(g, uint32(vi), uint32(vi), 0)
+			send(g, vi, vi, 0)
 		}
-	}
+	})
 
 	g.ResetVotes()
 	earliestNextGrTime = time.Now().Add(GrInterval)
 	info("    GlobalRelabel runtime: ", watch.Elapsed())
+}
+
+func parallelForEachVertex(g *Graph, applicator func(vidx uint32, tidx uint32)) {
+	var wg sync.WaitGroup
+	wg.Add(graph.THREADS)
+	n := uint32(len(g.Vertices))
+	for t := uint32(0); t < uint32(graph.THREADS); t++ {
+		go func(tidx uint32) {
+			defer wg.Done()
+			for vidx := uint32(0); vidx < n; vidx += 1 {
+				if g.Vertices[vidx].ToThreadIdx() == tidx {
+					applicator(vidx, tidx)
+				}
+			}
+		}(t)
+	}
+	wg.Wait()
 }
