@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var earliestNextGrTime = time.Now()
+
 func StartPeriodicGlobalReset(f *Framework, g *Graph, delay time.Duration, interval time.Duration, lockGraph bool, exit *chan bool) *sync.WaitGroup {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -42,8 +44,13 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	watch.Start()
 	if lockGraph {
 		g.Mutex.Lock()
+		defer g.Mutex.Unlock()
 	} else {
 		enforce.ENFORCE(g.Mutex.TryLock() == false)
+	}
+	if earliestNextGrTime.Sub(time.Now()) > 0 {
+		info("Skipping GR as it was ran recently")
+		return
 	}
 
 	// set a flag to prevent flow push and height change
@@ -95,8 +102,6 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	}
 
 	g.ResetVotes()
-	if lockGraph {
-		g.Mutex.Unlock()
-	}
+	earliestNextGrTime = time.Now().Add(GrInterval)
 	info("    GlobalRelabel runtime: ", watch.Elapsed())
 }

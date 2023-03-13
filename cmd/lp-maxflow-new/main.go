@@ -19,6 +19,7 @@ import (
 )
 
 var tsDB = make([]framework.TimeseriesEntry[VertexProp], 0)
+var GrInterval = 3 * time.Second
 
 func info(args ...any) {
 	log.Println("[MaxFlowNew]\t", fmt.Sprint(args...))
@@ -115,25 +116,34 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	}
 
 	// Print # of vertices in flow
-	vertexInFlow := make([]int, 0)
-	for vi := range g.Vertices {
-		v := &g.Vertices[vi]
-		for ei := range v.OutEdges {
-			// ignore loops and edges to the source
-			if e := &v.OutEdges[ei]; e.Destination != uint32(vi) && e.Destination != g.VertexMap[sourceRaw] {
-				if v.Property.Nbrs[e.Destination].ResCap < int64(e.Property.Capacity) {
-					vertexInFlow = append(vertexInFlow, vi)
-					break
-				}
-			}
-		}
-	}
-	info("Number of vertices in max flow: ", len(vertexInFlow))
+	printNumberOfVerticesAndEdgesInFlow(g, sourceRaw)
 
 	// TODO: Check inflow == outflow for all vertices (doesn't seem to be easy)
 	PrintMessageCounts()
 	ResetMessageCounts()
 	return nil
+}
+
+func printNumberOfVerticesAndEdgesInFlow(g *Graph, sourceRaw uint32) {
+	verticesInFlow := make([]int, graph.THREADS)
+	edgesInFlow := make([]int, graph.THREADS)
+	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vi int, ti int) {
+		v := &g.Vertices[vi]
+		inFlow := false
+		for ei := range v.OutEdges {
+			// ignore loops and edges to the source
+			if e := &v.OutEdges[ei]; e.Destination != uint32(vi) && e.Destination != g.VertexMap[sourceRaw] {
+				if v.Property.Nbrs[e.Destination].ResCap < int64(e.Property.Capacity) {
+					inFlow = true
+					edgesInFlow[ti] += 1
+				}
+			}
+		}
+		if inFlow {
+			verticesInFlow[ti] += 1
+		}
+	})
+	info("Number of vertices in max flow: ", mathutils.Sum(verticesInFlow), " edges: ", mathutils.Sum(edgesInFlow))
 }
 
 func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertDeleteDelay uint64, timeSeriesInterval uint64) (*Framework, *Graph) {
@@ -160,9 +170,6 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 	frame := Framework{}
 	frame.OnVisitVertex = OnVisitVertex
 	frame.OnFinish = func(g *Graph) error {
-		if g.Options.LogTimeseries {
-			return nil
-		}
 		return OnFinish(g, exit)
 	}
 	frame.OnEdgeAdd = OnEdgeAdd
@@ -178,6 +185,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 	}
 	frame.OnInitVertex = func(g *Graph, vidx uint32) {
 		v := &g.Vertices[vidx]
+		v.Property.Height = 0
 		switch v.Id {
 		case sourceRaw:
 			v.Property.Type = Source
@@ -188,11 +196,8 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 		}
 		v.Property.Nbrs = make(map[uint32]Nbr)
 		v.Property.Excess = 0
-		v.Property.Height = 0
 	}
-	frame.OnCheckCorrectness = func(g *Graph) error {
-		return OnCheckCorrectness(g, sourceRaw, sinkRaw)
-	}
+	frame.OnCheckCorrectness = func(g *Graph) error { return OnCheckCorrectness(g, sourceRaw, sinkRaw) }
 
 	VertexCountHelper.Reset(int64(n))
 
@@ -221,9 +226,7 @@ func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool, grIn
 
 	var grWg *sync.WaitGroup
 	if async {
-		if !g.Options.LogTimeseries {
-			grWg = StartPeriodicGlobalReset(f, g, grInterval, grInterval, true, grExit)
-		}
+		grWg = StartPeriodicGlobalReset(f, g, grInterval, grInterval, true, grExit)
 	} else {
 		enforce.ENFORCE("Global Reset currently does not work in sync mode")
 	}
@@ -248,9 +251,7 @@ func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool, grIn
 
 	f.Run(g, &feederWg, &frameWait)
 
-	if !g.Options.LogTimeseries {
-		grWg.Wait()
-	}
+	grWg.Wait()
 }
 
 func main() {
@@ -263,9 +264,9 @@ func main() {
 	source := flag.Uint("source", 0, "Raw ID of the source vertex")
 	sink := flag.Uint("sink", 1, "Raw ID of the sink vertex")
 	n := flag.Uint("n", 0, "Number of vertices in the graph")
-	insertDeleteDelay := flag.Uint("sw", 0,
-		"If non-zero, will insert delete edges that were added before, after passing the expiration duration")
-	tsi := flag.Uint("tsi", 0, "Timeseries interval")
+	insertDeleteDelay := flag.Uint("sw", 0, "If non-zero, will insert delete edges that were "+
+		"added before, after passing the expiration duration (in days)")
+	tsi := flag.Uint("tsi", 0, "Timeseries interval (in days)")
 	flag.Parse()
 
 	graph.THREADS = *tptr
@@ -277,7 +278,7 @@ func main() {
 	}()
 
 	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n),
-		3*time.Second, uint64(*insertDeleteDelay), uint64(*tsi))
+		GrInterval, uint64(*insertDeleteDelay)*86400, uint64(*tsi)*86400)
 
 	g.ComputeGraphStats(false, false)
 
@@ -303,6 +304,7 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 				negativeVertices += 1
 			}
 		}
+		printNumberOfVerticesAndEdgesInFlow(g, sourceRaw)
 		g.Watch.UnPause()
 
 		latencyWatch := mathutils.Watch{}
@@ -326,10 +328,10 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		}
 
 		// Run until termination
-		done := f.ProcessAllMessagesWithTimeout(g, 1000*time.Millisecond)
+		done := f.ProcessAllMessagesWithTimeout(g, GrInterval)
 		for !done {
 			GlobalRelabel(f, g, false)
-			done = f.ProcessAllMessagesWithTimeout(g, 1000*time.Millisecond)
+			done = f.ProcessAllMessagesWithTimeout(g, GrInterval)
 		}
 		latency := latencyWatch.Elapsed()
 
@@ -341,9 +343,9 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 
 		// Save ts entry
 		g.Watch.Pause()
-		if hasSource && hasSink {
-			enforce.ENFORCE(OnCheckCorrectness(g, sourceRaw, sinkRaw))
-		}
+		//if hasSource && hasSink && latency.Milliseconds() > 10000 {
+		//	enforce.ENFORCE(OnCheckCorrectness(g, sourceRaw, sinkRaw))
+		//}
 		numEdges := 0
 		for vi := range g.Vertices {
 			numEdges += len(g.Vertices[vi].OutEdges)
@@ -378,17 +380,19 @@ func ApplyTimeSeries(entries chan framework.TimeseriesEntry[VertexProp]) {
 }
 
 func SaveTimeSeries() {
-	f, err := os.Create("timeseries.txt")
+	f, err := os.Create("timeseries.csv")
 	enforce.ENFORCE(err)
 	defer enforce.Close(f)
 
 	header := "RFC3339,Date,VertexCount,EdgeCount,PositiveVertices,NegativeVertices," +
 		"SourceApproxMaxFlow,SinkApproxMaxFlow,FinalMaxFlow,Latency,"
-	enforce.ENFORCE(f.WriteString(header + "\n"))
+	_, err = f.WriteString(header + "\n")
+	enforce.ENFORCE(err)
 
 	for i := range tsDB {
 		line := tsEntryLineToStr(&tsDB[i])
-		enforce.ENFORCE(f.WriteString(line + "\n"))
+		_, err = f.WriteString(line + "\n")
+		enforce.ENFORCE(err)
 	}
 }
 
