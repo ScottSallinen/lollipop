@@ -52,10 +52,10 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	enforce.ENFORCE(sink.Property.Type == Sink)
 
 	// Make sure all messages are processed
-	for vi := range g.Vertices {
+	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vi int, ti int) {
 		v := &g.Vertices[vi]
 		enforce.ENFORCE(len(v.Property.MessageBuffer) == 0, fmt.Sprintf("vertex index %d ID %d has outstanding messages", vi, v.Id))
-	}
+	})
 
 	// Check heights
 	enforce.ENFORCE(source.Property.Height >= int64(len(g.Vertices)),
@@ -63,14 +63,14 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	enforce.ENFORCE(sink.Property.Height == 0, "sink height != 0")
 
 	// Check Excess
-	for vi := range g.Vertices {
+	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vi int, ti int) {
 		if v := &g.Vertices[vi]; v.Property.Type == Normal {
 			enforce.ENFORCE(v.Property.Excess == 0, fmt.Sprintf("normal vertex index %d ID %d has a non-zero excess of %d", vi, v.Id, v.Property.Excess))
 		}
-	}
+	})
 
 	// Check sum of edge capacities in the original graph == in the residual graph
-	for vi := range g.Vertices {
+	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vi int, ti int) {
 		if v := &g.Vertices[vi]; v.Property.Type == Normal {
 			sumEdgeCapacityOriginal := int64(0)
 			sumEdgeCapacityResidual := int64(0)
@@ -89,7 +89,7 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 				vi, v.Id, sumEdgeCapacityOriginal, sumEdgeCapacityResidual),
 			)
 		}
-	}
+	})
 
 	// Check sourceOut and sinkIn
 	sinkIn := sink.Property.Excess
@@ -104,7 +104,7 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 
 	// g.ComputeInEdges()
 	// Check height invariant
-	for vi := range g.Vertices {
+	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vi int, ti int) {
 		v := &g.Vertices[vi].Property
 		for i, n := range v.Nbrs {
 			if n.ResCap > 0 {
@@ -113,7 +113,7 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 						vi, v.Height, n.ResCap, i, n.Height))
 			}
 		}
-	}
+	})
 
 	// Print # of vertices in flow
 	printNumberOfVerticesAndEdgesInFlow(g, sourceRaw)
