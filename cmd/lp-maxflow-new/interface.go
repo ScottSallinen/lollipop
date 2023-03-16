@@ -78,7 +78,9 @@ func OnVisitVertex(g *Graph, vidx uint32, VisitMsg MessageValue) (msgSent int) {
 
 func OnFinish(g *Graph, exit *chan bool) error {
 	g.Mutex.Lock()
-	*exit <- true
+	if !Snapshotting {
+		*exit <- true
+	}
 	g.Mutex.Unlock()
 	return nil
 }

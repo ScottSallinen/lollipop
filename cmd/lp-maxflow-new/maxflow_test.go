@@ -97,7 +97,7 @@ func TestAsyncStatic(t *testing.T) {
 		for ti := 0; ti < 10; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
 			g := LaunchGraphExecution(testGraph.Filename, true, false,
-				testGraph.Source, testGraph.Sink, testGraph.VertexCount, 500*time.Millisecond, 0, 0)
+				testGraph.Source, testGraph.Sink, testGraph.VertexCount, 500*time.Millisecond, 0, 0, false)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -123,7 +123,7 @@ func TestAsyncDynamicIncremental(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 3; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink, 0, 500*time.Millisecond, 0, 0)
+			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink, 0, 500*time.Millisecond, 0, 0, false)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}

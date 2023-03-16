@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var earliestNextGrTime = time.Now()
+var earliestNextGrTime = time.Nanosecond
 
 func StartPeriodicGlobalReset(f *Framework, g *Graph, delay time.Duration, interval time.Duration, lockGraph bool, exit *chan bool) *sync.WaitGroup {
 	wg := sync.WaitGroup{}
@@ -49,7 +49,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	} else {
 		enforce.ENFORCE(g.Mutex.TryLock() == false)
 	}
-	if earliestNextGrTime.Sub(time.Now()) > 0 {
+	if g.Watch.Elapsed() < earliestNextGrTime {
 		info("Skipping GR as it was ran recently")
 		return
 	}
@@ -103,8 +103,12 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	})
 
 	g.ResetVotes()
-	earliestNextGrTime = time.Now().Add(GrInterval)
-	info("    GlobalRelabel runtime: ", watch.Elapsed())
+	SetNextEarliestGrTime(g)
+}
+
+func SetNextEarliestGrTime(g *Graph) {
+	ns := g.Watch.Elapsed().Nanoseconds() + GrInterval.Nanoseconds()
+	earliestNextGrTime = time.Duration(ns) * time.Nanosecond
 }
 
 func parallelForEachVertex(g *Graph, applicator func(vidx uint32, tidx uint32)) {

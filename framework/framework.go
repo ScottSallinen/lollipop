@@ -324,7 +324,6 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessages(g *gra
 		}(uint32(t))
 	}
 	wg.Wait()
-	g.ResetVotes()
 }
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessagesWithTimeout(
@@ -347,7 +346,6 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) ProcessAllMessagesWithTim
 	complete = mathutils.WaitWithTimeout(&wg, timeout)
 	exit = true
 	wg.Wait()
-	g.ResetVotes()
 	return complete
 }
 

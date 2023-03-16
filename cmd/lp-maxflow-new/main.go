@@ -20,6 +20,7 @@ import (
 
 var tsDB = make([]framework.TimeseriesEntry[VertexProp], 0)
 var GrInterval = 3 * time.Second
+var Snapshotting = false
 
 func info(args ...any) {
 	log.Println("[MaxFlowNew]\t", fmt.Sprint(args...))
@@ -181,7 +182,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 	frame.SetTimestamp = SetTimestamp
 	frame.ApplyTimeSeries = ApplyTimeSeries
 	frame.NewLogTimeSeries = func(f *Framework, g *Graph, entries chan framework.TimeseriesEntry[VertexProp]) {
-		LogTimeSeries(f, g, entries, sourceRaw, sinkRaw)
+		LogTimeSeries(f, g, entries, sourceRaw, sinkRaw, Snapshotting)
 	}
 	frame.OnInitVertex = func(g *Graph, vidx uint32) {
 		v := &g.Vertices[vidx]
@@ -197,17 +198,26 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 		v.Property.Nbrs = make(map[uint32]Nbr)
 		v.Property.Excess = 0
 	}
-	frame.OnCheckCorrectness = func(g *Graph) error { return OnCheckCorrectness(g, sourceRaw, sinkRaw) }
+	frame.OnCheckCorrectness = func(g *Graph) error {
+		if Snapshotting {
+			return nil
+		}
+		return OnCheckCorrectness(g, sourceRaw, sinkRaw)
+	}
 
 	VertexCountHelper.Reset(int64(n))
 
 	return &frame, &g
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration, insertDeleteDelay uint64, timeSeriesInterval uint64) *Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration, insertDeleteDelay uint64, timeSeriesInterval uint64, snapshotting bool) *Graph {
 	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
 	globalRelabelExit := make(chan bool, 0)
 	frame, g := GetFrameworkAndGraph(source, sink, n, &globalRelabelExit, insertDeleteDelay, timeSeriesInterval)
+	Snapshotting = snapshotting
+	if snapshotting {
+		resetPhase = true
+	}
 	Launch(frame, g, gName, async, dynamic, grInterval, &globalRelabelExit)
 	return g
 }
@@ -226,7 +236,9 @@ func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool, grIn
 
 	var grWg *sync.WaitGroup
 	if async {
-		grWg = StartPeriodicGlobalReset(f, g, grInterval, grInterval, true, grExit)
+		if !Snapshotting {
+			grWg = StartPeriodicGlobalReset(f, g, grInterval, grInterval, true, grExit)
+		}
 	} else {
 		enforce.ENFORCE("Global Reset currently does not work in sync mode")
 	}
@@ -251,7 +263,9 @@ func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool, grIn
 
 	f.Run(g, &feederWg, &frameWait)
 
-	grWg.Wait()
+	if !Snapshotting {
+		grWg.Wait()
+	}
 }
 
 func main() {
@@ -266,11 +280,16 @@ func main() {
 	n := flag.Uint("n", 0, "Number of vertices in the graph")
 	insertDeleteDelay := flag.Uint("sw", 0, "If non-zero, will insert delete edges that were "+
 		"added before, after passing the expiration duration (in days)")
-	tsi := flag.Uint("tsi", 0, "Timeseries interval (in days)")
+	ts := flag.Uint("ts", 0, "Timeseries interval (in days)")
+	snapshotting := flag.Bool("snapshot", false, "Simulate snapshotting")
 	flag.Parse()
 
 	graph.THREADS = *tptr
 	graph.TARGETRATE = *rptr
+
+	if *snapshotting {
+		enforce.ENFORCE(*dptr && *aptr)
+	}
 
 	//runtime.SetMutexProfileFraction(1)
 	go func() {
@@ -278,7 +297,7 @@ func main() {
 	}()
 
 	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n),
-		GrInterval, uint64(*insertDeleteDelay)*86400, uint64(*tsi)*86400)
+		GrInterval, uint64(*insertDeleteDelay)*86400, uint64(*ts)*86400, *snapshotting)
 
 	g.ComputeGraphStats(false, false)
 
@@ -288,7 +307,7 @@ func main() {
 	}
 }
 
-func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntry[VertexProp], sourceRaw, sinkRaw uint32) {
+func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntry[VertexProp], sourceRaw, sinkRaw uint32, snapshotting bool) {
 	for entry := range g.LogEntryChan {
 		g.Mutex.Lock()
 
@@ -316,7 +335,7 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		// Before
 		sourceIdx, hasSource := g.VertexMap[sourceRaw]
 		sinkIdx, hasSink := g.VertexMap[sinkRaw]
-		if hasSource && hasSink {
+		if hasSource && hasSink && !snapshotting {
 			source := &g.Vertices[sourceIdx]
 			sink := &g.Vertices[sinkIdx]
 			SinkApproxMaxFlow = sink.Property.Excess
@@ -328,11 +347,25 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		}
 
 		// Run until termination
-		done := f.ProcessAllMessagesWithTimeout(g, GrInterval)
-		for !done {
-			GlobalRelabel(f, g, false)
-			done = f.ProcessAllMessagesWithTimeout(g, GrInterval)
+		if snapshotting {
+			if hasSource {
+				resetPhase = false
+				send(g, sourceIdx, sourceIdx, 0)
+				done := f.ProcessAllMessagesWithTimeout(g, GrInterval)
+				for !done {
+					GlobalRelabel(f, g, false)
+					done = f.ProcessAllMessagesWithTimeout(g, GrInterval)
+				}
+				resetPhase = true
+			}
+		} else {
+			done := f.ProcessAllMessagesWithTimeout(g, GrInterval)
+			for !done {
+				GlobalRelabel(f, g, false)
+				done = f.ProcessAllMessagesWithTimeout(g, GrInterval)
+			}
 		}
+		SetNextEarliestGrTime(g)
 		latency := latencyWatch.Elapsed()
 
 		// Get Max Flow
@@ -346,6 +379,45 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		//if hasSource && hasSink && latency.Milliseconds() > 10000 {
 		//	enforce.ENFORCE(OnCheckCorrectness(g, sourceRaw, sinkRaw))
 		//}
+		if Snapshotting {
+			// reset vertex state
+			parallelForEachVertex(g, func(vi uint32, _ uint32) {
+				v := &g.Vertices[vi]
+				vp := &v.Property
+				vp.Excess = 0
+				vp.Height = 0
+				if vp.Type == Source {
+					vp.Height = VertexCountHelper.estimatedCount
+					for ei := range v.OutEdges {
+						e := &v.OutEdges[ei]
+						if e.Destination == vi || e.Destination == sourceIdx {
+							continue
+						}
+						vp.Excess += int64(e.Property.Capacity)
+					}
+				}
+				for i := range vp.Nbrs {
+					h := int64(0)
+					if hasSource && i == sourceIdx {
+						h = VertexCountHelper.estimatedCount
+					}
+					vp.Nbrs[i] = Nbr{
+						Height: h,
+						ResCap: 0,
+					}
+				}
+				for ei := range v.OutEdges {
+					e := &v.OutEdges[ei]
+					if e.Destination == vi || e.Destination == sourceIdx {
+						continue
+					}
+					vp.Nbrs[e.Destination] = Nbr{
+						Height: vp.Nbrs[e.Destination].Height,
+						ResCap: int64(e.Property.Capacity),
+					}
+				}
+			})
+		}
 		numEdges := 0
 		for vi := range g.Vertices {
 			numEdges += len(g.Vertices[vi].OutEdges)
