@@ -4,7 +4,6 @@ import (
 	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/mathutils"
-	"math"
 	"sync"
 	"sync/atomic"
 )
@@ -61,7 +60,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	parallelForEachVertex(g, func(vi uint32, ti uint32) {
 		v := &g.Vertices[vi].Property
 		oldHeight := v.Height
-		v.Height = math.MaxUint32
+		v.Height = InitialHeight
 		if v.Type == Source || v.Type == Sink || v.Excess < 0 {
 			// let it broadcast its height after resuming execution
 			updateHeight(g, vi, oldHeight)
@@ -71,7 +70,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 		}
 		for i, n := range v.Nbrs {
 			v.Nbrs[i] = Nbr{
-				Height: math.MaxUint32,
+				Height: InitialHeight,
 				ResCap: n.ResCap,
 			}
 		}

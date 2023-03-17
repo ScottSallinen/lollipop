@@ -44,6 +44,7 @@ type Edge = graph.Edge[EdgeProp]
 
 const (
 	EmptyValue    = 0
+	InitialHeight = math.MaxUint32
 
 	Normal VertexType = 0
 	Source VertexType = 1
@@ -136,7 +137,7 @@ func PrintMessageCounts() {
 }
 
 func (m *Message) String(g *Graph, v *Vertex, vertexIndex uint32) string {
-	if m.Source != math.MaxUint32 {
+	if m.Source != EmptyValue {
 		return fmt.Sprintf("OnVisitVertex RawID=%v->%v Index=%v->%v: m.Type=%v m.Height=%v m.Value=%v", g.Vertices[m.Source].Id, v.Id, m.Source, vertexIndex, m.Type, m.Height, m.Value)
 	} else {
 		return fmt.Sprintf("OnVisitVertex RawID=non->%v Index=none->%v: m.Type=%v m.Height=%v m.Value=%v", v.Id, vertexIndex, m.Type, m.Height, m.Value)

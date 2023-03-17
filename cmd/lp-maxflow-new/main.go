@@ -181,15 +181,15 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, insertDeleteDelay uint64
 	}
 	frame.OnInitVertex = func(g *Graph, vidx uint32) {
 		v := &g.Vertices[vidx]
-		v.Property.Height = 0
+		v.Property.Height = InitialHeight
 		switch v.Id {
 		case sourceRaw:
 			v.Property.Type = Source
 		case sinkRaw:
 			v.Property.Type = Sink
+			v.Property.Height = 0
 		default:
 			v.Property.Type = Normal
-			v.Property.Height = math.MaxUint32
 		}
 		v.Property.Nbrs = make(map[uint32]Nbr)
 		v.Property.Excess = 0
@@ -347,8 +347,8 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		if snapshotting {
 			if hasSource && hasSink {
 				resetPhase = false
-				g.Vertices[sourceIdx].Property.Height = math.MaxUint32
-				g.Vertices[sinkIdx].Property.Height = math.MaxUint32
+				g.Vertices[sourceIdx].Property.Height = InitialHeight
+				g.Vertices[sinkIdx].Property.Height = InitialHeight
 				updateHeight(g, sourceIdx, VertexCountHelper.estimatedCount)
 				updateHeight(g, sinkIdx, 0)
 				send(g, sourceIdx, sourceIdx, 0)
@@ -389,7 +389,7 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 				v := &g.Vertices[vi]
 				vp := &v.Property
 				vp.Excess = 0
-				vp.Height = math.MaxUint32
+				vp.Height = InitialHeight
 				if vp.Type == Source {
 					vp.Height = VertexCountHelper.estimatedCount
 					for ei := range v.OutEdges {
@@ -403,7 +403,7 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 					vp.Height = 0
 				}
 				for i := range vp.Nbrs {
-					h := int64(math.MaxUint32)
+					h := int64(InitialHeight)
 					if hasSource && i == sourceIdx {
 						h = VertexCountHelper.estimatedCount
 					}
