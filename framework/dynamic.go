@@ -2,6 +2,7 @@ package framework
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,6 +42,9 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 
 	if g.Options.InsertDeleteOnExpire > 0 {
 		for _, change := range changes {
+			if g.Options.SkipDeleteProb > 0 && rand.Float64() < g.Options.SkipDeleteProb {
+				continue
+			}
 			futureDelete := graph.StructureChange[EdgeProp]{Type: graph.DEL, SrcRaw: change.SrcRaw, DstRaw: change.DstRaw}
 			tsInit := frame.GetTimestamp(change.EdgeProperty)
 			frame.SetTimestamp(&futureDelete.EdgeProperty, tsInit+g.Options.InsertDeleteOnExpire)

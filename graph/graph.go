@@ -58,6 +58,7 @@ type GraphOptions[MsgType any] struct {
 	AsyncContinuationTime int64              // If non-zero, will continue the algorithm for AsyncContinuationTime milliseconds before collecting a state (logging a timeseries).
 	OracleCompareSync     bool               // Compares to oracle results on every iteration, when using a synchronous strategy.
 	ReadLockRequired      bool               // Requires the Mutex to be held for read when processing messages
+	SkipDeleteProb        float64            // Probability of skipping deletes, InsertDeleteOnExpire must be set
 }
 
 type VisitType int

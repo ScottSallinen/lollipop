@@ -147,7 +147,7 @@ func printNumberOfVerticesAndEdgesInFlow(g *Graph, sourceRaw uint32) {
 	info("Number of vertices in max flow: ", mathutils.Sum(verticesInFlow), " edges: ", mathutils.Sum(edgesInFlow))
 }
 
-func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertDeleteDelay uint64, timeSeriesInterval uint64) (*Framework, *Graph) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertDeleteDelay uint64, timeSeriesInterval uint64, skipDeleteProb float64) (*Framework, *Graph) {
 	enforce.ENFORCE(sourceRaw != sinkRaw)
 
 	g := Graph{}
@@ -160,6 +160,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 		ReadLockRequired:     true,
 		InsertDeleteOnExpire: insertDeleteDelay,
 		TimeSeriesInterval:   timeSeriesInterval,
+		SkipDeleteProb:       skipDeleteProb,
 		InitAllMessage: MessageValue{{
 			Type:   Init,
 			Source: EmptyValue,
@@ -210,10 +211,10 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 	return &frame, &g
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration, insertDeleteDelay uint64, timeSeriesInterval uint64, snapshotting bool) *Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration, insertDeleteDelay uint64, timeSeriesInterval uint64, snapshotting bool, skipDeleteProb float64) *Graph {
 	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
 	globalRelabelExit := make(chan bool, 0)
-	frame, g := GetFrameworkAndGraph(source, sink, n, &globalRelabelExit, insertDeleteDelay, timeSeriesInterval)
+	frame, g := GetFrameworkAndGraph(source, sink, n, &globalRelabelExit, insertDeleteDelay, timeSeriesInterval, skipDeleteProb)
 	Snapshotting = snapshotting
 	if snapshotting {
 		resetPhase = true
@@ -282,6 +283,7 @@ func main() {
 		"added before, after passing the expiration duration (in days)")
 	ts := flag.Uint("ts", 0, "Timeseries interval (in days)")
 	snapshotting := flag.Bool("snapshot", false, "Simulate snapshotting")
+	skipDeleteProb := flag.Float64("sdp", 0.0, "Probability of skipping deletes")
 	flag.Parse()
 
 	graph.THREADS = *tptr
@@ -290,6 +292,10 @@ func main() {
 	if *snapshotting {
 		enforce.ENFORCE(*dptr && *aptr)
 	}
+	enforce.ENFORCE(*skipDeleteProb >= 0 && *skipDeleteProb <= 1)
+	if *skipDeleteProb != 0 {
+		enforce.ENFORCE(*insertDeleteDelay > 0)
+	}
 
 	//runtime.SetMutexProfileFraction(1)
 	go func() {
@@ -297,7 +303,7 @@ func main() {
 	}()
 
 	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n),
-		GrInterval, uint64(*insertDeleteDelay)*86400, uint64(*ts)*86400, *snapshotting)
+		GrInterval, uint64(*insertDeleteDelay)*86400, uint64(*ts)*86400, *snapshotting, *skipDeleteProb)
 
 	g.ComputeGraphStats(false, false)
 
