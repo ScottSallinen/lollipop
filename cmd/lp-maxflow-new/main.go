@@ -192,6 +192,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 			v.Property.Type = Sink
 		default:
 			v.Property.Type = Normal
+			v.Property.Height = math.MaxUint32
 		}
 		v.Property.Nbrs = make(map[uint32]Nbr)
 		v.Property.Excess = 0
