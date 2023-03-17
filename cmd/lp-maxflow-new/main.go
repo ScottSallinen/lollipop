@@ -30,15 +30,12 @@ func EdgeParser(lineText string) graph.RawEdge[EdgeProp] {
 	stringFields := strings.Fields(lineText)
 
 	sflen := len(stringFields)
-	enforce.ENFORCE(sflen == 3 || sflen == 4)
+	enforce.ENFORCE(sflen == 3)
 
 	src, _ := strconv.Atoi(stringFields[0])
 	dst, _ := strconv.Atoi(stringFields[1])
-	capacity, _ := strconv.Atoi(stringFields[2])
-	timestamp := 0
-	if sflen == 4 {
-		timestamp, _ = strconv.Atoi(stringFields[3])
-	}
+	capacity := 1
+	timestamp, _ := strconv.Atoi(stringFields[2])
 
 	return graph.RawEdge[EdgeProp]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProp{
 		Capacity:  uint32(capacity),
