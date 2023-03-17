@@ -19,7 +19,6 @@ import (
 )
 
 var tsDB = make([]framework.TimeseriesEntry[VertexProp], 0)
-var GrInterval = 3 * time.Second
 var Snapshotting = false
 
 func info(args ...any) {
@@ -144,7 +143,7 @@ func printNumberOfVerticesAndEdgesInFlow(g *Graph, sourceRaw uint32) {
 	info("Number of vertices in max flow: ", mathutils.Sum(verticesInFlow), " edges: ", mathutils.Sum(edgesInFlow))
 }
 
-func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertDeleteDelay uint64, timeSeriesInterval uint64, skipDeleteProb float64) (*Framework, *Graph) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, insertDeleteDelay uint64, timeSeriesInterval uint64, skipDeleteProb float64) (*Framework, *Graph) {
 	enforce.ENFORCE(sourceRaw != sinkRaw)
 
 	g := Graph{}
@@ -168,9 +167,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 
 	frame := Framework{}
 	frame.OnVisitVertex = OnVisitVertex
-	frame.OnFinish = func(g *Graph) error {
-		return OnFinish(g, exit)
-	}
+	frame.OnFinish = func(g *Graph) error { return OnFinish(g) }
 	frame.OnEdgeAdd = OnEdgeAdd
 	frame.OnEdgeDel = OnEdgeDel
 	frame.MessageAggregator = MessageAggregator
@@ -209,21 +206,26 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, exit *chan bool, insertD
 	return &frame, &g
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, grInterval time.Duration, insertDeleteDelay uint64, timeSeriesInterval uint64, snapshotting bool, skipDeleteProb float64) *Graph {
+func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, insertDeleteDelay uint64, timeSeriesInterval uint64, snapshotting bool, skipDeleteProb float64) *Graph {
 	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
-	globalRelabelExit := make(chan bool, 0)
-	frame, g := GetFrameworkAndGraph(source, sink, n, &globalRelabelExit, insertDeleteDelay, timeSeriesInterval, skipDeleteProb)
+	frame, g := GetFrameworkAndGraph(source, sink, n, insertDeleteDelay, timeSeriesInterval, skipDeleteProb)
 	Snapshotting = snapshotting
+	grFrame = frame
 	if snapshotting {
 		resetPhase = true
 	}
-	Launch(frame, g, gName, async, dynamic, grInterval, &globalRelabelExit)
+	Launch(frame, g, gName, async, dynamic)
 	return g
 }
 
-func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool, grInterval time.Duration, grExit *chan bool) {
+func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool) {
 	if !dynamic {
 		g.LoadGraphStatic(gName, f.EdgeParser)
+		numEdges := 0
+		for vi := range g.Vertices {
+			numEdges += len(g.Vertices[vi].OutEdges)
+		}
+		UpdateGrInterval(len(g.Vertices), numEdges)
 	}
 
 	f.Init(g, async, dynamic)
@@ -232,15 +234,6 @@ func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool, grIn
 	feederWg.Add(1)
 	var frameWait sync.WaitGroup
 	frameWait.Add(1)
-
-	var grWg *sync.WaitGroup
-	if async {
-		if !Snapshotting {
-			grWg = StartPeriodicGlobalReset(f, g, grInterval, grInterval, true, grExit)
-		}
-	} else {
-		enforce.ENFORCE("Global Reset currently does not work in sync mode")
-	}
 
 	if dynamic {
 		go g.LoadGraphDynamic(gName, f.EdgeParser, &feederWg)
@@ -261,10 +254,6 @@ func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool, grIn
 	}
 
 	f.Run(g, &feederWg, &frameWait)
-
-	if !Snapshotting {
-		grWg.Wait()
-	}
 }
 
 func main() {
@@ -301,7 +290,7 @@ func main() {
 	}()
 
 	g := LaunchGraphExecution(*gptr, *aptr, *dptr, uint32(*source), uint32(*sink), uint32(*n),
-		GrInterval, uint64(*insertDeleteDelay)*86400, uint64(*ts)*86400, *snapshotting, *skipDeleteProb)
+		uint64(*insertDeleteDelay)*86400, uint64(*ts)*86400, *snapshotting, *skipDeleteProb)
 
 	g.ComputeGraphStats(false, false)
 
@@ -330,6 +319,10 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		printNumberOfVerticesAndEdgesInFlow(g, sourceRaw)
 		g.Watch.UnPause()
 
+		if Snapshotting {
+			f.ProcessAllMessages(g)
+		}
+
 		latencyWatch := mathutils.Watch{}
 		latencyWatch.Start()
 
@@ -352,24 +345,29 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 
 		// Run until termination
 		if snapshotting {
-			if hasSource {
+			if hasSource && hasSink {
 				resetPhase = false
+				g.Vertices[sourceIdx].Property.Height = math.MaxUint32
+				g.Vertices[sinkIdx].Property.Height = math.MaxUint32
+				updateHeight(g, sourceIdx, VertexCountHelper.estimatedCount)
+				updateHeight(g, sinkIdx, 0)
 				send(g, sourceIdx, sourceIdx, 0)
-				done := f.ProcessAllMessagesWithTimeout(g, GrInterval)
-				for !done {
+
+				f.ProcessAllMessages(g)
+				for grShouldRun != 0 {
 					GlobalRelabel(f, g, false)
-					done = f.ProcessAllMessagesWithTimeout(g, GrInterval)
+					f.ProcessAllMessages(g)
 				}
 				resetPhase = true
 			}
 		} else {
-			done := f.ProcessAllMessagesWithTimeout(g, GrInterval)
-			for !done {
+			f.ProcessAllMessages(g)
+			for grShouldRun != 0 {
 				GlobalRelabel(f, g, false)
-				done = f.ProcessAllMessagesWithTimeout(g, GrInterval)
+				f.ProcessAllMessages(g)
 			}
 		}
-		SetNextEarliestGrTime(g)
+		SetNextEarliestGrTime()
 		latency := latencyWatch.Elapsed()
 
 		// Get Max Flow
@@ -380,7 +378,9 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 
 		// Save ts entry
 		g.Watch.Pause()
-		//if hasSource && hasSink && latency.Milliseconds() > 10000 {
+		PrintMessageCounts()
+		ResetMessageCounts()
+		//if hasSource && hasSink {
 		//	enforce.ENFORCE(OnCheckCorrectness(g, sourceRaw, sinkRaw))
 		//}
 		if Snapshotting {
@@ -389,21 +389,26 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 				v := &g.Vertices[vi]
 				vp := &v.Property
 				vp.Excess = 0
-				vp.Height = 0
+				vp.Height = math.MaxUint32
 				if vp.Type == Source {
 					vp.Height = VertexCountHelper.estimatedCount
 					for ei := range v.OutEdges {
 						e := &v.OutEdges[ei]
-						if e.Destination == vi || e.Destination == sourceIdx {
+						if e.Destination == vi || (hasSource && e.Destination == sourceIdx) {
 							continue
 						}
 						vp.Excess += int64(e.Property.Capacity)
 					}
+				} else if vp.Type == Sink {
+					vp.Height = 0
 				}
 				for i := range vp.Nbrs {
-					h := int64(0)
+					h := int64(math.MaxUint32)
 					if hasSource && i == sourceIdx {
 						h = VertexCountHelper.estimatedCount
+					}
+					if hasSink && i == sinkIdx {
+						h = 0
 					}
 					vp.Nbrs[i] = Nbr{
 						Height: h,
@@ -412,20 +417,18 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 				}
 				for ei := range v.OutEdges {
 					e := &v.OutEdges[ei]
-					if e.Destination == vi || e.Destination == sourceIdx {
+					if e.Destination == vi || (hasSource && e.Destination == sourceIdx) {
 						continue
 					}
 					vp.Nbrs[e.Destination] = Nbr{
 						Height: vp.Nbrs[e.Destination].Height,
-						ResCap: int64(e.Property.Capacity),
+						ResCap: vp.Nbrs[e.Destination].ResCap + int64(e.Property.Capacity),
 					}
 				}
 			})
 		}
-		numEdges := 0
-		for vi := range g.Vertices {
-			numEdges += len(g.Vertices[vi].OutEdges)
-		}
+		numEdges := int(mathutils.Sum(g.ThreadEdges))
+		UpdateGrInterval(len(g.Vertices), numEdges)
 		tsEntry := framework.TimeseriesEntry[VertexProp]{
 			Name:                entry,
 			VertexCount:         len(g.Vertices),

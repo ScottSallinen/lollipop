@@ -57,6 +57,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Init(g *graph.Graph[Verte
 		}
 		g.MessageQ = make([]chan graph.Message[MsgType], graph.THREADS)
 		g.ThreadStructureQ = make([]chan graph.StructureChange[EdgeProp], graph.THREADS)
+		g.ThreadEdges = make([]int64, graph.THREADS)
 		g.MsgSend = make([]uint32, graph.THREADS+1)
 		g.MsgRecv = make([]uint32, graph.THREADS+1)
 		g.TerminateVote = make([]int, graph.THREADS+1)

@@ -6,53 +6,50 @@ import (
 	"github.com/ScottSallinen/lollipop/mathutils"
 	"math"
 	"sync"
-	"time"
+	"sync/atomic"
 )
 
-var earliestNextGrTime = time.Nanosecond
+const ALPHA = 6
+const BETA = 12
+const minGrInterval = 100
 
-func StartPeriodicGlobalReset(f *Framework, g *Graph, delay time.Duration, interval time.Duration, lockGraph bool, exit *chan bool) *sync.WaitGroup {
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	resetPhase = false
-	bfsPhase = false
-	go PeriodicGlobalResetRunnable(f, g, delay, interval, lockGraph, exit, &wg)
-	return &wg
-}
+var grFrame *Framework
+var earliestNextGrCount = int64(0)
+var relabelCount = int64(0)
+var GrInterval = int64(minGrInterval)
+var grShouldRun = int64(0)
 
-func PeriodicGlobalResetRunnable(f *Framework, g *Graph, delay time.Duration, interval time.Duration, lockGraph bool, exit *chan bool, wg *sync.WaitGroup) {
-	select {
-	case <-*exit:
-		wg.Done()
-		return
-	case <-time.After(delay):
-	}
-loop:
-	for {
-		GlobalRelabel(f, g, lockGraph)
-		select {
-		case <-*exit:
-			break loop
-		case <-time.After(interval):
+func onRelabeled(g *Graph) {
+	newCount := atomic.AddInt64(&relabelCount, 1)
+	mEarliestNextGrCount := atomic.LoadInt64(&earliestNextGrCount)
+	if newCount >= mEarliestNextGrCount {
+		swapped := atomic.CompareAndSwapInt64(&grShouldRun, 0, 1)
+		if swapped {
+			info("GlobalRelabelTriggered")
+			if g.Options.LogTimeseries {
+				resetPhase = true
+			}
+			go GlobalRelabel(grFrame, g, true)
 		}
 	}
-	wg.Done()
 }
 
 func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
-	watch := mathutils.Watch{}
-	info("Starting GlobalRelabel")
-	watch.Start()
+	if atomic.LoadInt64(&grShouldRun) != 1 {
+		return
+	}
 	if lockGraph {
 		g.Mutex.Lock()
 		defer g.Mutex.Unlock()
 	} else {
 		enforce.ENFORCE(g.Mutex.TryLock() == false)
 	}
-	if g.Watch.Elapsed() < earliestNextGrTime {
-		info("Skipping GR as it was ran recently")
+	if atomic.LoadInt64(&grShouldRun) != 1 {
 		return
 	}
+	watch := mathutils.Watch{}
+	info("Starting GlobalRelabel")
+	watch.Start()
 
 	// set a flag to prevent flow push and height change
 	resetPhase = true
@@ -103,12 +100,17 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	})
 
 	g.ResetVotes()
-	SetNextEarliestGrTime(g)
+	SetNextEarliestGrTime()
 }
 
-func SetNextEarliestGrTime(g *Graph) {
-	ns := g.Watch.Elapsed().Nanoseconds() + GrInterval.Nanoseconds()
-	earliestNextGrTime = time.Duration(ns) * time.Nanosecond
+func SetNextEarliestGrTime() {
+	nextCount := atomic.LoadInt64(&relabelCount) + GrInterval
+	atomic.StoreInt64(&earliestNextGrCount, nextCount)
+	atomic.StoreInt64(&grShouldRun, 0)
+}
+
+func UpdateGrInterval(n, m int) {
+	GrInterval = mathutils.Max(int64((ALPHA*n+m/3)/BETA/10000), minGrInterval)
 }
 
 func parallelForEachVertex(g *Graph, applicator func(vidx uint32, tidx uint32)) {

@@ -115,6 +115,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 			for ; changeIdx < len(miniGraph[vRaw]); changeIdx++ {
 				change := miniGraph[vRaw][changeIdx]
 				if change.Type == graph.ADD {
+					g.ThreadEdges[tidx] += 1
 					didx := g.VertexMap[change.DstRaw]
 					edge := graph.Edge[EdgeProp]{Property: change.EdgeProperty, Destination: didx}
 					if g.Options.LogTimeseries || (g.Options.InsertDeleteOnExpire > 0) {
@@ -138,6 +139,7 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) EnactStructureChanges(g *
 			for ; changeIdx < len(miniGraph[vRaw]); changeIdx++ {
 				change := miniGraph[vRaw][changeIdx]
 				if change.Type == graph.DEL {
+					g.ThreadEdges[tidx] -= 1
 					didx := g.VertexMap[change.DstRaw]
 					/// Delete edge.. naively find target and swap last element with the hole.
 					for k := range src.OutEdges {

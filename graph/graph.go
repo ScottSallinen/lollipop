@@ -34,6 +34,7 @@ type Graph[VertexProp, EdgeProp, MsgType any] struct {
 	AlgConverge      func(g *Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup)
 	MessageQ         []chan Message[MsgType]
 	ThreadStructureQ []chan StructureChange[EdgeProp]
+	ThreadEdges      []int64
 	MsgSend          []uint32 // number of messages sent by each thread
 	MsgRecv          []uint32 // number of messages received by each thread
 	TerminateVote    []int

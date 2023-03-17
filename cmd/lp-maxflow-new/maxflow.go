@@ -18,9 +18,6 @@ func onInit(g *Graph, vidx uint32) (msgSent int) {
 }
 
 func push(g *Graph, sidx, didx uint32) (msgSent int) {
-	if resetPhase || bfsPhase {
-		return
-	}
 	s := &g.Vertices[sidx].Property
 	amount := mathutils.Min(s.Excess, s.Nbrs[didx].ResCap)
 	if amount > 0 && s.Height > s.Nbrs[didx].Height {
@@ -50,7 +47,6 @@ func updateHeight(g *Graph, vidx uint32, newHeight int64) (msgSent int) {
 }
 
 func lift(g *Graph, vidx uint32) (msgSent int) {
-	enforce.ENFORCE(!bfsPhase)
 	v := &g.Vertices[vidx].Property
 	enforce.ENFORCE(v.Type == Normal && v.Excess > 0)
 
@@ -63,6 +59,7 @@ func lift(g *Graph, vidx uint32) (msgSent int) {
 
 	enforce.ENFORCE(minHeight != int64(math.MaxInt64) && v.Height < minHeight+1)
 	msgSent += updateHeight(g, vidx, minHeight+1)
+	onRelabeled(g)
 	return
 }
 
@@ -89,12 +86,13 @@ func discharge(g *Graph, vidx uint32) (msgSent int) {
 }
 
 func restoreHeightInvariant(g *Graph, vidx, widx uint32) (msgSent int) {
-	enforce.ENFORCE(!resetPhase)
 	if vidx == widx {
 		return
 	}
 	v := &g.Vertices[vidx].Property
-	msgSent += push(g, vidx, widx)
+	if !resetPhase && !bfsPhase {
+		msgSent += push(g, vidx, widx)
+	}
 	if v.Type == Normal && v.Nbrs[widx].ResCap > 0 {
 		maxHeight := v.Nbrs[widx].Height + 1
 		if v.Height > maxHeight {
@@ -176,6 +174,9 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 }
 
 func handleFlow(g *Graph, vidx, sidx uint32, amount int64) (msgSent int) {
+	if amount == 0 {
+		return
+	}
 	v := &g.Vertices[vidx].Property
 
 	if amount < 0 { // Retract Request
