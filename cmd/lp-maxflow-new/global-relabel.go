@@ -9,7 +9,7 @@ import (
 )
 
 const ALPHA = 6
-const BETA = 12
+const BETA = 120000
 const minGrInterval = 100
 
 var grFrame *Framework
@@ -109,7 +109,7 @@ func SetNextEarliestGrTime() {
 }
 
 func UpdateGrInterval(n, m int) {
-	GrInterval = mathutils.Max(int64((ALPHA*n+m/3)/BETA/10000), minGrInterval)
+	GrInterval = mathutils.Max(int64((ALPHA*n+m/3)/BETA), minGrInterval)
 }
 
 func parallelForEachVertex(g *Graph, applicator func(vidx uint32, tidx uint32)) {

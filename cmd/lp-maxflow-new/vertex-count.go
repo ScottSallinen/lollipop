@@ -23,7 +23,7 @@ func (vc *VertexCount) NewVertex(g *Graph, sidx uint32) (msgSent int) {
 	vc.lock.Lock()
 	vc.realCount += 1
 	if vc.realCount > vc.estimatedCount {
-		vc.estimatedCount = vc.realCount
+		vc.estimatedCount = int64(float64(vc.realCount) * 1.1)
 		for vidx, subscribing := range vc.subscribers {
 			if subscribing {
 				msgSent += sendNewMaxVertexCount(g, sidx, vidx, vc.estimatedCount)
