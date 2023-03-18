@@ -143,8 +143,14 @@ func printNumberOfVerticesAndEdgesInFlow(g *Graph, sourceRaw uint32) {
 	info("Number of vertices in max flow: ", mathutils.Sum(verticesInFlow), " edges: ", mathutils.Sum(edgesInFlow))
 }
 
-func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, insertDeleteDelay uint64, timeSeriesInterval uint64, skipDeleteProb float64) (*Framework, *Graph) {
+func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, insertDeleteDelay uint64, timeSeriesInterval uint64, skipDeleteProb float64, dynamic bool) (*Framework, *Graph) {
 	enforce.ENFORCE(sourceRaw != sinkRaw)
+
+	if dynamic && !Snapshotting {
+		initialHeight = MaxHeight
+	} else {
+		initialHeight = 0
+	}
 
 	g := Graph{}
 	g.Options = graph.GraphOptions[MessageValue]{
@@ -181,15 +187,16 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, insertDeleteDelay uint64
 	}
 	frame.OnInitVertex = func(g *Graph, vidx uint32) {
 		v := &g.Vertices[vidx]
-		v.Property.Height = InitialHeight
 		switch v.Id {
 		case sourceRaw:
 			v.Property.Type = Source
+			v.Property.Height = int64(n)
 		case sinkRaw:
 			v.Property.Type = Sink
 			v.Property.Height = 0
 		default:
 			v.Property.Type = Normal
+			v.Property.Height = initialHeight
 		}
 		v.Property.Nbrs = make(map[uint32]Nbr)
 		v.Property.Excess = 0
@@ -208,8 +215,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, insertDeleteDelay uint64
 
 func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, insertDeleteDelay uint64, timeSeriesInterval uint64, snapshotting bool, skipDeleteProb float64) *Graph {
 	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
-	frame, g := GetFrameworkAndGraph(source, sink, n, insertDeleteDelay, timeSeriesInterval, skipDeleteProb)
-	Snapshotting = snapshotting
+	frame, g := GetFrameworkAndGraph(source, sink, n, insertDeleteDelay, timeSeriesInterval, skipDeleteProb, dynamic)
 	grFrame = frame
 	if snapshotting {
 		resetPhase = true
@@ -279,6 +285,7 @@ func main() {
 	if *snapshotting {
 		enforce.ENFORCE(*dptr && *aptr)
 	}
+	Snapshotting = *snapshotting
 	enforce.ENFORCE(*skipDeleteProb >= 0 && *skipDeleteProb <= 1)
 	if *skipDeleteProb != 0 {
 		enforce.ENFORCE(*insertDeleteDelay > 0)
@@ -347,8 +354,8 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		if snapshotting {
 			if hasSource && hasSink {
 				resetPhase = false
-				g.Vertices[sourceIdx].Property.Height = InitialHeight
-				g.Vertices[sinkIdx].Property.Height = InitialHeight
+				g.Vertices[sourceIdx].Property.Height = MaxHeight
+				g.Vertices[sinkIdx].Property.Height = MaxHeight
 				updateHeight(g, sourceIdx, VertexCountHelper.estimatedCount)
 				updateHeight(g, sinkIdx, 0)
 				send(g, sourceIdx, sourceIdx, 0)
@@ -389,7 +396,7 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 				v := &g.Vertices[vi]
 				vp := &v.Property
 				vp.Excess = 0
-				vp.Height = InitialHeight
+				vp.Height = initialHeight
 				if vp.Type == Source {
 					vp.Height = VertexCountHelper.estimatedCount
 					for ei := range v.OutEdges {
@@ -403,7 +410,7 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 					vp.Height = 0
 				}
 				for i := range vp.Nbrs {
-					h := int64(InitialHeight)
+					h := initialHeight
 					if hasSource && i == sourceIdx {
 						h = VertexCountHelper.estimatedCount
 					}

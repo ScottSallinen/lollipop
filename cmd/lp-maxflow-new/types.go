@@ -43,8 +43,8 @@ type Vertex = graph.Vertex[VertexProp, EdgeProp]
 type Edge = graph.Edge[EdgeProp]
 
 const (
-	EmptyValue    = 0
-	InitialHeight = math.MaxUint32
+	EmptyValue = 0
+	MaxHeight  = math.MaxUint32
 
 	Normal VertexType = 0
 	Source VertexType = 1
@@ -58,6 +58,7 @@ const (
 	MessageTypesCount             = 5
 )
 
+var initialHeight = int64(0) // Initial height of normal vertices
 var resetPhase = false
 var bfsPhase = false
 var MessageCounter = make([]uint64, MessageTypesCount) // FIXME: race condition

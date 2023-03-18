@@ -149,7 +149,7 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 	// Update residual capacity
 	n, exist := s.Nbrs[didx]
 	if !exist {
-		n.Height = InitialHeight
+		n.Height = initialHeight
 		msgSent += send(g, sidx, didx, 0)
 	}
 	s.Nbrs[didx] = Nbr{n.Height, n.ResCap + delta}

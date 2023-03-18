@@ -34,6 +34,9 @@ func onRelabeled(g *Graph) {
 }
 
 func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
+	watch := mathutils.Watch{}
+	watch.Start()
+
 	if atomic.LoadInt64(&grShouldRun) != 1 {
 		return
 	}
@@ -46,9 +49,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	if atomic.LoadInt64(&grShouldRun) != 1 {
 		return
 	}
-	watch := mathutils.Watch{}
 	info("Starting GlobalRelabel")
-	watch.Start()
 
 	// set a flag to prevent flow push and height change
 	resetPhase = true
@@ -60,7 +61,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 	parallelForEachVertex(g, func(vi uint32, ti uint32) {
 		v := &g.Vertices[vi].Property
 		oldHeight := v.Height
-		v.Height = InitialHeight
+		v.Height = MaxHeight
 		if v.Type == Source || v.Type == Sink || v.Excess < 0 {
 			// let it broadcast its height after resuming execution
 			updateHeight(g, vi, oldHeight)
@@ -70,7 +71,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 		}
 		for i, n := range v.Nbrs {
 			v.Nbrs[i] = Nbr{
-				Height: InitialHeight,
+				Height: MaxHeight,
 				ResCap: n.ResCap,
 			}
 		}
@@ -100,6 +101,7 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 
 	g.ResetVotes()
 	SetNextEarliestGrTime()
+	info("    Total GR runtime: ", watch.Elapsed().Milliseconds())
 }
 
 func SetNextEarliestGrTime() {
