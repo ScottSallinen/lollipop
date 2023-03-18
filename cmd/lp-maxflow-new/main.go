@@ -308,15 +308,15 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		g.Watch.Pause()
 		positiveVertices := uint32(0)
 		negativeVertices := uint32(0)
-		for vi := range g.Vertices {
-			v := &g.Vertices[vi]
-			if v.Property.Excess > 0 {
-				positiveVertices += 1
-			} else if v.Property.Excess < 0 {
-				negativeVertices += 1
-			}
-		}
-		printNumberOfVerticesAndEdgesInFlow(g, sourceRaw)
+		//for vi := range g.Vertices {
+		//	v := &g.Vertices[vi]
+		//	if v.Property.Excess > 0 {
+		//		positiveVertices += 1
+		//	} else if v.Property.Excess < 0 {
+		//		negativeVertices += 1
+		//	}
+		//}
+		//printNumberOfVerticesAndEdgesInFlow(g, sourceRaw)
 		g.Watch.UnPause()
 
 		if Snapshotting {
