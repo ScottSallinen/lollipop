@@ -54,7 +54,6 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 		enforce.ENFORCE(len(v.Property.MessageBuffer) == 0, fmt.Sprintf("vertex index %d ID %d has outstanding messages", vi, v.Id))
 	})
 
-	// Check Excess
 	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vi int, ti int) {
 		v := &g.Vertices[vi].Property
 		enforce.ENFORCE(len(v.NbrHeight) == len(v.ResCap))
@@ -261,13 +260,15 @@ func Launch(f *Framework, g *Graph, gName string, async bool, dynamic bool) {
 	}
 
 	// We launch the timeseries consumer thread
+	var tsWg sync.WaitGroup
 	if g.Options.LogTimeseries {
 		entries := make(chan framework.TimeseriesEntry[VertexProp], 4096)
 		go f.NewLogTimeSeries(f, g, entries)
-		go f.ApplyTimeSeries(entries)
+		go f.ApplyTimeSeries(entries, &tsWg)
 	}
 
 	f.Run(g, &feederWg, &frameWait)
+	tsWg.Wait()
 }
 
 func main() {
@@ -459,15 +460,19 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		g.ResetVotes()
 		g.Mutex.Unlock()
 	}
+	info("LogTimeSeries closing entries")
 	close(entries)
 }
 
-func ApplyTimeSeries(entries chan framework.TimeseriesEntry[VertexProp]) {
+func ApplyTimeSeries(entries chan framework.TimeseriesEntry[VertexProp], wg *sync.WaitGroup) {
+	wg.Add(1)
 	for e := range entries {
 		info(tsEntryLineToStr(&e))
 	}
+	info("ApplyTimeSeries: entries closed")
 	PrintTimeSeriesStat()
 	SaveTimeSeries()
+	wg.Done()
 }
 
 func SaveTimeSeries() {

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"net/http"
@@ -175,7 +176,7 @@ type NamedEntry struct {
 
 var tsDB = make([]NamedEntry, 0)
 
-func ApplyTimeSeries(entries chan framework.TimeseriesEntry[VertexProperty]) {
+func ApplyTimeSeries(entries chan framework.TimeseriesEntry[VertexProperty], wg *sync.WaitGroup) {
 	//for e := range entries {
 	//	ia := make([]float64, len(e.VertexData))
 	//	for v := range e.VertexData {

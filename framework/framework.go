@@ -33,7 +33,7 @@ type Framework[VertexProp, EdgeProp, MsgType any] struct {
 	EdgeParser         graph.EdgeParserFunc[EdgeProp]
 	GetTimestamp       func(prop EdgeProp) uint64
 	SetTimestamp       func(prop *EdgeProp, ts uint64)
-	ApplyTimeSeries    func(chan TimeseriesEntry[VertexProp])
+	ApplyTimeSeries    func(chan TimeseriesEntry[VertexProp], *sync.WaitGroup)
 	NewLogTimeSeries   func(f *Framework[VertexProp, EdgeProp, MsgType], g *graph.Graph[VertexProp, EdgeProp, MsgType], entries chan TimeseriesEntry[VertexProp])
 }
 
@@ -136,13 +136,15 @@ func (frame *Framework[VertexProp, EdgeProp, MsgType]) Launch(g *graph.Graph[Ver
 	}
 
 	// We launch the timeseries consumer thread
+	var tsWg sync.WaitGroup
 	if g.Options.LogTimeseries {
 		entries := make(chan TimeseriesEntry[VertexProp], 4096)
 		go frame.NewLogTimeSeries(frame, g, entries)
-		go frame.ApplyTimeSeries(entries)
+		go frame.ApplyTimeSeries(entries, &tsWg)
 	}
 
 	frame.Run(g, &feederWg, &frameWait)
+	tsWg.Wait()
 }
 
 func (frame *Framework[VertexProp, EdgeProp, MsgType]) CompareToOracleRunnable(g *graph.Graph[VertexProp, EdgeProp, MsgType], exit *bool, sleepTime time.Duration) {
