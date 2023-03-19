@@ -9,18 +9,15 @@ import (
 
 type VertexType uint8
 type MessageType uint8
-type Nbr struct {
-	Height int64
-	ResCap int64
-}
 
 type VertexProp struct {
 	MessageBuffer []Message
 
-	Type   VertexType
-	Excess int64
-	Height int64
-	Nbrs   map[uint32]Nbr
+	Type      VertexType
+	Excess    int64
+	Height    int64
+	NbrHeight map[uint32]int64
+	ResCap    map[uint32]int64
 }
 
 type Message struct {
@@ -93,13 +90,13 @@ func (t MessageType) String() string {
 	}
 }
 
-func (n Nbr) String() string {
-	return fmt.Sprintf("{%d,%d}", n.Height, n.ResCap)
-}
-
 func (p *VertexProp) String() string {
 	s := fmt.Sprintf("{%v,%v,%v,[", p.Type, p.Excess, p.Height)
-	for k, v := range p.Nbrs {
+	for k, v := range p.NbrHeight {
+		s += fmt.Sprintf("%d:%v,", k, v)
+	}
+	s += "],["
+	for k, v := range p.ResCap {
 		s += fmt.Sprintf("%d:%v,", k, v)
 	}
 	return s + "]}"

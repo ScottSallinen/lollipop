@@ -79,11 +79,8 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 				info("    Current sink excess: ", v.Excess, " height: ", v.Height)
 			}
 		}
-		for i, n := range v.Nbrs {
-			v.Nbrs[i] = Nbr{
-				Height: MaxHeight,
-				ResCap: n.ResCap,
-			}
+		for i := range v.NbrHeight {
+			v.NbrHeight[i] = MaxHeight
 		}
 		if v.Excess > 0 {
 			positiveVertices[ti] += 1

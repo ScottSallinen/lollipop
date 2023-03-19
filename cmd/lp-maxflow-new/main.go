@@ -54,6 +54,12 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 		enforce.ENFORCE(len(v.Property.MessageBuffer) == 0, fmt.Sprintf("vertex index %d ID %d has outstanding messages", vi, v.Id))
 	})
 
+	// Check Excess
+	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vi int, ti int) {
+		v := &g.Vertices[vi].Property
+		enforce.ENFORCE(len(v.NbrHeight) == len(v.ResCap))
+	})
+
 	// Check heights
 	enforce.ENFORCE(source.Property.Height >= int64(len(g.Vertices)),
 		"source height ", source.Property.Height, " < # of vertices ", len(g.Vertices))
@@ -77,9 +83,9 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 					sumEdgeCapacityOriginal += int64(v.OutEdges[ei].Property.Capacity)
 				}
 			}
-			for i, neighbour := range v.Property.Nbrs {
-				enforce.ENFORCE(neighbour.ResCap >= 0, fmt.Sprintf("Residual capacity is %d for (%d, %d)", neighbour.ResCap, vi, i))
-				sumEdgeCapacityResidual += neighbour.ResCap
+			for i, rc := range v.Property.ResCap {
+				enforce.ENFORCE(rc >= 0, fmt.Sprintf("Residual capacity is %d for (%d, %d)", rc, vi, i))
+				sumEdgeCapacityResidual += rc
 			}
 			enforce.ENFORCE(sumEdgeCapacityOriginal == sumEdgeCapacityResidual, fmt.Sprintf(
 				"normal vertex index %d ID %d sumEdgeCapacityOriginal (%d) != sumEdgeCapacityResidual (%d)",
@@ -103,11 +109,11 @@ func OnCheckCorrectness(g *Graph, sourceRaw, sinkRaw uint32) error {
 	// Check height invariant
 	mathutils.BatchParallelFor(len(g.Vertices), graph.THREADS, func(vi int, ti int) {
 		v := &g.Vertices[vi].Property
-		for i, n := range v.Nbrs {
-			if n.ResCap > 0 {
-				enforce.ENFORCE(v.Height <= n.Height+1,
+		for i, rc := range v.ResCap {
+			if rc > 0 {
+				enforce.ENFORCE(v.Height <= v.NbrHeight[i]+1,
 					fmt.Sprintf("Height invariant violated. (i=%d, h=%d) -(%d)> (i=%d, h=%d)",
-						vi, v.Height, n.ResCap, i, n.Height))
+						vi, v.Height, rc, i, v.NbrHeight[i]))
 			}
 		}
 	})
@@ -130,7 +136,7 @@ func printNumberOfVerticesAndEdgesInFlow(g *Graph, sourceRaw uint32) {
 		for ei := range v.OutEdges {
 			// ignore loops and edges to the source
 			if e := &v.OutEdges[ei]; e.Destination != uint32(vi) && e.Destination != g.VertexMap[sourceRaw] {
-				if v.Property.Nbrs[e.Destination].ResCap < int64(e.Property.Capacity) {
+				if v.Property.ResCap[e.Destination] < int64(e.Property.Capacity) {
 					inFlow = true
 					edgesInFlow[ti] += 1
 				}
@@ -198,7 +204,8 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, insertDeleteDelay uint64
 			v.Property.Type = Normal
 			v.Property.Height = initialHeight
 		}
-		v.Property.Nbrs = make(map[uint32]Nbr)
+		v.Property.NbrHeight = make(map[uint32]int64)
+		v.Property.ResCap = make(map[uint32]int64)
 		v.Property.Excess = 0
 	}
 	frame.OnCheckCorrectness = func(g *Graph) error {
@@ -410,7 +417,7 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 				} else if vp.Type == Sink {
 					vp.Height = 0
 				}
-				for i := range vp.Nbrs {
+				for i := range vp.NbrHeight {
 					h := initialHeight
 					if hasSource && i == sourceIdx {
 						h = VertexCountHelper.estimatedCount
@@ -418,20 +425,17 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 					if hasSink && i == sinkIdx {
 						h = 0
 					}
-					vp.Nbrs[i] = Nbr{
-						Height: h,
-						ResCap: 0,
-					}
+					vp.NbrHeight[i] = h
+				}
+				for i := range vp.ResCap {
+					vp.ResCap[i] = 0
 				}
 				for ei := range v.OutEdges {
 					e := &v.OutEdges[ei]
 					if e.Destination == vi || (hasSource && e.Destination == sourceIdx) {
 						continue
 					}
-					vp.Nbrs[e.Destination] = Nbr{
-						Height: vp.Nbrs[e.Destination].Height,
-						ResCap: vp.Nbrs[e.Destination].ResCap + int64(e.Property.Capacity),
-					}
+					vp.ResCap[e.Destination] += int64(e.Property.Capacity)
 				}
 			})
 		}
