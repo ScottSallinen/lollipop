@@ -215,6 +215,7 @@ func GetFrameworkAndGraph(sourceRaw, sinkRaw, n uint32, insertDeleteDelay uint64
 
 func LaunchGraphExecution(gName string, async bool, dynamic bool, source, sink, n uint32, insertDeleteDelay uint64, timeSeriesInterval uint64, snapshotting bool, skipDeleteProb float64) *Graph {
 	enforce.ENFORCE(async || dynamic, "Max flow currently does not support sync")
+	ResetGrCounters()
 	frame, g := GetFrameworkAndGraph(source, sink, n, insertDeleteDelay, timeSeriesInterval, skipDeleteProb, dynamic)
 	grFrame = frame
 	if snapshotting {

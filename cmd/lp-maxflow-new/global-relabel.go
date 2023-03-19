@@ -18,6 +18,13 @@ var relabelCount = int64(0)
 var GrInterval = int64(minGrInterval)
 var grShouldRun = int64(0)
 
+func ResetGrCounters() {
+	earliestNextGrCount = 0
+	relabelCount = 0
+	GrInterval = minGrInterval
+	grShouldRun = 0
+}
+
 func onRelabeled(g *Graph) {
 	newCount := atomic.AddInt64(&relabelCount, 1)
 	mEarliestNextGrCount := atomic.LoadInt64(&earliestNextGrCount)
@@ -47,6 +54,9 @@ func GlobalRelabel(f *Framework, g *Graph, lockGraph bool) {
 		enforce.ENFORCE(g.Mutex.TryLock() == false)
 	}
 	if atomic.LoadInt64(&grShouldRun) != 1 {
+		return
+	}
+	if f.CheckTermination(g, 0, false) {
 		return
 	}
 	info("Starting GlobalRelabel")

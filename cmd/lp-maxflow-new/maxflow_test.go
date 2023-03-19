@@ -3,18 +3,16 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/framework"
+	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/mathutils"
 	"math/rand"
 	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
-	"time"
-
-	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/ScottSallinen/lollipop/mathutils"
 )
 
 type TestGraph struct {
@@ -37,17 +35,15 @@ var (
 	testGraphs = [...]TestGraph{
 		{2, 0, 3, "../../data/maxflow/test-1.txt", 4},
 		{8, 0, 2, "../../data/maxflow/test-2.txt", 3},
-		{23, 1367, 2361, "../../data/maxflow/comment-graph-sample-merged-shuffled-5percent.txt", 6260},
-		{1, 16239, 7662, "../../data/maxflow/comment-graph-sample-merged-shuffled-5percent.txt", 6260},
-		{1, 0, 1, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		{0, 5000, 10000, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		{1, 6786, 7895, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		{0, 15358, 9845, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		{162, 6272, 4356, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		{8, 16632, 9492, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		{1087, 1568, 363, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		{21, 3709, 7135, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
-		{137, 11665, 3721, "../../data/maxflow/comment-graph-sample-merged-shuffled.txt", 17500},
+		{1, 0, 1, "../../data/comment-graph-sample.txt", 17500},
+		{0, 5000, 10000, "../../data/comment-graph-sample.txt", 17500},
+		{1, 6786, 7895, "../../data/comment-graph-sample.txt", 17500},
+		{0, 15358, 9845, "../../data/comment-graph-sample.txt", 17500},
+		{162, 6272, 4356, "../../data/comment-graph-sample.txt", 17500},
+		{8, 16632, 9492, "../../data/comment-graph-sample.txt", 17500},
+		{1087, 1568, 363, "../../data/comment-graph-sample.txt", 17500},
+		{21, 3709, 7135, "../../data/comment-graph-sample.txt", 17500},
+		{137, 11665, 3721, "../../data/comment-graph-sample.txt", 17500},
 	}
 	dynamicTestGraphs = [...]DynamicTestGraph{
 		// Test INCREASING messages in cycles
@@ -97,7 +93,8 @@ func TestAsyncStatic(t *testing.T) {
 		for ti := 0; ti < 10; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
 			g := LaunchGraphExecution(testGraph.Filename, true, false,
-				testGraph.Source, testGraph.Sink, testGraph.VertexCount, 500*time.Millisecond, 0, 0, false)
+				testGraph.Source, testGraph.Sink, testGraph.VertexCount,
+				0, 0, false, 0)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -123,7 +120,7 @@ func TestAsyncDynamicIncremental(t *testing.T) {
 		testGraph := &testGraphs[i]
 		for ti := 0; ti < 3; ti++ {
 			graph.THREADS = rand.Intn(8-1) + 1
-			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink, 0, 500*time.Millisecond, 0, 0, false)
+			g := LaunchGraphExecution(testGraph.Filename, true, true, testGraph.Source, testGraph.Sink, 0, 0, 0, false, 0)
 			maxFlow := g.Vertices[g.VertexMap[testGraph.Sink]].Property.Excess
 			assertEqual(t, testGraph.MaxFlow, maxFlow, fmt.Sprintf("Graph %s Max flow", testGraph.Filename))
 		}
@@ -192,8 +189,7 @@ func loadAllStructureChanges(path string) []graph.StructureChange[EdgeProp] {
 }
 
 func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, sink uint32) *Graph {
-	globalRelabelExit := make(chan bool, 0)
-	frame, g := GetFrameworkAndGraph(source, sink, 0, &globalRelabelExit, 0, 0)
+	frame, g := GetFrameworkAndGraph(source, sink, 0, 0, 0, 0, true)
 
 	frame.Init(g, true, true)
 
@@ -201,8 +197,6 @@ func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, s
 	feederWg.Add(1)
 	var frameWait sync.WaitGroup
 	frameWait.Add(1)
-
-	var grWg = StartPeriodicGlobalReset(frame, g, 500*time.Millisecond, 500*time.Millisecond, true, &globalRelabelExit)
 
 	go frame.Run(g, &feederWg, &frameWait)
 
@@ -222,6 +216,5 @@ func dynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProp], source, s
 	}
 	feederWg.Done()
 	frameWait.Wait()
-	grWg.Wait()
 	return g
 }
