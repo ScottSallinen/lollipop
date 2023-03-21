@@ -320,8 +320,15 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 	for entry := range g.LogEntryChan {
 		g.Mutex.Lock()
 
+		sourceIdx, hasSource := g.VertexMap[sourceRaw]
+		sinkIdx, hasSink := g.VertexMap[sinkRaw]
+		if !hasSource || !hasSink {
+			g.Mutex.Unlock()
+			continue
+		}
+
 		// Count positiveVertices and negativeVertices
-		g.Watch.Pause()
+		//g.Watch.Pause()
 		positiveVertices := uint32(0)
 		negativeVertices := uint32(0)
 		//for vi := range g.Vertices {
@@ -333,22 +340,17 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 		//	}
 		//}
 		//printNumberOfVerticesAndEdgesInFlow(g, sourceRaw)
-		g.Watch.UnPause()
+		//g.Watch.UnPause()
 
 		if Snapshotting {
 			f.ProcessAllMessages(g)
 		}
 
-		latencyWatch := mathutils.Watch{}
-		latencyWatch.Start()
-
 		SourceApproxMaxFlow := int64(0)
 		SinkApproxMaxFlow := int64(0)
 
 		// Before
-		sourceIdx, hasSource := g.VertexMap[sourceRaw]
-		sinkIdx, hasSink := g.VertexMap[sinkRaw]
-		if hasSource && hasSink && !snapshotting {
+		if !snapshotting {
 			source := &g.Vertices[sourceIdx]
 			sink := &g.Vertices[sinkIdx]
 			SinkApproxMaxFlow = sink.Property.Excess
@@ -358,6 +360,9 @@ func LogTimeSeries(f *Framework, g *Graph, entries chan framework.TimeseriesEntr
 			}
 			SourceApproxMaxFlow -= source.Property.Excess
 		}
+
+		latencyWatch := mathutils.Watch{}
+		latencyWatch.Start()
 
 		// Run until termination
 		if snapshotting {
