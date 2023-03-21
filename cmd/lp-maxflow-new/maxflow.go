@@ -159,15 +159,13 @@ func onCapacityChanged(g *Graph, sidx, didx uint32, delta int64) (msgSent int) {
 		s.Excess += delta
 	}
 
-	if resetPhase {
-		return
-	}
-
 	// Make sure it will be in a legal state
 	if rc := s.ResCap[didx]; rc < 0 {
 		msgSent += send(g, sidx, didx, rc)
 	} else {
-		msgSent += restoreHeightInvariant(g, sidx, didx)
+		if !resetPhase {
+			msgSent += restoreHeightInvariant(g, sidx, didx)
+		}
 	}
 	return
 }
