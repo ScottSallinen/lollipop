@@ -1,126 +1,44 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"math/rand"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/ScottSallinen/lollipop/mathutils"
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
-func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
-	top := prefix
-	sum := 0.0
-	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%d:[%.3f,%.3f,%.3f] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Residual, g.Vertices[vidx].Property.Scratch)
-		sum += g.Vertices[vidx].Property.Value
-	}
-	info(top + " : " + fmt.Sprintf("%.3f", sum))
+var baseOptions = graph.GraphOptions{
+	Name:             "../../data/test.txt",
+	CheckCorrectness: true,
 }
 
-func TestAsyncDynamic(t *testing.T) {
-	logTimestampPos = 0
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", true, true, false, false, false, false)
+func TestDynamic(t *testing.T) {
+	for tCount := 0; tCount < 10; tCount++ {
+		myOpts := baseOptions
+		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
+		myOpts.Sync = false
+		myOpts.Dynamic = true
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(PageRank), myOpts)
 	}
 }
 func TestAsyncStatic(t *testing.T) {
-	logTimestampPos = 0
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", true, false, false, false, false, false)
+	for tCount := 0; tCount < 10; tCount++ {
+		myOpts := baseOptions
+		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
+		myOpts.Sync = false
+		myOpts.Dynamic = false
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(PageRank), myOpts)
 	}
 }
 func TestSyncStatic(t *testing.T) {
-	logTimestampPos = 0
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
-		LaunchGraphExecution("../../data/test.txt", false, false, false, false, false, false)
-	}
-}
-
-func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty], undirected bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
-	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
-	frame.OnInitVertex = OnInitVertex
-	frame.OnVisitVertex = OnVisitVertex
-	frame.OnFinish = OnFinish
-	frame.OnCheckCorrectness = OnCheckCorrectness
-	frame.OnEdgeAdd = OnEdgeAdd
-	frame.OnEdgeDel = OnEdgeDel
-	frame.MessageAggregator = MessageAggregator
-	frame.AggregateRetrieve = AggregateRetrieve
-
-	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected:     undirected,
-		EmptyVal:       EMPTYVAL,
-		InitAllMessage: INITMASS,
-	}
-
-	frame.Init(g, true, true)
-
-	var feederWg sync.WaitGroup
-	feederWg.Add(1)
-	var frameWait sync.WaitGroup
-	frameWait.Add(1)
-
-	go frame.Run(g, &feederWg, &frameWait)
-
-	count := uint64(0)
-	for _, v := range sc {
-		switch v.Type {
-		case graph.ADD:
-			ep := *new(EdgeProperty)
-			SetTimestamp(&ep, count)
-			g.SendAdd(v.SrcRaw, v.DstRaw, ep)
-			if undirected {
-				g.SendAdd(v.DstRaw, v.SrcRaw, ep)
-			}
-			count++
-			info("add ", v.SrcRaw, v.DstRaw)
-		case graph.DEL:
-			g.SendDel(v.SrcRaw, v.DstRaw)
-			if undirected {
-				g.SendDel(v.DstRaw, v.SrcRaw)
-			}
-			info("del ", v.SrcRaw, v.DstRaw)
-		}
-	}
-
-	for i := 0; i < graph.THREADS; i++ {
-		close(g.ThreadStructureQ[i])
-	}
-	feederWg.Done()
-	frameWait.Wait()
-	return g
-}
-
-func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, EdgeProperty, MessageValue], g2 *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
-	if len(g1.Vertices) != len(g2.Vertices) {
-		t.Error("vertex count mismatch", len(g1.Vertices), len(g2.Vertices))
-	}
-
-	for vidx := range g1.Vertices {
-		g1raw := g1.Vertices[vidx].Id
-		g2idx := g2.VertexMap[g1raw]
-
-		//g1values := &g1.Vertices[vidx].Properties
-		//g2values := &g2.Vertices[g2idx].Properties
-
-		if len(g1.Vertices[vidx].OutEdges) != len(g2.Vertices[g2idx].OutEdges) {
-			log.Println("g1:")
-			g1.PrintStructure()
-			log.Println("g2:")
-			g2.PrintStructure()
-			t.Error("edge count mismatch", len(g1.Vertices[vidx].OutEdges), len(g2.Vertices[g2idx].OutEdges))
-		}
+	for tCount := 0; tCount < 10; tCount++ {
+		myOpts := baseOptions
+		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
+		myOpts.Sync = true
+		myOpts.Dynamic = false
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(PageRank), myOpts)
 	}
 }
 
@@ -133,68 +51,61 @@ func TestDynamicCreationUnDirected(t *testing.T) {
 }
 
 func DynamicCreation(undirected bool, t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
-	allowedVariance := EPSILON * float64(100) // ?????
+	rand.NewSource(time.Now().UTC().UnixNano())
+	allowedVariance := EPSILON * float64(7) // an epsilon for each vertex I believe would be possible
 
-	testFail := false
+	for tCount := 0; tCount < 10; tCount++ {
+		THREADS := uint32(rand.Intn(8-1) + 1)
 
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
+		t.Log("TestDynamicCreation ", tCount, " t ", THREADS)
 
-		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
-
-		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1},
-			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5},
-			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2},
+		rawTestGraph := []graph.TopologyEvent[EdgeProperty]{
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(1), DstRaw: graph.AsRawType(4)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(0)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(1)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(3), DstRaw: graph.AsRawType(0)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(4), DstRaw: graph.AsRawType(2)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(4), DstRaw: graph.AsRawType(3)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(4), DstRaw: graph.AsRawType(5)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(6), DstRaw: graph.AsRawType(2)},
 		}
-		framework.ShuffleSC(rawTestGraph)
+		utils.Shuffle(rawTestGraph)
 
-		gDyn := DynamicGraphExecutionFromSC(rawTestGraph, undirected)
+		gDyn := &graph.Graph[VertexProperty, EdgeProperty, Message, Note]{}
+		gDyn.Options = graph.GraphOptions{
+			NumThreads:       THREADS,
+			Undirected:       undirected,
+			Dynamic:          true,
+			CheckCorrectness: true,
+		}
+		graph.DynamicGraphExecutionFromTestEvents(new(PageRank), gDyn, rawTestGraph)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, false, undirected)
+		myOpts := baseOptions
+		myOpts.NumThreads = THREADS
+		myOpts.Undirected = undirected
+		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(PageRank), myOpts)
 
-		a := make([]float64, len(gDyn.Vertices))
-		b := make([]float64, len(gStatic.Vertices))
+		graph.CheckGraphStructureEquality(gDyn, gStatic)
 
-		CheckGraphStructureEquality(t, gDyn, gStatic)
+		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+			g1raw := gDyn.NodeVertexRawID(v)
+			_, g2values := gStatic.NodeVertexFromRaw(g1raw)
 
-		for vidx := range gDyn.Vertices {
-			g1raw := gDyn.Vertices[vidx].Id
-			g2idx := gStatic.VertexMap[g1raw]
-
-			g1values := &gDyn.Vertices[vidx]
-			g2values := &gStatic.Vertices[g2idx]
-
-			a[vidx] = g1values.Property.Value
-			b[vidx] = g2values.Property.Value
-
-			if !mathutils.FloatEquals(g1values.Property.Value, g2values.Property.Value, allowedVariance) {
-				PrintVertexProps(gStatic, "S ")
-				PrintVertexProps(gDyn, "D ")
-				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
-				testFail = true
+			if !utils.FloatEquals(vertex.Property.Mass, g2values.Property.Mass, allowedVariance) {
+				gStatic.PrintVertexProps("S ")
+				gDyn.PrintVertexProps("D ")
+				PrintTopN(gStatic, 10)
+				PrintTopN(gDyn, 10)
+				t.Fatal("Value not equal", g1raw, vertex.Property.Mass, g2values.Property.Mass, "iteration", tCount)
 			}
-			if !mathutils.FloatEquals(g1values.Property.Residual, g2values.Property.Residual, allowedVariance) {
-				PrintVertexProps(gStatic, "S ")
-				PrintVertexProps(gDyn, "D ")
-				t.Error("Residual not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
-				testFail = true
+			if !utils.FloatEquals(vertex.Property.InFlow, g2values.Property.InFlow, allowedVariance) {
+				gStatic.PrintVertexProps("S ")
+				gDyn.PrintVertexProps("D ")
+				PrintTopN(gStatic, 10)
+				PrintTopN(gDyn, 10)
+				t.Fatal("InFlow not equal", g1raw, vertex.Property.InFlow, g2values.Property.InFlow, "iteration", tCount)
 			}
-		}
-
-		_, _, largestDiff := graph.ResultCompare(a, b, 0)
-
-		if largestDiff > allowedVariance*100 { // is percent
-			t.Error("largestDiff", largestDiff, "iteration", tcount)
-			testFail = true
-		}
-		enforce.ENFORCE(!testFail)
+		})
 	}
 }
 
@@ -207,65 +118,64 @@ func TestDynamicWithDeleteUnDirected(t *testing.T) {
 }
 
 func DynamicWithDelete(undirected bool, t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
-	allowedVariance := EPSILON * float64(100) // ?????
+	rand.NewSource(time.Now().UTC().UnixNano())
+	allowedVariance := EPSILON * 2 * float64(7) // 2*epsilon for each vertex I believe would be possible
 
-	testFail := false
+	for tCount := 0; tCount < 10; tCount++ {
+		THREADS := uint32(rand.Intn(8-1) + 1)
 
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
-
-		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 0},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1},
-			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 3},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5},
-			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2},
+		rawTestGraph := []graph.TopologyEvent[EdgeProperty]{
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(1), DstRaw: graph.AsRawType(4)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(0)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(1)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(3), DstRaw: graph.AsRawType(0)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(4), DstRaw: graph.AsRawType(2)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(4), DstRaw: graph.AsRawType(3)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(4), DstRaw: graph.AsRawType(5)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(6), DstRaw: graph.AsRawType(2)},
 		}
 
-		adjustedGraph := framework.InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)
+		adjustedGraph := graph.InjectDeletesRetainFinalStructure(rawTestGraph, 0.33)
 
-		gDyn := DynamicGraphExecutionFromSC(adjustedGraph, undirected)
+		gDyn := &graph.Graph[VertexProperty, EdgeProperty, Message, Note]{}
+		gDyn.Options = graph.GraphOptions{
+			NumThreads:       THREADS,
+			Undirected:       undirected,
+			Dynamic:          true,
+			CheckCorrectness: true,
+		}
+		gDyn.InitMessages = nil
+		graph.DynamicGraphExecutionFromTestEvents(new(PageRank), gDyn, adjustedGraph)
 
-		gStatic := LaunchGraphExecution("../../data/test.txt", true, false, false, true, false, undirected)
+		mGraphOptions := graph.GraphOptions{
+			Name:             "../../data/test.txt",
+			NumThreads:       THREADS,
+			Undirected:       undirected,
+			CheckCorrectness: true,
+		}
 
-		CheckGraphStructureEquality(t, gDyn, gStatic)
+		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(PageRank), mGraphOptions)
 
-		a := make([]float64, len(gDyn.Vertices))
-		b := make([]float64, len(gStatic.Vertices))
+		graph.CheckGraphStructureEquality(gDyn, gStatic)
 
-		for vidx := range gDyn.Vertices {
-			g1raw := gDyn.Vertices[vidx].Id
-			g2idx := gStatic.VertexMap[g1raw]
+		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+			g1raw := gDyn.NodeVertexRawID(v)
+			_, g2values := gStatic.NodeVertexFromRaw(g1raw)
 
-			g1values := &gDyn.Vertices[vidx]
-			g2values := &gStatic.Vertices[g2idx]
-
-			a[vidx] = g1values.Property.Value
-			b[vidx] = g2values.Property.Value
-			if !mathutils.FloatEquals(g1values.Property.Value, g2values.Property.Value, allowedVariance) {
-				PrintVertexProps(gStatic, "S ")
-				PrintVertexProps(gDyn, "D ")
-				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
-				testFail = true
+			if !utils.FloatEquals(vertex.Property.Mass, g2values.Property.Mass, allowedVariance) {
+				gStatic.PrintVertexProps("S ")
+				gDyn.PrintVertexProps("D ")
+				PrintTopN(gStatic, 10)
+				PrintTopN(gDyn, 10)
+				t.Fatal("Value not equal", g1raw, vertex.Property.Mass, g2values.Property.Mass, "iteration", tCount)
 			}
-			if !mathutils.FloatEquals(g1values.Property.Residual, g2values.Property.Residual, allowedVariance) {
-				PrintVertexProps(gStatic, "S ")
-				PrintVertexProps(gDyn, "D ")
-				t.Error("Residual not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
-				testFail = true
+			if !utils.FloatEquals(vertex.Property.InFlow, g2values.Property.InFlow, allowedVariance) {
+				gStatic.PrintVertexProps("S ")
+				gDyn.PrintVertexProps("D ")
+				PrintTopN(gStatic, 10)
+				PrintTopN(gDyn, 10)
+				t.Fatal("InFlow not equal", g1raw, vertex.Property.InFlow, g2values.Property.InFlow, "iteration", tCount)
 			}
-		}
-
-		_, _, largestDiff := graph.ResultCompare(a, b, 0)
-
-		if largestDiff > allowedVariance*100 { // is percent
-			t.Error("largestDiff", largestDiff)
-			testFail = true
-		}
-		enforce.ENFORCE(!testFail)
+		})
 	}
 }

@@ -2,125 +2,89 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"log"
-	"net/http"
 
-	"github.com/ScottSallinen/lollipop/enforce"
+	"github.com/rs/zerolog/log"
 
-	_ "net/http/pprof"
-	"strconv"
-	"strings"
-
-	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
-func info(args ...any) {
-	log.Println("[Colouring]\t", fmt.Sprint(args...))
+func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+	maxColour := uint32(0)
+	allColours := make([]uint32, 1, 64)
+	g.NodeForEachVertex(func(_, _ uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+		vColour := vertex.Property.Colour
+		if int(vColour) >= len(allColours) {
+			allColours = append(allColours, make([]uint32, int(vColour)+1-len(allColours))...)
+		}
+		allColours[vColour]++
+		if vColour > maxColour {
+			maxColour = vColour
+		}
+	})
+	nColours := len(allColours)
+	log.Info().Msg("Colour distribution (0 to " + utils.V(nColours) + "): ")
+	log.Info().Msg(utils.V(allColours))
+	log.Info().Msg("Max colour: " + utils.V(maxColour) + " Number of colours: " + utils.V(nColours) + " Ratio: " + utils.V(float64(maxColour+1)/float64(nColours)))
 }
 
-func EdgeParser(lineText string) graph.RawEdge[EdgeProperty] {
-	stringFields := strings.Fields(lineText)
-
-	sflen := len(stringFields)
-	enforce.ENFORCE(sflen == 2 || sflen == 3)
-
-	src, _ := strconv.Atoi(stringFields[0])
-	dst, _ := strconv.Atoi(stringFields[1])
-
-	return graph.RawEdge[EdgeProperty]{SrcRaw: uint32(src), DstRaw: uint32(dst), EdgeProperty: EdgeProperty{}}
-}
-
-func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) (maxColour uint32, nColours int) {
-	maxColour = uint32(0)
-	allColours := make(map[uint32]bool)
-	for vi := range g.Vertices {
-		v := &g.Vertices[vi]
-		allColours[v.Property.Colour] = true
-		if v.Property.Colour > maxColour {
-			maxColour = v.Property.Colour
+func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+	g.NodeForEachVertex(func(i, sidx uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+		colour := vertex.Property.Colour
+		rawId := g.NodeVertexRawID(sidx)
+		outDegree := uint32(len(vertex.OutEdges))
+		_, tidx := graph.InternalExpand(sidx)
+		inDegree := g.GraphThreads[tidx].VertexStructure(sidx).InEventPos
+		if colour == EMPTY_VAL {
+			log.Panic().Msg("vertex rawId " + utils.V(rawId) + " is not coloured. dg " + utils.V(outDegree) + " internalIdx: " + utils.V(sidx) + " tidx " + utils.V(tidx))
+		} else if colour > outDegree && colour > inDegree {
+			log.Error().Msg("vertex rawId " + utils.V(rawId) + " has a colour " + utils.V(colour) + " that is larger than its own degree: (out: " + utils.V(outDegree) + " in: " + utils.V(inDegree) + ")")
+			vtm, _ := g.NodeVertexMessages(sidx)
+			log.Error().Msg(utils.V(vtm.Inbox.NbrScratch))
+			log.Panic().Msg("")
 		}
-	}
-	nColours = len(allColours)
-	return maxColour, nColours
-}
-
-func OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	// Check correctness
-	for vi := range g.Vertices {
-		v := &g.Vertices[vi]
-		colour := v.Property.Colour
-		degree := uint32(len(v.OutEdges))
-		if colour == EMPTYVAL {
-			return fmt.Errorf("vertex %d is not coloured", v.Id)
-		}
-		if colour > degree {
-			return fmt.Errorf("vertex %d has a colour (%d) that is larger than its own degree (%d)", v.Id, colour, degree)
-		}
-		for ei := range v.OutEdges {
-			target := &g.Vertices[v.OutEdges[ei].Destination]
-			if colour == target.Property.Colour && target.Id != v.Id {
-				//g.PrintStructure()
-				//g.PrintVertexProperty("OnCheckCorrectness ")
-				return fmt.Errorf("an edge exists between Vertex %d and Vertex %d which have the same colour %d", v.Id, target.Id, v.Property.Colour)
+		for _, e := range vertex.OutEdges {
+			didx := e.Didx
+			target := g.NodeVertex(didx)
+			if colour == target.Property.Colour && g.NodeVertexRawID(didx) != rawId {
+				log.Error().Msg("An edge exists from vertex Source " + utils.V(sidx) + " [raw " + utils.V(rawId) + "] and Target " + utils.V(didx) + " [raw " + utils.V(g.NodeVertexRawID(didx)) + "] which have the same colour " + utils.V(colour))
+				vtm, _ := g.NodeVertexMessages(didx)
+				log.Error().Msg("Target has view of Source: " + utils.V(vtm.Inbox.NbrScratch[e.Pos]))
+				for _, te := range target.OutEdges {
+					if te.Didx == sidx {
+						log.Error().Msg("Found edge from target to source")
+						selfMessages, _ := g.NodeVertexMessages(sidx)
+						log.Error().Msg("Source has view of target: " + utils.V(selfMessages.Inbox.NbrScratch[te.Pos]))
+						log.Panic().Msg("")
+					}
+				}
+				// TODO: Might have something to do with the occurrence of expired edges, which is thread-independent.
+				// Since both undirected edges need to expire for the algorithm to correct itself? If only one exists, this can happen...
+				// Need to investigate that further.
+				log.Error().Msg("But no edge from target to source? Undirected edge not completed yet?")
 			}
 		}
-	}
+	})
 
-	maxColour, nColours := ComputeGraphColouringStat(g)
-	info("Max colour: ", maxColour, " Number of colours: ", nColours, " Ratio: ", float64(maxColour+1)/float64(nColours))
-	return nil
+	ComputeGraphColouringStat(g)
 }
 
-func LaunchGraphExecution(gName string, async bool, dynamic bool) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
-	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
-	frame.OnInitVertex = OnInitVertex
-	frame.OnVisitVertex = OnVisitVertex
-	frame.OnFinish = OnFinish
-	frame.OnCheckCorrectness = OnCheckCorrectness
-	frame.OnEdgeAdd = OnEdgeAdd
-	frame.OnEdgeDel = OnEdgeDel
-	frame.MessageAggregator = MessageAggregator
-	frame.AggregateRetrieve = AggregateRetrieve
-	frame.EdgeParser = EdgeParser
+// Note OnOracleCompare doesn't make much sense for this algorithm, since it is approximate.
+// Though it may be interesting to see how values change over time.
+// (dynamic is likely to be more stable and have less variance between points in time compared to snap-shotting).
 
-	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected:     true,
-		SourceInit:     false,
-		EmptyVal:       nil,
-		InitAllMessage: nil,
-	}
-
-	frame.Launch(g, gName, async, dynamic)
-
-	return g
-}
-
+// Launch point. Parses command line arguments, and launches the graph execution.
 func main() {
-	gptr := flag.String("g", "data/test.txt", "Graph file")
-	aptr := flag.Bool("a", false, "Use async")
-	dptr := flag.Bool("d", false, "Dynamic")
-	rptr := flag.Float64("r", 0, "Use Dynamic Rate, with given rate in Edge Per Second. 0 is unbounded.")
-	pptr := flag.Bool("p", false, "Save vertex properties to disk")
-	tptr := flag.Int("t", 32, "Thread count")
-	flag.Parse()
-
-	graph.THREADS = *tptr
-	graph.TARGETRATE = *rptr
-
-	//runtime.SetMutexProfileFraction(1)
-	go func() {
-		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
-	}()
-
-	g := LaunchGraphExecution(*gptr, *aptr, *dptr)
-
-	g.ComputeGraphStats(false, false)
-
-	if *pptr {
-		graphName := framework.ExtractGraphName(*gptr)
-		g.WriteVertexProps(graphName, *dptr)
+	useMsgStrategy := flag.Bool("msg", false, "Use direct messaging strategy instead of message merging.")
+	options := graph.FlagsToOptions()
+	options.Undirected = true // undirected should always be true.
+	if *useMsgStrategy {
+		if options.Sync {
+			log.Panic().Msg("Cannot use a messaging strategy with synchronous iterations.")
+		}
+		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](new(ColouringMsg), options)
+	} else {
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(Colouring), options)
 	}
+
 }

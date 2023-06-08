@@ -14,7 +14,7 @@ This package is based on the reference implementation in C available from
 
 Licensed under the MIT license.
 */
-package mathutils
+package utils
 
 import "math"
 

@@ -1,263 +1,404 @@
 package graph
 
 import (
-	"fmt"
-	"log"
-	"math"
-	"os"
-	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 
-	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/mathutils"
+	"github.com/rs/zerolog/log"
+
+	_ "net/http/pprof"
+
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
-func info(args ...any) {
-	log.Println("[Graph]\t", fmt.Sprint(args...))
+/*
+func init() {
+	// runtime.SetMutexProfileFraction(1)
+	// debug.SetGCPercent(-1)
+}
+*/
+
+// Defines max threads. Note: this may limit graph size with small thread counts. For testing a large graph with 1 thread, set this lower!
+const THREAD_MAX = 1 << THREAD_BITS         // (32) Max threads.
+const THREAD_BITS = 5                       // Bit count
+const THREAD_SHIFT = 32 - THREAD_BITS       // Bit offset to make thread bits first in the uint32
+const THREAD_MASK = (1 << THREAD_SHIFT) - 1 // Bit mask
+
+// Some constants for the graph.
+const BASE_SIZE = 4096 * 4
+const GROW_LIMIT = 7             // Number of times certain buffers can grow (double in size)
+const MSG_MAX = 1024             // Max messages a thread MAY pull from the queue at a time, before cycling back to check other tasks.
+const FAKE_TIMESTAMP = false     // Replaces timestamp with an ordinal index. Useful for testing.
+const QUERY_EMULATE_BSP = false  // (Only if NoConvergeForQuery) If enabled, queries block in a fashion that makes the system emulate a bulk synchronous design. Slower than async, but good for debugging.
+const TOPOLOGY_FIRST = false     // Should be false. Only process topology events (no algorithm messages) until the topology is fully loaded. For testing how useful the topology hooks only are.
+const QUERY_NON_BLOCKING = false // Should be false. Determines if the input stream should be non blocked while waiting for a query result -- this way until we can make a better async state view. If a small rate or bundle size is used it could work (otherwise the system moves too fast).
+
+// For vertex allocation.
+const BUCKET_SHIFT = 12
+const BUCKET_SIZE = 1 << BUCKET_SHIFT
+const BUCKET_MASK = BUCKET_SIZE - 1
+
+// Graph type. This is the main data structure for the graph.
+type Graph[V VPI[V], E EPI[E], M MVI[M], N any] struct {
+	_                   [0]atomic.Int64                     // Alignment for the GraphThreads.
+	GraphThreads        [THREAD_MAX]GraphThread[V, E, M, N] // Graph threads. NOTE: do not len(GraphThreads)! Use g.NumThreads instead. (it is a fixed size for offset purposes).
+	NumThreads          uint32                              // Number of threads.
+	Options             GraphOptions                        // Graph options.
+	InitMessages        map[RawType]M                       // Note: takes priority over InitAllMessages! If used, this is the mapping from raw vertex ID to the initial messages they receive.
+	TerminateData       []int64                             // Value for each thread to share their (sent - received) messages.
+	TerminateView       []int64                             // Thread view to terminate.
+	TerminateVotes      []int64                             // Vote to terminate.
+	Watch               utils.Watch                         // General (e.g. wall clock) timer for the graph.
+	AlgTimer            utils.Watch                         // Timer for the algorithm, to sometimes determine algorithm-specific performance (e.g., derive query interruption compared to wall clock).
+	LogEntryChan        chan uint64                         // Channel for logging timeseries data.
+	QueryWaiter         sync.WaitGroup                      // Wait group for queries, if queries are blocking.
+	OracleCache         *Graph[V, E, M, N]                  // For debugging: if non-nil, will use this graph as the oracle instead of (re)-computing it.
+	warnOutOfOrderInput uint64                              // Detection of out of order input, during streaming; used for a unique notification.
+	warnSelectDelete    uint64                              // Detection of deletions that are selective; used for a unique notification.
+	warnBackPressure    uint64                              // Detection of back-pressure on the notification queue; used for a unique notification.
+	warnZeroTimestamp   uint64                              // Detection of zero timestamp; used for a unique notification.
 }
 
-var THREADS = 32
-var TARGETRATE = float64(0)
-var DEBUG = false
+// Graph Thread. Elements here are typically thread-local only (though queues/messages/channels have in/out positions).
+type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
+	_              [0]atomic.Int64                   // Alignment.
+	Vertices       []Vertex[V, E]                    // Internal vertex storage (see vertex.go). Ok to mem move, as other threads are not allowed to access.
+	VertexMessages []*[BUCKET_SIZE]VertexMessages[M] // For intra-node communication. Must NOT mem move.
+	Tidx           uint16                            // Thread self index.
+	Status         GraphThreadStatus                 // Thread's status. For debugging.
+	NumEdges       uint32                            // Thread's current total outgoing edge count (i.e., adds less deletes; ease of access here).
+	Command        chan Command                      // Incoming command channel.
 
-const BIGNESS = 4 // Multiplier on elements like queue size and bundle size. e.g. suggest 64 for billion-edge graphs.
-const MsgBundleSize = 256
-const GscBundleSize = (1 << 12) * BIGNESS
+	NotificationQueue utils.RingBuffMPSC[Notification[N]] // Inbound notification queue for the thread.
+	NotificationBuff  utils.Deque[Notification[N]]        // Overfill buffer for notifications.
 
-// Graph t
-type Graph[VertexProp, EdgeProp, MsgType any] struct {
-	Mutex            sync.RWMutex
-	VertexMap        map[uint32]uint32 // Raw to internal
-	Vertices         []Vertex[VertexProp, EdgeProp]
-	OnQueueVisit     func(g *Graph[VertexProp, EdgeProp, MsgType], sidx uint32, didx uint32, VisitData MsgType)
-	AlgConverge      func(g *Graph[VertexProp, EdgeProp, MsgType], wg *sync.WaitGroup)
-	MessageQ         []chan Message[MsgType]
-	ThreadStructureQ []chan StructureChange[EdgeProp]
-	MsgSend          []uint32 // number of messages sent by each thread
-	MsgRecv          []uint32 // number of messages received by each thread
-	TerminateVote    []int
-	TerminateData    []int64
-	Watch            mathutils.Watch
-	LogEntryChan     chan time.Time
-	Options          GraphOptions[MsgType]
+	Notifications     []Notification[N] // Regular buffer for notifications.
+	MsgSend           uint64            // Number of messages sent by the thread.
+	MsgRecv           uint64            // Number of messages received by the thread.
+	TopologyEventBuff []RawEdgeEvent[E] // Buffer for thread topology events that are ready to apply (been remitted).
+
+	VertexStructures  []*[BUCKET_SIZE]VertexStructure // Supplemental vertex structure (see vertex.go). Tracks extra structural properties (e.g. internal to external id).
+	VertexMap         map[RawType]uint32              // Per-Vertex: Raw (external) to internal ID.
+	VertexPendingBuff [][]uint32                      // Pending topology events; used for offsets into the TopologyEventBuff buffer.
+	NumUnique         uint64                          // Used for offset tracking. Number of unique vertices processed; after merging consecutive events for the same vertex. Starts at 1.
+
+	NumOutAdds   uint32                                // Number of outgoing edges added by the thread.
+	NumOutDels   uint32                                // Number of outgoing edges deleted by the thread.
+	NumInEvents  uint64                                // Thread's total incoming event count. Tracked by the to-remit process. (unused)
+	ExpiredEdges []utils.Pair[uint32, RawEdgeEvent[E]] // Set of an edge for a vertex that will need to be removed.
+	LoopTimes    []time.Duration                       // For debugging.
+
+	TopologyQueue utils.GrowableRingBuff[RawEdgeEvent[E]]
+	FromEmitQueue utils.GrowableRingBuff[TopologyEvent[E]]
+	ToRemitQueue  utils.RingBuffSPSC[RawEdgeEvent[E]]
+
+	Response chan Command // Response channel
+	_        [7]uint64
 }
 
-type GraphOptions[MsgType any] struct {
-	Undirected            bool               // Declares if the graph should be treated as undirected (e.g. for construction)
-	LogTimeseries         bool               // Uses timestamps to log a timeseries of vertex properties.
-	TimeSeriesInterval    uint64             // Interval (seconds) for how often to log timeseries.
-	OracleCompare         bool               // Will compare to computed oracle results, either from an interval or, if creating a timeseries, each time a timeseries is logged.
-	EmptyVal              MsgType            // Value used to represent "empty" or "no work to do"
-	SourceInit            bool               // If set to true, InitMessages defines how initial messages will be sent. Otherwise, all vertices will receive InitAllMessage.
-	InitMessages          map[uint32]MsgType // Mapping from raw vertex ID to the initial messages they receive
-	InitAllMessage        MsgType            // Value to initialize when SourceInit is set to false
-	InsertDeleteOnExpire  uint64             // If non-zero, will insert delete edges that were added before, after passing the expiration duration. (Create a sliding window graph). Needs (Get/Set)Timestamp defined.
-	OracleInterval        int64              // If OracleCompare, will compare to oracle results every OracleInterval milliseconds.
-	AsyncContinuationTime int64              // If non-zero, will continue the algorithm for AsyncContinuationTime milliseconds before collecting a state (logging a timeseries).
-	OracleCompareSync     bool               // Compares to oracle results on every iteration, when using a synchronous strategy.
+// Allocates everything needed for a new graph.
+func (g *Graph[V, E, M, N]) Init() {
+	g.NumThreads = g.Options.NumThreads
+	if g.NumThreads == 0 { // Potentially was the default value if not defined.
+		g.NumThreads = 1
+	} else if g.NumThreads > THREAD_MAX {
+		g.NumThreads = THREAD_MAX
+		log.Warn().Msg("NumThreads " + utils.V(g.NumThreads) + " > THREAD_MAX " + utils.V(THREAD_MAX) + ", setting to THREAD_MAX. If you need more threads, please adjust THREAD_MAX and recompile.")
+	}
+
+	if g.Options.LoadThreads == 0 {
+		g.Options.LoadThreads = 1
+	}
+
+	notifQueueSize := BASE_SIZE
+	if g.Options.QueueMultiplier > 0 {
+		notifQueueSize *= (1 << g.Options.QueueMultiplier)
+	}
+
+	for t := 0; t < int(g.NumThreads); t++ {
+		gt := &g.GraphThreads[t]
+		gt.Tidx = uint16(t)
+		gt.Command = make(chan Command, 1)
+		gt.Response = make(chan Command, 1)
+		gt.NumUnique = 1 // 0 is reserved for comparison against zeroed allocation.
+
+		gt.TopologyEventBuff = make([]RawEdgeEvent[E], BASE_SIZE*64)
+		gt.Notifications = make([]Notification[N], MSG_MAX)
+
+		gt.NotificationQueue.Init(uint64(notifQueueSize) * uint64(THREAD_MAX/g.NumThreads))
+
+		gt.TopologyQueue.Init(BASE_SIZE, GROW_LIMIT)
+		gt.FromEmitQueue.Init(BASE_SIZE, GROW_LIMIT)
+		gt.ToRemitQueue.Init(BASE_SIZE * 4 * THREAD_MAX) // TODO: size?
+
+		gt.ExpiredEdges = make([]utils.Pair[uint32, RawEdgeEvent[E]], 0, 512)
+		gt.VertexPendingBuff = make([][]uint32, 1024)
+		for i := uint32(0); i < 1024; i++ {
+			g.GraphThreads[t].VertexPendingBuff[i] = make([]uint32, 0, 512)
+		}
+
+		gt.Vertices = make([]Vertex[V, E], 0, (BASE_SIZE * 4))
+		gt.VertexMessages = make([]*[BUCKET_SIZE]VertexMessages[M], 0, (BASE_SIZE*4)/BUCKET_SIZE)
+		gt.VertexStructures = make([]*[BUCKET_SIZE]VertexStructure, 0, (BASE_SIZE*4)/BUCKET_SIZE)
+		gt.VertexMap = make(map[RawType]uint32, (BASE_SIZE * 4))
+	}
+
+	g.TerminateData = make([]int64, g.NumThreads)
+	g.TerminateView = make([]int64, g.NumThreads)
+	g.TerminateVotes = make([]int64, g.NumThreads)
+	g.LogEntryChan = make(chan uint64, 64) // TODO: size? Really only needs to be 1 for blocking queries.
+
+	if g.Options.DebugLevel >= 3 || g.Options.Profile {
+		log.Debug().Msg("Bit sizes (  Given  ): VertexPropType: " + utils.V(unsafe.Sizeof(*new(V))) + " EdgePropType: " + utils.V(unsafe.Sizeof(*new(E))) + " MsgType: " + utils.V(unsafe.Sizeof(*new(M))) + " NoteType " + utils.V(unsafe.Sizeof(*new(N))))
+		log.Debug().Msg("Bit sizes (Ephemeral): TopologyEvent: " + utils.V(unsafe.Sizeof(*new(TopologyEvent[E]))) + " RawEdgeEvent: " + utils.V(unsafe.Sizeof(*new(RawEdgeEvent[E]))) + " Notification: " + utils.V(unsafe.Sizeof(*new(Notification[N]))))
+		log.Debug().Msg("Bit sizes ( Derived ): Vertex: " + utils.V(unsafe.Sizeof(*new(Vertex[V, E]))) + " VertexMsg: " + utils.V(unsafe.Sizeof(*new(VertexMessages[M]))) + " VertexStruc " + utils.V(unsafe.Sizeof(*new(VertexStructure))) + " Edge: " + utils.V(unsafe.Sizeof(*new(Edge[E]))))
+		log.Debug().Msg("Bit sizes: Graph: " + utils.V(unsafe.Sizeof(*new(Graph[V, E, M, N]))) + " GraphThread: " + utils.V(unsafe.Sizeof(*new(GraphThread[V, E, M, N]))) + " GraphOptions: " + utils.V(unsafe.Sizeof(*new(GraphOptions))))
+		log.Debug().Msg("Bit sizes: RingBuffSPSC: " + utils.V(unsafe.Sizeof(*new(utils.RingBuffSPSC[TopologyEvent[E]]))) + " RingBuffMPSC: " + utils.V(unsafe.Sizeof(*new(utils.RingBuffMPSC[uint32]))) + " GrowableRingBuff: " + utils.V(unsafe.Sizeof(*new(utils.GrowableRingBuff[TopologyEvent[E]]))) + " NotifDeque " + utils.V(unsafe.Sizeof(*new(utils.Deque[Notification[N]]))))
+		log.Debug().Msg("Initial caps: FromEmit: " + utils.V(g.GraphThreads[0].FromEmitQueue.EnqCap()) + " ToRemit: " + utils.V(g.GraphThreads[0].ToRemitQueue.EnqCap()))
+	}
+
+	if g.Options.DebugLevel >= 3 || g.Options.Profile {
+		utils.MemoryStats()
+	}
+
+	g.Watch.Start()
 }
 
-type VisitType int
+// --------------- Commands to Graph Threads ---------------
+
+type Command uint8
 
 const (
-	VISIT VisitType = iota
-	ADD
-	DEL
-	VISITEMPTYMSG
+	ACK Command = iota
+	RESUME
+	BLOCK_TOP
+	BLOCK_ALL
+	BLOCK_ALG_IF_TOP // Init command, no ack
+	BSP_SYNC
+	EPOCH
 )
 
-type Message[MsgType any] struct {
-	Message MsgType
-	Type    VisitType
-	Sidx    uint32
-	Didx    uint32
+func (g *Graph[V, E, M, N]) Broadcast(command Command) {
+	for i := uint32(0); i < g.NumThreads; i++ {
+		g.GraphThreads[i].Command <- command
+	}
 }
 
-type StructureChange[EdgeProp any] struct {
-	Type         VisitType // add or del
-	SrcRaw       uint32
-	DstRaw       uint32
-	EdgeProperty EdgeProp
+func (g *Graph[V, E, M, N]) AwaitAck() {
+	for i := uint32(0); i < g.NumThreads; i++ {
+		<-g.GraphThreads[i].Response
+	}
 }
 
-type EdgeParserFunc[EdgeProp any] func(lineText string) RawEdge[EdgeProp]
-
-// Edge: Basic edge type for a graph, with a user-defined property; can be empty struct{}
-// Note the order of Property and Destination here matters. Currently, each Edge[struct{}] takes 4 bytes of
-// memory, but if we re-order these two fields, the size becomes 8 bytes.
-type Edge[EdgeProp any] struct {
-	Property    EdgeProp
-	Destination uint32
+func (g *Graph[V, E, M, N]) ExecuteQuery(entry uint64) {
+	g.QueryWaiter.Add(1)
+	g.LogEntryChan <- entry
+	if !QUERY_NON_BLOCKING {
+		g.QueryWaiter.Wait() // Wait for the query to finish before processing new events
+	}
 }
 
-// InEdge: TODO, this is very outdated.
-type InEdge struct {
-	Destination uint32
-	Weight      float64
+type GraphThreadStatus uint16
+
+const (
+	REMIT GraphThreadStatus = iota
+	RECV_TOP
+	APPLY_TOP
+	RECV_MSG
+	APPLY_MSG
+	RECV_CMD
+	BACKOFF_ALG
+	BACKOFF_TOP
+	DONE
+)
+
+func (s GraphThreadStatus) String() string {
+	switch s {
+	case REMIT:
+		return "REMIT"
+	case RECV_TOP:
+		return "RECV_TOP"
+	case APPLY_TOP:
+		return "APPLY_TOP"
+	case RECV_MSG:
+		return "RECV_MSG"
+	case APPLY_MSG:
+		return "APPLY_MSG"
+	case RECV_CMD:
+		return "RECV_CMD"
+	case BACKOFF_ALG:
+		return "BACKOFF_ALG"
+	case BACKOFF_TOP:
+		return "BACKOFF_TOP"
+	case DONE:
+		return "DONE"
+	default:
+		return "?"
+	}
 }
 
-// Vertex Main type defining a vertex in a graph. Contains necessary per-vertex information for structure and identification.
-type Vertex[VertexProp, EdgeProp any] struct {
-	Property VertexProp       // Generic property type, can be variable per algorithm.
-	Id       uint32           // Raw (external) ID of a vertex, reflecting the external original identifier of a vertex, NOT the internal [0, N] index.
-	OutEdges []Edge[EdgeProp] // Main outgoing edgelist.
-	InEdges  []InEdge         // Incoming edges (currently unused).
-	Mutex    sync.RWMutex     // Mutex for thread synchroniziation, if needed.
-	IsActive int32            // Indicates if the vertex awaits a visit in ConvergeSync
-}
+// --------------- Misc Graph Helper Functions ---------------
 
-func (v *Vertex[VertexProp, EdgeProp]) ToThreadIdx() uint32 {
-	return v.Id % uint32(THREADS)
-}
+// Prints some statistics of the graph
+func (g *Graph[V, E, M, N]) ComputeGraphStats() {
+	maxOutDegree := make([]uint32, g.NumThreads)
+	listOutDegree := make([]uint32, g.NodeVertexCount())
 
-func (g *Graph[VertexProp, EdgeProp, MsgType]) RawIdToThreadIdx(RawId uint32) uint32 {
-	return RawId % uint32(THREADS)
-}
+	maxRawId := make([]RawType, g.NumThreads)
 
-// ComputeInEdges update all vertices' InEdges to match the edges stored in OutEdges lists
-func (g *Graph[VertexProp, EdgeProp, MsgType]) ComputeInEdges() {
-	for vidx := range g.Vertices {
-		for eidx := range g.Vertices[vidx].OutEdges {
-			target := int(g.Vertices[vidx].OutEdges[eidx].Destination)
-			g.Vertices[target].InEdges = append(g.Vertices[target].InEdges, InEdge{uint32(vidx), 0.0})
+	numEdges := uint32(0)
+	numSinks := make([]uint32, g.NumThreads)
+	numHeads := make([]uint32, g.NumThreads)
+
+	// If theres no deletes then the InEventPos is exactly the in degree.
+	// TODO: should track delete a counter as well in the vertex structure, as it could be useful to have exact current in degree for algorithms.
+	numDels := uint32(0)
+	for t := uint32(0); t < g.NumThreads; t++ {
+		numDels += g.GraphThreads[t].NumOutDels
+		numEdges += g.GraphThreads[t].NumEdges
+	}
+	maxInDegree := make([]uint32, g.NumThreads)
+	listInDegree := make([]uint32, g.NodeVertexCount())
+
+	g.NodeParallelFor(func(ordinalStart, internalId uint32, gt *GraphThread[V, E, M, N]) int {
+		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
+			vertex := &gt.Vertices[i]
+			numOutEdges := uint32(len(vertex.OutEdges))
+			maxOutDegree[gt.Tidx] = utils.Max(maxOutDegree[gt.Tidx], numOutEdges)
+			listOutDegree[ordinalStart+i] = numOutEdges
+			vs := gt.VertexStructure(i)
+
+			maxRawId[gt.Tidx] = utils.Max(maxRawId[gt.Tidx], vs.RawId)
+			if numOutEdges == 0 {
+				numSinks[gt.Tidx]++
+			}
+			if numDels == 0 {
+				maxInDegree[gt.Tidx] = utils.Max(maxInDegree[gt.Tidx], vs.InEventPos)
+				listInDegree[ordinalStart+i] = vs.InEventPos
+				if vs.InEventPos == 0 {
+					numHeads[gt.Tidx]++
+				}
+			}
 		}
+		return 0
+	})
+
+	log.Info().Msg("----GraphStats----")
+	log.Info().Msg("Vertices:        " + utils.V(g.NodeVertexCount()))
+	log.Info().Msg("Largest raw ID:  " + utils.V(utils.MaxSlice(maxRawId)))
+	log.Info().Msg("Edges:           " + utils.V(numEdges))
+	log.Info().Msg("Sinks (no out):  " + utils.V(utils.Sum(numSinks)) + "\t    pct: " + utils.F("%6.3f", float64(utils.Sum(numSinks))*100.0/float64(g.NodeVertexCount())))
+	log.Info().Msg("MaxOutDeg:       " + utils.V(utils.MaxSlice(maxOutDegree)))
+	log.Info().Msg("MedianOutDeg:    " + utils.V(utils.Median(listOutDegree)))
+	if numDels == 0 {
+		log.Info().Msg("Heads (no in):   " + utils.V(utils.Sum(numHeads)) + "\t    pct: " + utils.F("%6.3f", float64(utils.Sum(numHeads))*100.0/float64(g.NodeVertexCount())))
+		log.Info().Msg("MaxInDeg:        " + utils.V(utils.MaxSlice(maxInDegree)))
+		log.Info().Msg("MedianInDeg:     " + utils.V(utils.Median(listInDegree)))
 	}
-	info("Computed inbound edges.")
+	log.Info().Msg("----EndStats----")
 }
 
-// ComputeGraphStats prints some statistics of the graph
-func (g *Graph[VertexProp, EdgeProp, MsgType]) ComputeGraphStats(inDeg bool, outDeg bool) {
-	maxOutDegree := uint64(0)
-	maxInDegree := uint64(0)
-	listInDegree := []int{}
-	listOutDegree := []int{}
-	numSinks := uint64(0)
-	numEdges := uint64(0)
+// Very slow / not optimized, but only used to view some stats if needed.
+// TODO: should just keep the delete count per vertex
+func (g *Graph[V, E, M, N]) InEdgesStats() {
+	maxInDegree := 0
+	listInDegree := make([]int, 0, g.NodeVertexCount())
+	vertInEdges := make(map[uint32][]uint32, g.NodeVertexCount())
 
-	for vidx := range g.Vertices {
-		if len(g.Vertices[vidx].OutEdges) == 0 {
-			numSinks++
+	g.NodeForEachVertex(func(_, vidx uint32, vertex *Vertex[V, E]) {
+		for _, e := range vertex.OutEdges {
+			target := e.Didx
+			vertInEdges[target] = append(vertInEdges[target], vidx)
 		}
-		numEdges += uint64(len(g.Vertices[vidx].OutEdges))
-		if outDeg {
-			maxOutDegree = mathutils.Max(uint64(len(g.Vertices[vidx].OutEdges)), maxOutDegree)
-			listOutDegree = append(listOutDegree, len(g.Vertices[vidx].OutEdges))
-		}
-		if inDeg {
-			maxInDegree = mathutils.Max(uint64(len(g.Vertices[vidx].InEdges)), maxInDegree)
-			listInDegree = append(listInDegree, len(g.Vertices[vidx].InEdges))
-		}
+	})
+	log.Info().Msg("Computed inbound edges, calculating stats...")
+
+	for _, v := range vertInEdges {
+		maxInDegree = utils.Max(len(v), maxInDegree)
+		listInDegree = append(listInDegree, len(v))
 	}
 
-	info("----GraphStats----")
-	info("Vertices ", len(g.Vertices))
-	info("Sinks ", numSinks, " pct:", fmt.Sprintf("%.3f", float64(numSinks)*100.0/float64(len(g.Vertices))))
-	info("Edges ", numEdges)
-	if outDeg {
-		info("MaxOutDeg ", maxOutDegree)
-		info("MedianOutDeg ", mathutils.Median(listOutDegree))
-	}
-	if inDeg {
-		info("MaxInDeg ", maxInDegree)
-		info("MedianInDeg ", mathutils.Median(listInDegree))
-	}
-	info("----EndStats----")
+	log.Info().Msg("MaxInDeg: " + utils.V(maxInDegree))
+	log.Info().Msg("MedianInDeg: " + utils.V(utils.Median(listInDegree)))
 }
 
-// Compares two arrays: showcases average and L1 differences.
-// IgnoreSize: some number to ignore when computing 95th percentile. (i.e., for ignoring singletons)
-// Returns: (Average L1 diff, 95th percentile L1 diff, Largest Absolute percent diff)
-func ResultCompare(a []float64, b []float64, ignoreSize int) (float64, float64, float64) {
-	largestRelativeDiff := float64(0)
-	avgRelativeDiff := float64(0)
-	listDiff := []float64{}
-	largestL1Diff := float64(0)
-	avgL1Diff := float64(0)
-	listL1Diff := []float64{}
-
-	for idx := range a {
-		delta := math.Abs((b[idx] - a[idx]) * 100.0 / math.Min(a[idx], b[idx]))
-		listDiff = append(listDiff, delta)
-		avgRelativeDiff += delta
-		largestRelativeDiff = mathutils.Max(largestRelativeDiff, delta)
-
-		l1delta := math.Abs(b[idx] - a[idx])
-		listL1Diff = append(listL1Diff, l1delta)
-		avgL1Diff += l1delta
-		largestL1Diff = mathutils.Max(largestL1Diff, l1delta)
-	}
-	avgRelativeDiff = avgRelativeDiff / float64(len(a))
-	avgL1Diff = avgL1Diff / float64(len(a))
-
-	sort.Float64s(listDiff)
-	sort.Float64s(listL1Diff)
-
-	medianIdx := len(listDiff) / 2
-	medianDiff := listDiff[medianIdx]
-	medianL1Diff := listL1Diff[medianIdx]
-	if len(listDiff)%2 == 1 { // odd
-		medianDiff = (listDiff[medianIdx-1] + listDiff[medianIdx]) / 2
-		medianL1Diff = (listL1Diff[medianIdx-1] + listL1Diff[medianIdx]) / 2
-	}
-	percentile95 := listDiff[int(float64(len(listDiff))*0.95)]
-	//percentile95L1 := listL1Diff[int(float64(len(listDiff))*0.95)]
-	percentile95L1 := listL1Diff[int(float64(len(listDiff)-ignoreSize)*0.95)+ignoreSize]
-
-	info(fmt.Sprintf("AverageRel %.5f MedianRel %.5f 95pRel %.5f LargestRel %.5f", avgRelativeDiff, medianDiff, percentile95, largestRelativeDiff))
-	info(fmt.Sprintf("AverageL1 %.3e MedianL1 %.3e 95pL1 %.3e LargestL1 %.3e", avgL1Diff, medianL1Diff, percentile95L1, largestL1Diff))
-	return avgL1Diff, percentile95L1, largestRelativeDiff
-}
-
-func (g *Graph[VertexProp, EdgeProp, MsgType]) PrintStructure() {
-	log.Println(g.VertexMap)
-	for vidx := range g.Vertices {
-		pr := fmt.Sprintf("%d", g.Vertices[vidx].Id)
+// Debugging function to print the structure of the graph.
+func (g *Graph[V, E, M, N]) PrintStructure() {
+	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E]) {
+		pr := "[" + utils.V(internalId) + "] " + utils.V(g.NodeVertexRawID(internalId)) + ": "
 		el := ""
-		for _, e := range g.Vertices[vidx].OutEdges {
-			el += fmt.Sprintf("%d, ", g.Vertices[e.Destination].Id)
+		for _, e := range vertex.OutEdges {
+			el += utils.V(g.NodeVertexRawID(e.Didx)) + ", "
 		}
-		log.Println(pr + ": " + el)
-	}
+		pr += el
+		log.Info().Msg(pr)
+	})
 }
 
-func (g *Graph[VertexProp, EdgeProp, MsgType]) PrintVertexProperty(prefix string) {
-	message := prefix
-	for vi := range g.Vertices {
-		message += fmt.Sprintf("%d:%v, ", g.Vertices[vi].Id, &g.Vertices[vi].Property)
-	}
-	info(message)
+// Debugging function to print properties of the graph.
+func (g *Graph[V, E, M, N]) PrintVertexProps(message string) {
+	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E]) {
+		message += utils.V(g.NodeVertexRawID(internalId)) + ":" + utils.V(vertex.Property) + ", "
+	})
+	log.Info().Msg(message)
 }
 
-func (g *Graph[VertexProp, EdgeProp, MsgType]) PrintVertexInEdgeSum(prefix string) {
-	top := prefix
-	sum := 0.0
-	for vidx := range g.Vertices {
-		localsum := 0.0
-		for eidx := range g.Vertices[vidx].InEdges {
-			localsum += g.Vertices[vidx].InEdges[eidx].Weight
-		}
-		sum += localsum
-		top += fmt.Sprintf("%.3f", localsum) + " "
-	}
-	info(top + " : " + fmt.Sprintf("%.3f", sum))
-}
-
-func (g *Graph[VertexProp, EdgeProp, MsgType]) WriteVertexProps(graphName string, dynamic bool) {
+// Writes the vertex properties to a file.
+// TODO: use buffered writer
+func (g *Graph[V, E, M, N]) WriteVertexProps(dynamic bool) {
 	var resName string
 	if dynamic {
 		resName = "dynamic"
 	} else {
 		resName = "static"
 	}
-	filename := "results/" + graphName + "-props-" + resName + ".txt"
+	filename := "results/" + g.PathlessName() + "-props-" + resName + ".txt"
 
-	f, err := os.Create(filename)
-	enforce.ENFORCE(err)
-	defer f.Close()
+	file := utils.CreateFile(filename)
 
-	for vidx := range g.Vertices {
-		_, err := f.WriteString(fmt.Sprintf("%d - %v\n", g.Vertices[vidx].Id, &g.Vertices[vidx].Property))
-		enforce.ENFORCE(err)
+	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E]) {
+		_, err := file.WriteString(utils.V(g.NodeVertexRawID(internalId)) + "," + utils.V(vertex.Property) + "\n")
+		if err != nil {
+			log.Panic().Err(err).Msg("Error writing to file.")
+		}
+	})
+	file.Close()
+}
+
+// Tries to find the name of the graph, without the path or extension.
+func (g *Graph[V, E, M, N]) PathlessName() (graphName string) {
+	gNameMainT := strings.Split(g.Options.Name, "/")
+	gNameMain := gNameMainT[len(gNameMainT)-1]
+	gNameMainTD := strings.Split(gNameMain, ".")
+	if len(gNameMainTD) > 1 {
+		return gNameMainTD[len(gNameMainTD)-2]
+	} else {
+		return gNameMainTD[0]
 	}
+}
+
+// For Testing. Helper to check if two graphs have the same structure.
+// Note this does not check deep equality of the edges, nor the properties.
+// It only checks the base structure of the graph; and if the number of edges is equal for the same vertex.
+// TODO: option to check all edges match? (the issue is the order may be different)
+func CheckGraphStructureEquality[V VPI[V], E EPI[E], M MVI[M], N any](g1 *Graph[V, E, M, N], g2 *Graph[V, E, M, N]) {
+	if g1.NodeVertexCount() != g2.NodeVertexCount() {
+		log.Panic().Msg("Graphs have different vertex counts: " + utils.V(g1.NodeVertexCount()) + " vs " + utils.V(g2.NodeVertexCount()))
+	}
+
+	g1.NodeForEachVertex(func(i, v uint32, vertex *Vertex[V, E]) {
+		g1raw := g1.NodeVertexRawID(v)
+		_, g2v := g2.NodeVertexFromRaw(g1raw)
+
+		if len(vertex.OutEdges) != len(g2v.OutEdges) {
+			log.Error().Msg("g1:")
+			g1.PrintStructure()
+			log.Error().Msg("g2:")
+			g2.PrintStructure()
+			log.Panic().Msg("Vertex rawId " + utils.V(g1raw) + " has different edge counts: " + utils.V(len(vertex.OutEdges)) + " vs " + utils.V(len(g2v.OutEdges)))
+		}
+	})
 }

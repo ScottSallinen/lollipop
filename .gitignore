@@ -1,5 +1,6 @@
 results
 data
+*.pprof
 
 # Binaries for programs and plugins
 *.exe

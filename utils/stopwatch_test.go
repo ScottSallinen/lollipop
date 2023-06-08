@@ -1,11 +1,11 @@
-package mathutils
+package utils
 
 import (
 	"testing"
 	"time"
 )
 
-func TestWatch(t *testing.T) {
+func Test_Watch(t *testing.T) {
 	watch := Watch{}
 
 	watch.Start()

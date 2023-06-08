@@ -1,188 +1,173 @@
 package main
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/ScottSallinen/lollipop/mathutils"
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
-const DAMPINGFACTOR = float64(0.85)
-const INITMASS = 100.0
-const EMPTYVAL = 0.0
+type PageRank struct{}
 
-const NORMALIZE = true
+const DAMPINGFACTOR = float64(0.85) // Aka "alpha"
+const INITMASS = 1.0                // Given per vertex (should be 1, or the sink norm doesn't work right)
+
+const NORMALIZE = true               // Divide scores by the number of vertices at the end, to determine probability.
+const NORM_IGNORE_SINGLETONS = false // If NORMALIZE, ignore vertices with no out or in edges (consider them similar to deleted)
 const PPR = false
 
-const EPSILON = float64(INITMASS * 1e-3) // Default value for democratic PR
-//const EPSILON = float64(INITMASS * 1e-9)  // Default value for PPR
+// Epsilon value.. typically these found in literature. Silly that it is not normalized to the number of vertices!
+const COMPARATIVE_E = float64(INITMASS * 1e-3) // Default value for democratic PR. Will continue if ANY rank change exceeds this.
+// const COMPARATIVE_E = float64(INITMASS * 1e-9) // Default value for PPR. Will continue if ANY rank change exceeds this.
+
+// Our "residual" uses a slightly different model. Galois looks like this:
+// -- if (sdata.residual > tolerance):
+// ---- PRTy oldResidual = sdata.residual.exchange(0.0);
+// ---- sdata.Score += oldResidual;
+//
+// We follow this 'flow' format (note our flow may also be negative), where each vertex gets an input of 1.0 mass of flow.
+// -- if math.Abs(vertex.Property.InFlow) > EPSILON:
+// ---- toDistribute := DAMPINGFACTOR * (src.Property.InFlow)
+// ---- toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.InFlow)
+// ---- src.Property.Mass += toAbsorb
+//
+// So we divide E by (1-d), as in our model, the vertex rank changes by: (1-d) * InFlow. So, if (InFlow > E/(1-d)), then the rank changes by (((1-d) * InFlow) > E).
+const EPSILON = float64(COMPARATIVE_E / (1.0 - DAMPINGFACTOR))
 
 type VertexProperty struct {
-	Residual float64
-	Value    float64
-	Scratch  float64 // Intermediary accumulator
+	InFlow float64
+	Mass   float64
 }
 
-func (p *VertexProperty) String() string {
-	return fmt.Sprintf("%.4f %.4f", p.Value, p.Residual)
+type EdgeProperty struct {
+	graph.TimestampEdge
 }
 
-type EdgeProperty uint64
-
-type MessageValue float64
-
-func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
-	old := mathutils.AtomicAddFloat64(&dst.Property.Scratch, float64(data))
-	newInfo = math.Abs(old) < EPSILON && math.Abs(old+float64(data)) > EPSILON
-	return newInfo
-	//return old == 0.0
+type Message struct {
+	Value float64
 }
 
-func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
-	old := mathutils.AtomicSwapFloat64(&target.Property.Scratch, 0.0)
-	return MessageValue(old)
+type Note struct{}
+
+func (VertexProperty) New() VertexProperty {
+	return VertexProperty{InFlow: 0, Mass: 0}
 }
 
-func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
-	g.Vertices[vidx].Property.Residual = 0.0
-	g.Vertices[vidx].Property.Value = 0.0
-	g.Vertices[vidx].Property.Scratch = 0.0
+func (Message) New() Message {
+	return Message{0}
 }
 
-func GetTimestamp(prop EdgeProperty) uint64 {
-	return uint64(prop)
+func (*PageRank) InitAllMessage(g *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) Message {
+	return Message{INITMASS}
 }
 
-func SetTimestamp(prop *EdgeProperty, ts uint64) {
-	*prop = EdgeProperty(ts)
+func (*PageRank) MessageMerge(incoming Message, _ uint32, existing *Message) bool {
+	oldU, newU := utils.AtomicAddFloat64U(&existing.Value, incoming.Value)
+	return math.Float64frombits(oldU&^(1<<63)) < EPSILON && math.Float64frombits(newU&^(1<<63)) > EPSILON
+	// Has to be the ugliness above to inline... below for reference of what it is.
+	// old := utils.AtomicAddFloat64(&existing.Value, incoming.Value)
+	// return math.Abs(old) < EPSILON && math.Abs(old+incoming.Value) > EPSILON
 }
 
-// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
-// The view here is **post** addition (the edges are already appended to the edge list)
-// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
-	src := &g.Vertices[sidx]
-	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
-
-	src.Property.Residual += float64(data)
-	toDistribute := DAMPINGFACTOR * (src.Property.Residual)
-	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.Residual)
-	src.Property.Value += toAbsorb
-	src.Property.Residual = 0.0
-	distribute := toDistribute / float64(len(src.OutEdges))
-
-	if len(src.OutEdges) > 1 { // Not just our first edge
-		distOld := distAllPrev / (float64(didxStart))         // Previous edge count
-		distNew := distAllPrev / (float64(len(src.OutEdges))) // Current (new) edge count
-		distDelta := distNew - distOld
-
-		// Previously existing edges [0, new) get this adjustment.
-		for eidx := 0; eidx < didxStart; eidx++ {
-			target := src.OutEdges[eidx].Destination
-			g.OnQueueVisit(g, sidx, target, MessageValue(distDelta+distribute))
-		}
-	}
-	distNewEdge := distAllPrev / (float64(len(src.OutEdges)))
-
-	// New edges [new, len) get this adjustment
-	for didx := didxStart; didx < len(src.OutEdges); didx++ {
-		target := src.OutEdges[didx].Destination
-		g.OnQueueVisit(g, sidx, target, MessageValue(distNewEdge+distribute))
-	}
+func (*PageRank) MessageRetrieve(existing *Message, _ *graph.Vertex[VertexProperty, EdgeProperty]) (outgoing Message) {
+	outgoing.Value = utils.AtomicSwapFloat64(&existing.Value, 0)
+	return outgoing
 }
 
-// OnEdgeAddBasic is the simple version which does not merge a Visit call.
-func OnEdgeAddBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didx uint32, data MessageValue) {
-	src := &g.Vertices[sidx]
-	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], message Message) (sent uint64) {
+	src.Property.InFlow += message.Value
 
-	if len(src.OutEdges) > 1 { /// Not just our first edge
-		distOld := distAllPrev / (float64(len(src.OutEdges) - 1))
-		distNew := distAllPrev / (float64(len(src.OutEdges)))
-		distDelta := distNew - distOld
+	if math.Abs(src.Property.InFlow) > EPSILON {
+		toDistribute := DAMPINGFACTOR * (src.Property.InFlow)
+		toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.InFlow)
 
-		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Destination
-			if target != didx { /// Only old edges
-				g.OnQueueVisit(g, sidx, target, MessageValue(distDelta))
+		src.Property.Mass += toAbsorb
+		src.Property.InFlow = 0.0
+
+		if len(src.OutEdges) > 0 {
+			distribute := Message{(toDistribute / float64(len(src.OutEdges)))}
+			for _, e := range src.OutEdges {
+				vtm, tidx := g.NodeVertexMessages(e.Didx)
+				if alg.MessageMerge(distribute, notif.Target, &vtm.Inbox) {
+					sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
+				}
 			}
 		}
 	}
-	distNewEdge := distAllPrev / (float64(len(src.OutEdges)))
-
-	g.OnQueueVisit(g, sidx, didx, MessageValue(distNewEdge))
+	return sent
 }
 
-func OnEdgeDelBasic(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdge graph.Edge[EdgeProperty], data MessageValue) {
-	src := &g.Vertices[sidx]
-	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+// OnEdgeAdd: Function called upon a new edge add (which also bundles a visit, including any new Data).
+// The view here is **post** addition (the edges are already appended to the edge list)
+// Note: eidxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, message Message) (sent uint64) {
+	distAllPrev := src.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
-	if len(src.OutEdges) > 0 { /// Still have edges left
-		distOld := distAllPrev / (float64(len(src.OutEdges) + 1))
-		distNew := distAllPrev / (float64(len(src.OutEdges)))
+	src.Property.InFlow += message.Value
+	toDistribute := DAMPINGFACTOR * (src.Property.InFlow)
+	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.InFlow)
+	src.Property.Mass += toAbsorb
+	src.Property.InFlow = 0.0
+	distribute := toDistribute / float64(len(src.OutEdges))
+	distNew := distAllPrev / float64(len(src.OutEdges)) // Current (new) edge count
+
+	if eidxStart != 0 { // Not just our first edge(s)
+		distOld := distAllPrev / (float64(eidxStart)) // Previous edge count
 		distDelta := distNew - distOld
+		prevEGet := Message{distDelta + distribute}
 
-		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Destination
-			g.OnQueueVisit(g, sidx, target, MessageValue(distDelta))
+		// Previously existing edges [0, new) get this adjustment.
+		for eidx := 0; eidx < eidxStart; eidx++ {
+			vtm, tidx := g.NodeVertexMessages(src.OutEdges[eidx].Didx)
+			if alg.MessageMerge(prevEGet, sidx, &vtm.Inbox) {
+				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, vtm, tidx))
+			}
 		}
 	}
-	distOldEdge := -1.0 * distAllPrev / (float64(len(src.OutEdges) + 1))
 
-	g.OnQueueVisit(g, sidx, deletedEdge.Destination, MessageValue(distOldEdge))
+	newEGet := Message{distNew + distribute}
+	// New edges [new, len) get this adjustment
+	for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
+		vtm, tidx := g.NodeVertexMessages((src.OutEdges[eidx].Didx))
+		if alg.MessageMerge(newEGet, sidx, &vtm.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, vtm, tidx))
+		}
+	}
+	return sent
 }
 
 // Version that merges with a visit
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], data MessageValue) {
-	src := &g.Vertices[sidx]
-	distAllPrev := src.Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], message Message) (sent uint64) {
+	distAllPrev := src.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
-	src.Property.Residual += float64(data)
-	toDistribute := DAMPINGFACTOR * (src.Property.Residual)
-	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.Residual)
-	src.Property.Value += toAbsorb
-	src.Property.Residual = 0.0
+	src.Property.InFlow += message.Value
+	toDistribute := DAMPINGFACTOR * (src.Property.InFlow)
+	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.InFlow)
+	src.Property.Mass += toAbsorb
+	src.Property.InFlow = 0.0
 
-	if len(src.OutEdges) > 0 { /// Still have edges left
+	if len(src.OutEdges) > 0 { // Still have edges left
 		distribute := toDistribute / float64(len(src.OutEdges))
 		distOld := distAllPrev / (float64(len(src.OutEdges) + len(deletedEdges)))
 		distNew := distAllPrev / (float64(len(src.OutEdges)))
 		distDelta := distNew - distOld
 
-		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Destination
-			g.OnQueueVisit(g, sidx, target, MessageValue(distDelta+distribute))
+		for _, e := range src.OutEdges {
+			vtm, tidx := g.NodeVertexMessages(e.Didx)
+			if alg.MessageMerge(Message{distDelta + distribute}, sidx, &vtm.Inbox) {
+				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
+			}
 		}
 	}
 
 	distOldEdges := -1.0 * distAllPrev / (float64(len(src.OutEdges) + len(deletedEdges)))
 	for _, e := range deletedEdges {
-		g.OnQueueVisit(g, sidx, e.Destination, MessageValue(distOldEdges))
-	}
-}
-
-func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
-	vertex := &g.Vertices[vidx]
-	vertex.Property.Residual += float64(data)
-
-	if math.Abs(vertex.Property.Residual) > EPSILON {
-		toDistribute := DAMPINGFACTOR * (vertex.Property.Residual)
-		toAbsorb := (1.0 - DAMPINGFACTOR) * (vertex.Property.Residual)
-
-		vertex.Property.Value += toAbsorb
-		vertex.Property.Residual = 0.0
-
-		if len(vertex.OutEdges) > 0 {
-			distribute := toDistribute / float64(len(vertex.OutEdges))
-			for eidx := range vertex.OutEdges {
-				target := vertex.OutEdges[eidx].Destination
-				g.OnQueueVisit(g, vidx, target, MessageValue(distribute))
-			}
+		vtm, tidx := g.NodeVertexMessages(e.Didx)
+		if alg.MessageMerge(Message{distOldEdges}, sidx, &vtm.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
 		}
-		return len(vertex.OutEdges)
 	}
-	return 0
+	return sent
 }
 
 // OnFinish: Called at the end of the algorithm to finalize anything necessary.
@@ -193,59 +178,75 @@ func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], v
 //
 // A minor modification has been made since the publication of the paper,
 // we no longer need to track latent values within a sink during processing, as it can actually be computed at the end
-// with simply the computation g.Vertices[vidx].Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
-func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
+// with simply the computation vertex.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+func (*PageRank) OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
 	// Fix all sink node latent values
-	numSinks := 0       /// Number of sink nodes.
-	globalLatent := 0.0 /// Total latent values from sinks.
-	nonSinkSum := 0.0   /// The total accumulated value in the non-sink graph.
+	tNumSinks := make([]int, g.NumThreads)         // Number of sink nodes.
+	tGlobalLatent := make([]float64, g.NumThreads) // Total latent values from sinks.
+	tNonSinkSum := make([]float64, g.NumThreads)   // The total accumulated value in the non-sink graph.
 
 	// One pass over all vertices -- compute some global totals.
-	for vidx := range g.Vertices {
-		// New: absorb any leftovers of residual
-		//*/
-		g.Vertices[vidx].Property.Value += (1.0 - DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Property.Scratch)
-		// Ideally we distribute (the residual should be spread among nbrs).
-		// But we must cheat the total sum mass check, so we leave some here (Residual is no longer meaningful, just used for bookkeeping).
-		g.Vertices[vidx].Property.Residual = (DAMPINGFACTOR) * (g.Vertices[vidx].Property.Residual + g.Vertices[vidx].Property.Scratch)
-		g.Vertices[vidx].Property.Scratch = 0.0
-		//*/
-
-		if len(g.Vertices[vidx].OutEdges) == 0 { // Sink vertex
-			globalLatent += g.Vertices[vidx].Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
-			numSinks++
-		} else {
-			nonSinkSum += g.Vertices[vidx].Property.Value
+	singletons := g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Message, Note]) int {
+		tidx := gt.Tidx
+		singletons := 0
+		for i := 0; i < len(gt.Vertices); i++ {
+			v := &gt.Vertices[i]
+			// New: absorb any leftovers of residual
+			leftovers := (v.Property.InFlow)
+			v.Property.Mass += (1.0 - DAMPINGFACTOR) * leftovers
+			// Ideally we distribute (the residual should be spread among nbrs). But we must cheat the total sum mass check, so we leave some here (Residual is no longer meaningful, just used for bookkeeping).
+			v.Property.InFlow = (DAMPINGFACTOR) * leftovers
+			if len(v.OutEdges) == 0 { // Sink vertex
+				if NORM_IGNORE_SINGLETONS && utils.FloatEquals(v.Property.Mass, (1-DAMPINGFACTOR), 0.001) { // must have no incoming edges
+					v.Property.Mass = 0 // discard singleton
+					singletons++
+				} else {
+					tGlobalLatent[tidx] += v.Property.Mass
+					tNumSinks[tidx]++
+				}
+			} else {
+				tNonSinkSum[tidx] += v.Property.Mass
+			}
 		}
-	}
+		return singletons
+	})
+	globalLatent := utils.Sum(tGlobalLatent)
+	numSinks := utils.Sum(tNumSinks)
+	nonSinkSum := utils.Sum(tNonSinkSum)
+
+	globalLatent = globalLatent * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+	nV := g.NodeVertexCount() - singletons
+	//println("Singletons ", singletons, " nv ", nV, " numSinks ", numSinks, " globalLatent ", globalLatent)
 
 	// Note: the amount latent here was already pre-dampened, so the retainment percent must be computed by the raw mass, so we undampen for that calculation (multiply by 1/d).
 	// The subtraction of 1.0*sinks is because we discount each sink node's contribution of 1u of mass from the amount latent.
 	// We divide by the size of the non-sink graph for the final retainment percent.
-	retainSumPct := ((globalLatent * (1.0 / DAMPINGFACTOR)) - 1.0*float64(numSinks)) / float64((len(g.Vertices) - numSinks))
+	retainSumPct := ((globalLatent * (1.0 / DAMPINGFACTOR)) - 1.0*float64(numSinks)) / float64((nV - numSinks))
 
-	SinkQuota := float64(1.0) / float64(len(g.Vertices)-1)
-	NormalQuota := float64(len(g.Vertices)-numSinks) / float64(len(g.Vertices)-1)
+	SinkQuota := float64(1.0) / float64(nV-1)
+	NormalQuota := float64(nV-numSinks) / float64(nV-1)
 
 	geometricLatentSum := globalLatent / (1.0 - DAMPINGFACTOR*(SinkQuota*(float64(numSinks-1))+(NormalQuota*retainSumPct)))
 
 	// One pass over all vertices -- make adjustment based on sink/non-sink status.
-	for vidx := range g.Vertices {
-		var toAbsorb float64
-		if len(g.Vertices[vidx].OutEdges) != 0 { // All vertices that are NOT a sink node
-			toAbsorb = (NormalQuota) * (geometricLatentSum * (1.0 - retainSumPct)) * (g.Vertices[vidx].Property.Value / nonSinkSum)
-		} else { // All vertices that are a sink node
-			// Relative 'power' of this sink compared to others determines its retainment. Note: we undampen for this ratio as well.
-			vLatent := g.Vertices[vidx].Property.Value * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
-			relativeSinkPowerPct := (vLatent*(1.0/DAMPINGFACTOR) - 1.0) / ((globalLatent * (1.0 / DAMPINGFACTOR)) - float64(numSinks)*1.0)
-			toAbsorb = (1.0 - DAMPINGFACTOR) * (SinkQuota) * (geometricLatentSum) * (1.0 - vLatent/globalLatent)
-			toAbsorb += (1.0 - DAMPINGFACTOR) * (NormalQuota) * (geometricLatentSum) * (retainSumPct) * (relativeSinkPowerPct)
+	g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Message, Note]) int {
+		for i := 0; i < len(gt.Vertices); i++ {
+			v := &gt.Vertices[i]
+			if len(v.OutEdges) != 0 { // All vertices that are NOT a sink node
+				v.Property.Mass += (NormalQuota) * (geometricLatentSum * (1.0 - retainSumPct)) * (v.Property.Mass / nonSinkSum)
+			} else { // All vertices that are a sink node
+				if NORM_IGNORE_SINGLETONS && v.Property.Mass == 0 {
+					continue
+				}
+				// Relative 'power' of this sink compared to others determines its retainment. Note: we undampen for this ratio as well.
+				vLatent := v.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
+				relativeSinkPowerPct := (vLatent*(1.0/DAMPINGFACTOR) - 1.0) / ((globalLatent * (1.0 / DAMPINGFACTOR)) - float64(numSinks))
+				v.Property.Mass += (1.0 - DAMPINGFACTOR) * (geometricLatentSum) * ((SinkQuota)*(1.0-vLatent/globalLatent) + (NormalQuota)*(retainSumPct)*(relativeSinkPowerPct))
+			}
+			if NORMALIZE && !PPR {
+				v.Property.Mass /= float64(nV)
+			}
 		}
-		g.Vertices[vidx].Property.Value += toAbsorb
-		if NORMALIZE && !PPR {
-			g.Vertices[vidx].Property.Value /= float64(len(g.Vertices))
-		}
-	}
-
-	return nil
+		return 0
+	})
 }

@@ -1,12 +1,12 @@
 // Original Source: https://github.com/dgryski/go-rbo
-package mathutils
+package utils
 
 import (
 	"math"
 	"testing"
 )
 
-func TestRBO(t *testing.T) {
+func Test_RBO(t *testing.T) {
 
 	// from the reference implementation
 	var tests = []struct {
@@ -49,7 +49,7 @@ func TestRBO(t *testing.T) {
 
 }
 
-func BenchmarkRBOState(b *testing.B) {
+func Benchmark_RBOState(b *testing.B) {
 
 	l1 := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
 	l2 := []int{7, 5, 1, 8, 12, 4, 21, 27, 9, 26, 25, 24, 16, 0}

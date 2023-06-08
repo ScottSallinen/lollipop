@@ -1,93 +1,89 @@
 package main
 
 import (
-	"fmt"
 	"math"
+	"sync/atomic"
 
-	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
-const EMPTYVAL = math.MaxUint32
+type CC struct{}
+
+const EMPTY_VAL = math.MaxUint32
 
 type VertexProperty struct {
-	Value   uint32
-	Scratch uint32 // Intermediary accumulator
+	Value uint32
 }
 
-func (p *VertexProperty) String() string {
-	return fmt.Sprintf("%d", p.Value)
+type EdgeProperty struct {
+	graph.EmptyEdge
 }
 
-type EdgeProperty struct{}
+type Message uint32
 
-type MessageValue uint32
+type Note struct{}
 
-func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
-	input := uint32(data)
-	if input == EMPTYVAL { // This means ininitalization
-		input = dst.Id
-	}
-	dst.Mutex.Lock()
-	tmp := dst.Property.Scratch
-	// Labels decrease monotonically
-	if input < dst.Property.Scratch {
-		dst.Property.Scratch = input
-	}
-	newInfo = tmp != dst.Property.Scratch
-	dst.Mutex.Unlock()
-	return newInfo
+func (VertexProperty) New() VertexProperty {
+	return VertexProperty{EMPTY_VAL}
 }
 
-func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
-	// We can leave Scratch alone, since we are monotonicly decreasing.
-	target.Mutex.Lock()
-	tmp := target.Property.Scratch
-	target.Mutex.Unlock()
-	return MessageValue(tmp)
+func (m Message) New() Message {
+	return EMPTY_VAL
 }
 
-func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
-	g.Vertices[vidx].Property.Value = EMPTYVAL
-	g.Vertices[vidx].Property.Scratch = EMPTYVAL
+// For connected components, a vertex can accept their own id as a potential label.
+// Note that such a starting label should be unique, so raw identifier works for this (as it is uniquely defined externally).
+func (*CC) InitAllMessage(g *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) Message {
+	return Message(rawId.Integer())
 }
 
-// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
-// The view here is **post** addition (the edges are already appended to the edge list)
-// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
-	if OnVisitVertex(g, sidx, data) > 0 {
-		// do nothing, we had messaged all edges
-	} else {
-		src := &g.Vertices[sidx]
-		// Message new edges.
-		for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
-			target := src.OutEdges[eidx].Destination
-			g.OnQueueVisit(g, sidx, target, MessageValue(src.Property.Value))
-		}
-	}
+func (*CC) MessageMerge(incoming Message, _ uint32, existing *Message) (newInfo bool) {
+	return uint32(incoming) < utils.AtomicMinUint32((*uint32)(existing), uint32(incoming))
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], data MessageValue) {
-	enforce.ENFORCE(false, "Incremental only algorithm")
+func (*CC) MessageRetrieve(existing *Message, _ *graph.Vertex[VertexProperty, EdgeProperty]) Message {
+	return Message(atomic.LoadUint32((*uint32)(existing)))
 }
 
-func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
-	src := &g.Vertices[vidx]
+// Function called for a vertex update.
+func (alg *CC) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], message Message) (sent uint64) {
 	// Only act on an improvement to component.
-	if src.Property.Value > uint32(data) {
-		// Update our own value.
-		src.Property.Value = uint32(data)
-		// Send an update to all neighbours.
-		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Destination
-			g.OnQueueVisit(g, vidx, target, MessageValue(src.Property.Value))
-		}
-		return len(src.OutEdges)
+	if src.Property.Value <= uint32(message) {
+		return 0
 	}
-	return 0
+
+	// Update our own value.
+	src.Property.Value = uint32(message)
+
+	// Send an update to all neighbours.
+	for _, e := range src.OutEdges {
+		vtm, tidx := g.NodeVertexMessages(e.Didx)
+		if alg.MessageMerge(Message(src.Property.Value), notif.Target, &vtm.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
+		}
+	}
+	return sent
 }
 
-func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	return nil
+// Function called upon a new edge add.
+func (alg *CC) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, message Message) (sent uint64) {
+	// Do nothing more if we update; we already messaged all edges.
+	if sent = alg.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx}, message); sent != 0 {
+		return sent
+	}
+
+	// Otherwise, we need to message just the new edges.
+	for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
+		vtm, tidx := g.NodeVertexMessages(src.OutEdges[eidx].Didx)
+		if alg.MessageMerge(Message(src.Property.Value), sidx, &vtm.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, vtm, tidx))
+		}
+	}
+
+	return sent
+}
+
+func (*CC) OnEdgeDel(*graph.Graph[VertexProperty, EdgeProperty, Message, Note], *graph.Vertex[VertexProperty, EdgeProperty], uint32, []graph.Edge[EdgeProperty], Message) (sent uint64) {
+	panic("Incremental only algorithm")
 }

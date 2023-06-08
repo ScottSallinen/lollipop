@@ -1,206 +1,235 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/kelindar/bitmap"
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
-const EMPTYVAL = math.MaxUint32
+type Colouring struct{}
+
+// A strategy (for static graphs) is to use wait count to have each vertex pick a colour "in order".
+// Note that the Base message for a dynamic graph would have no beginning edges, so wait count would be zero.
+const USE_WAIT_COUNT = false
+
+const EMPTY_VAL = (math.MaxUint32) >> 1
+const MSB_MASK = (1 << 31) - 1
+const MSB = (1 << 31)
 
 type VertexProperty struct {
-	NbrColoursScratch sync.Map
-	NbrColours        map[uint32]uint32
-	WaitCount         int64
-	Colour            uint32
+	Colour         uint32
+	coloursIndexed utils.Bitmap
 }
 
-func (p *VertexProperty) String() string {
-	s := fmt.Sprintf("{%d,%d,[", p.Colour, p.WaitCount)
-	for k, v := range p.NbrColours {
-		s += fmt.Sprintf("%d:%d,", k, v)
-	}
-	return s + "]}"
+type EdgeProperty struct {
+	graph.TimestampEdge
 }
 
-type EdgeProperty struct{}
-
-type IdColourPair struct {
-	Vidx   uint32
-	Colour uint32
+type Message struct {
+	NbrScratch []uint32
+	Pos        uint32
+	Colour     uint32 // Multi-purposed (fake union); used as Wait count on existing (if USE_WAIT_COUNT is true)
+	Mutex      *sync.RWMutex
 }
 
-type MessageValue []IdColourPair
+type Note struct{}
 
+func (VertexProperty) New() (vp VertexProperty) {
+	vp.Colour = EMPTY_VAL
+	vp.coloursIndexed.Grow(127) // Two of 8 bytes is a good start.
+	return vp
+}
+
+func (Message) New() (m Message) {
+	m.Pos = EMPTY_VAL
+	m.Colour = EMPTY_VAL
+	return m
+}
+
+// Dummy hash function (just remove tidx). Should do something else for different id types.
 func hash(id uint32) (hash uint32) {
-	// TODO: dummy hash function
-	return id
+	return (id & graph.THREAD_MASK)
 }
 
+// Returns true if p1 has priority over p2.
+// Smallest ID first is better for dynamic (vertex ID increments)
 func comparePriority(p1, p2 uint32, id1, id2 uint32) bool {
-	return p1 > p2 || (p1 == p2 && id1 > id2)
+	return p1 < p2 || (p1 == p2 && id1 < id2)
 }
 
-// findFirstUnused finds the smallest unused index.
-func findFirstUnused(coloursIndexed bitmap.Bitmap) (firstUnused uint32) {
-	firstUnused, _ = coloursIndexed.MinZero()
-	return firstUnused
-}
+func (*Colouring) BaseVertexMessage(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) (m Message) {
+	m.Mutex = new(sync.RWMutex)
+	m.Pos = internalId // This is the vertex ID, set for the base message of the vertex.
+	m.Colour = 0       // Used as wait count (if enabled) for the base message of the vertex.
 
-func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, VisitMsg MessageValue) (newInfo bool) {
-	// Self edges shouldn't refuse us our own colour & nil message is init message.
-	if didx != sidx && VisitMsg != nil {
-		colour := uint32(VisitMsg[0].Colour) // Queue visits should only send a single value for this algorithm
-		dst.Mutex.RLock()                    // Share write access
-		dst.Property.NbrColoursScratch.Store(sidx, colour)
-		dst.Mutex.RUnlock()
-	}
-
-	if atomic.LoadInt64(&dst.Property.WaitCount) > 0 {
-		newWaitCount := atomic.AddInt64(&dst.Property.WaitCount, -1)
-		return newWaitCount <= 0 // newWaitCount might go below 0
-	}
-
-	// If we have priority, there is no need to update check our colour
-	if comparePriority(hash(didx), hash(sidx), didx, sidx) {
-		return false
-	}
-
-	// Ensure we only notify the target once.
-	active := (atomic.SwapInt32(&dst.IsActive, 1) == 0)
-	return active
-}
-
-func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
-	atomic.StoreInt32(&target.IsActive, 0)
-	ret := []IdColourPair{}
-	target.Mutex.Lock() // Full lock, un-shared read
-	target.Property.NbrColoursScratch.Range(func(key, value any) bool {
-		ret = append(ret, IdColourPair{Vidx: key.(uint32), Colour: value.(uint32)})
-		return true
-	})
-	target.Property.NbrColoursScratch = sync.Map{}
-	target.Mutex.Unlock()
-	return ret
-}
-
-func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
-	v := &g.Vertices[vidx]
-
-	v.Property.Colour = EMPTYVAL
-	v.Property.NbrColours = make(map[uint32]uint32)
-
-	// Initialize WaitCount
-	myPriority := hash(vidx)
-	waitCount := int64(0)
-	for i := range v.OutEdges {
-		edge := &v.OutEdges[i]
-		edgePriority := hash(edge.Destination)
-		if comparePriority(edgePriority, myPriority, edge.Destination, vidx) {
-			// no need to lock
-			waitCount++
-		}
-	}
-	atomic.StoreInt64(&v.Property.WaitCount, waitCount)
-}
-
-// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
-// The view here is **post** addition (the edges are already appended to the edge list)
-// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, VisitMsg MessageValue) {
-	source := &g.Vertices[sidx]
-	sourcePriority := hash(sidx)
-
-	for _, v := range VisitMsg {
-		source.Property.NbrColours[v.Vidx] = v.Colour
-	}
-
-	for eidx := didxStart; eidx < len(source.OutEdges); eidx++ {
-		dstIndex := source.OutEdges[eidx].Destination
-		dstPriority := hash(dstIndex)
-		// If we have priority, tell the other vertex to check their colour
-		if comparePriority(sourcePriority, dstPriority, sidx, dstIndex) {
-			g.OnQueueVisit(g, sidx, dstIndex, []IdColourPair{{Vidx: sidx, Colour: source.Property.Colour}})
-		}
-	}
-}
-
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], VisitMsg MessageValue) {
-	source := &g.Vertices[sidx]
-
-	// Could be optimized by merging
-	OnVisitVertex(g, sidx, VisitMsg)
-
-	myNewColour := source.Property.Colour
-	for _, e := range deletedEdges {
-		potentialNewColour, ok := source.Property.NbrColours[e.Destination]
-		if !ok {
-			continue
-		}
-
-		if potentialNewColour >= myNewColour {
-			// Only want to take a smaller colour
-			continue
-		}
-
-		for _, v := range source.Property.NbrColours {
-			if v == potentialNewColour {
-				continue
+	if USE_WAIT_COUNT { // Initialize WaitCount (only relevant for static graphs)
+		myPriority := hash(internalId)
+		for i := 0; i < len(vertex.OutEdges); i++ {
+			didx := vertex.OutEdges[i].Didx
+			if comparePriority(hash(didx), myPriority, didx, internalId) {
+				m.Colour++ // If the edge has priority, we need to wait for it.
 			}
 		}
-		myNewColour = potentialNewColour
 	}
 
-	if myNewColour != source.Property.Colour {
-		source.Property.Colour = myNewColour
-		for i := range source.OutEdges {
-			g.OnQueueVisit(g, sidx, source.OutEdges[i].Destination, []IdColourPair{{Vidx: sidx, Colour: myNewColour}})
+	edgeAmount := len(vertex.OutEdges)        // Note: will be zero for dynamic graphs.
+	m.NbrScratch = make([]uint32, edgeAmount) // This is for a thread unsafe view // m.NbrScratch.Store(ns)
+
+	if edgeAmount > 0 {
+		for i := 0; i < edgeAmount; i++ {
+			m.NbrScratch[i] = EMPTY_VAL
 		}
 	}
+	return m
 }
 
-func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, VisitMsg MessageValue) int {
-	vertex := &g.Vertices[vidx]
+// Self message (init). Needed, but message itself is irrelevant.
+func (*Colouring) InitAllMessage(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) (m Message) {
+	return m
+}
 
-	for _, v := range VisitMsg {
-		vertex.Property.NbrColours[v.Vidx] = v.Colour
-	}
-
-	if atomic.LoadInt64(&vertex.Property.WaitCount) > 0 {
-		return 0
-	}
-
-	var coloursIndexed bitmap.Bitmap
-	size := uint32(len(vertex.Property.NbrColours))
-	coloursIndexed.Grow(size)
-	for _, v := range vertex.Property.NbrColours {
-		if v <= size {
-			coloursIndexed.Set(v)
+// Dynamic: need to reallocate.
+func mExpand(ln int, existing *Message, colour uint32) {
+	existing.Mutex.Lock()
+	ns := existing.NbrScratch
+	prevLen := len(ns)
+	if prevLen <= ln { // check again
+		ns = append(ns, make([]uint32, (ln+1-prevLen))...)
+		for i := prevLen; i < len(ns); i++ {
+			ns[i] = EMPTY_VAL
 		}
+		existing.NbrScratch = ns
+	}
+	ns[ln] = colour
+	existing.Mutex.Unlock()
+}
+
+func (*Colouring) MessageMerge(incoming Message, sidx uint32, existing *Message) (newInfo bool) {
+	didx := existing.Pos
+	if sidx == didx { // Self message (init)
+		if !USE_WAIT_COUNT {
+			return true // Not using wait count, always on self message (at-least-once)
+		}
+		return (atomic.LoadUint32(&existing.Colour) == 0) // Might cause a second update cycle (but it does not matter)
 	}
 
-	var newColour uint32
-	if vertex.Property.Colour == EMPTYVAL {
-		newColour = findFirstUnused(coloursIndexed)
+	targetPriority := comparePriority(hash(didx), hash(sidx), didx, sidx)
+	colour := incoming.Colour
+	if !targetPriority {
+		colour = colour | MSB // If we have priority, set MSB
+	}
+
+	existing.Mutex.RLock()
+	ns := existing.NbrScratch
+	if len(ns) <= int(incoming.Pos) {
+		existing.Mutex.RUnlock()
+		mExpand(int(incoming.Pos), existing, colour)
 	} else {
-		// Dynamic graph
-		// There are more efficient ways to do this, if we have more information about the new neighbour
-		newColour = findFirstUnused(coloursIndexed)
-		if newColour == vertex.Property.Colour {
-			return 0
+		atomic.StoreUint32(&ns[incoming.Pos], colour)
+		existing.Mutex.RUnlock()
+	}
+
+	if targetPriority {
+		return false // If target (existing) has priority, no need to notify it
+	}
+
+	if !USE_WAIT_COUNT {
+		return true // Not using wait count, need to ensure update on priority neighbour message
+	}
+
+	// Check wait count.
+	if atomic.LoadUint32(&existing.Colour) > 0 {
+		newWaitCount := atomic.AddUint32(&existing.Colour, ^uint32(0))
+		if newWaitCount == 0 {
+			atomic.StoreUint32(&existing.Colour, ^uint32(0)) // Likely to prevent second update cycle
+			return true
 		}
 	}
-	vertex.Property.Colour = newColour
-	for i := range vertex.OutEdges {
-		g.OnQueueVisit(g, vidx, vertex.OutEdges[i].Destination, []IdColourPair{{Vidx: vidx, Colour: newColour}})
-	}
-	return len(vertex.OutEdges)
+	return false
 }
 
-func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	return nil
+func (*Colouring) MessageRetrieve(existing *Message, vertex *graph.Vertex[VertexProperty, EdgeProperty]) (outgoing Message) {
+	prop := &vertex.Property
+	ourColour := prop.Colour
+	prop.coloursIndexed.Zeroes()
+
+	existing.Mutex.RLock()
+	ns := existing.NbrScratch
+	for i := range ns {
+		nsc := atomic.LoadUint32(&ns[i])
+		col := (nsc & MSB_MASK)
+		if col <= uint32(len(ns)) {
+			if !prop.coloursIndexed.QuickSet(col) {
+				prop.coloursIndexed.Set(col)
+			}
+			// If MSB is set, the neighbour had declared priority (calculated in merge function).
+			if ((nsc & MSB) != 0) && (col == ourColour) {
+				prop.Colour = EMPTY_VAL
+			}
+		}
+	}
+	existing.Mutex.RUnlock()
+
+	return outgoing
+}
+
+func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], message Message) (sent uint64) {
+	best := src.Property.coloursIndexed.FirstUnused()
+
+	if src.Property.Colour == best {
+		return 0 // If no change, nothing to do.
+	}
+	src.Property.Colour = best
+
+	// Tell our new colour to all neighbours.
+	for _, e := range src.OutEdges {
+		vtm, tidx := g.NodeVertexMessages(e.Didx)
+		if alg.MessageMerge(Message{Colour: src.Property.Colour, Pos: e.Pos}, notif.Target, &vtm.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: (e.Didx)}, vtm, tidx))
+		}
+	}
+	return sent
+}
+
+// OnEdgeAdd: Function called upon a new edge add (which also bundles a visit, including any new Data).
+// The view here is **post** addition (the edges are already appended to the edge list)
+// Note: eidxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+func (c *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, message Message) (sent uint64) {
+	// Update first. If we already message all neighbours, we can skip the rest.
+	if sent = c.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx}, message); sent != 0 {
+		return sent
+	}
+	// Target all new edges
+	srcPriority := hash(sidx)
+	for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
+		didx := src.OutEdges[eidx].Didx
+		// If we have priority, tell the other vertex our colour.
+		// Since we are always undirected, the other vertex will perform the opposite to us (priority-wise.)
+		if comparePriority(srcPriority, hash(didx), sidx, didx) {
+			vtm, tidx := g.NodeVertexMessages(didx)
+			if c.MessageMerge(Message{Colour: src.Property.Colour, Pos: src.OutEdges[eidx].Pos}, sidx, &vtm.Inbox) {
+				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: didx}, vtm, tidx))
+			}
+		}
+	}
+	return sent
+}
+
+// This function is to be called with a set of edge deletion events.
+func (alg *Colouring) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], message Message) (sent uint64) {
+	// Update first.
+	sent += alg.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx}, message)
+
+	for _, e := range deletedEdges {
+		// Just notify deleted edge; they will set our pos to EMPTY_VAL so they no longer will care about us.
+		// We do not try to greedily re-colour here, as the undirected counterpart will notify us of their deletion, causing us to update.
+		vtm, tidx := g.NodeVertexMessages(e.Didx)
+		if alg.MessageMerge(Message{Colour: EMPTY_VAL, Pos: e.Pos}, sidx, &vtm.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
+		}
+	}
+	return sent
 }

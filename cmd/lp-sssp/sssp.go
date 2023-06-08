@@ -1,90 +1,86 @@
 package main
 
 import (
-	"fmt"
 	"math"
 
-	"github.com/ScottSallinen/lollipop/enforce"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
-const EMPTYVAL = math.MaxFloat64
+type SSSP struct{}
+
+const EMPTY_VAL = math.MaxFloat64
 
 type VertexProperty struct {
-	Value   float64
-	Scratch float64 // Intermediary accumulator
-}
-
-func (p *VertexProperty) String() string {
-	return fmt.Sprintf("%.4f", p.Value)
+	Value float64
 }
 
 type EdgeProperty struct {
-	Weight float64
+	graph.WeightedEdge
 }
 
-type MessageValue float64
+type Message float64
 
-func MessageAggregator(dst *graph.Vertex[VertexProperty, EdgeProperty], didx, sidx uint32, data MessageValue) (newInfo bool) {
-	dst.Mutex.Lock()
-	tmp := dst.Property.Scratch
-	dst.Property.Scratch = math.Min(dst.Property.Scratch, float64(data))
-	newInfo = tmp != dst.Property.Scratch
-	dst.Mutex.Unlock()
-	return newInfo
+type Note struct{}
+
+func (VertexProperty) New() VertexProperty {
+	return VertexProperty{EMPTY_VAL}
 }
 
-func AggregateRetrieve(target *graph.Vertex[VertexProperty, EdgeProperty]) MessageValue {
-	// We can leave Scratch alone, since we are monotonicly decreasing.
-	target.Mutex.Lock()
-	tmp := target.Property.Scratch
-	target.Mutex.Unlock()
-	return MessageValue(tmp)
+func (Message) New() Message {
+	return EMPTY_VAL
 }
 
-func OnInitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32) {
-	g.Vertices[vidx].Property.Value = EMPTYVAL
-	g.Vertices[vidx].Property.Scratch = EMPTYVAL
+func (*SSSP) MessageMerge(incoming Message, _ uint32, existing *Message) (newInfo bool) {
+	return incoming < utils.AtomicMinFloat64(existing, incoming)
 }
 
-// OnEdgeAdd: Function called upon a new edge add (which also bundes a visit, including any new Data).
+func (*SSSP) MessageRetrieve(existing *Message, _ *graph.Vertex[VertexProperty, EdgeProperty]) Message {
+	return utils.AtomicLoadFloat64(existing)
+}
+
+// Function called for a vertex update.
+func (alg *SSSP) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], n graph.Notification[Note], m Message) (sent uint64) {
+	// Only act on an improvement to shortest path.
+	if src.Property.Value <= float64(m) {
+		return 0
+	}
+
+	// Update our own value.
+	src.Property.Value = float64(m)
+
+	// Send an update to all neighbours.
+	for _, e := range src.OutEdges {
+		vtm, tidx := g.NodeVertexMessages(e.Didx)
+		if alg.MessageMerge(Message(src.Property.Value+e.Property.Weight), n.Target, &vtm.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
+		}
+	}
+	return sent
+}
+
+// OnEdgeAdd: Function called upon a new edge add (which also bundles a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
-// Note: didxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, didxStart int, data MessageValue) {
-	if OnVisitVertex(g, sidx, data) > 0 {
-		// do nothing, we had messaged all edges
-	} else {
-		src := &g.Vertices[sidx]
-		if src.Property.Value < EMPTYVAL { // Only useful if we are connected
-			// Message only new edges.
-			for eidx := didxStart; eidx < len(src.OutEdges); eidx++ {
-				target := src.OutEdges[eidx].Destination
-				g.OnQueueVisit(g, sidx, target, MessageValue(src.Property.Value+src.OutEdges[eidx].Property.Weight))
+// Note: eidxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
+func (alg *SSSP) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Message) (sent uint64) {
+	// Do nothing if we had messaged all edges, otherwise message just the new edges.
+	if sent = alg.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx}, m); sent != 0 {
+		return sent
+	}
+	if src.Property.Value < EMPTY_VAL { // Only useful if we are connected
+		// Message only new edges.
+		for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
+			target := src.OutEdges[eidx].Didx
+			vtm, tidx := g.NodeVertexMessages(target)
+			if alg.MessageMerge(Message(src.Property.Value+src.OutEdges[eidx].Property.Weight), sidx, &vtm.Inbox) {
+				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: target}, vtm, tidx))
 			}
 		}
 	}
+	return sent
 }
 
-func OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], data MessageValue) {
-	enforce.ENFORCE(false, "Incremental only algorithm")
-}
-
-func OnVisitVertex(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], vidx uint32, data MessageValue) int {
-	src := &g.Vertices[vidx]
-	// Only act on an improvement to shortest path.
-	if src.Property.Value > float64(data) {
-		// Update our own value.
-		src.Property.Value = float64(data)
-		// Send an update to all neighbours.
-		for eidx := range src.OutEdges {
-			target := src.OutEdges[eidx].Destination
-			g.OnQueueVisit(g, vidx, target, MessageValue(src.Property.Value+src.OutEdges[eidx].Property.Weight))
-		}
-		return len(src.OutEdges)
-	}
-	return 0
-}
-
-func OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) error {
-	return nil
+// Not used in this algorithm.
+func (*SSSP) OnEdgeDel(*graph.Graph[VertexProperty, EdgeProperty, Message, Note], *graph.Vertex[VertexProperty, EdgeProperty], uint32, []graph.Edge[EdgeProperty], Message) (sent uint64) {
+	panic("Incremental only algorithm")
 }

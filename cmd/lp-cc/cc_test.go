@@ -1,185 +1,117 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"math/rand"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/ScottSallinen/lollipop/enforce"
-	"github.com/ScottSallinen/lollipop/framework"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
-func PrintVertexProps(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], prefix string) {
-	top := prefix
-	sum := uint32(0)
-	for vidx := range g.Vertices {
-		top += fmt.Sprintf("%d:[%d,%d] ", g.Vertices[vidx].Id, g.Vertices[vidx].Property.Value, g.Vertices[vidx].Property.Scratch)
-		sum += g.Vertices[vidx].Property.Value
-	}
-	info(top + " : " + fmt.Sprintf("%d", sum))
-}
-
 // Expect two connected components.
-func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, MessageValue], t *testing.T) {
+func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], t *testing.T) {
 	expectations := []uint32{0, 1, 1, 0, 1, 1, 1, 0, 0, 0}
 	for i := range expectations {
-		if g.Vertices[g.VertexMap[uint32(i)]].Property.Value != expectations[i] {
-			t.Error(g.VertexMap[uint32(i)], " is ", g.Vertices[g.VertexMap[uint32(i)]].Property.Value, " expected ", expectations[i])
+		internal, gV := g.NodeVertexFromRaw(graph.AsRawType(i))
+		if gV.Property.Value != expectations[i] {
+			g.PrintVertexProps("")
+			t.Fatal("vidx ", internal, " rawId ", i, " is ", gV.Property.Value, " expected ", expectations[i])
 		}
 	}
 }
 
+var baseOptions = graph.GraphOptions{
+	Name:             "../../data/test_multiple_components.txt",
+	Undirected:       true, // undirected should always be true.
+	CheckCorrectness: true,
+}
+
 func TestAsyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test_multiple_components.txt", true, false, false, false)
-		PrintVertexProps(g, "")
+	for tCount := 0; tCount < 10; tCount++ {
+		myOpts := baseOptions
+		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
+		myOpts.Sync = false
+		myOpts.Dynamic = false
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), myOpts)
 		testGraphExpect(g, t)
 	}
 }
 func TestSyncStatic(t *testing.T) {
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test_multiple_components.txt", false, false, false, false)
-		PrintVertexProps(g, "")
+	for tCount := 0; tCount < 10; tCount++ {
+		myOpts := baseOptions
+		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
+		myOpts.Sync = true
+		myOpts.Dynamic = false
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), myOpts)
 		testGraphExpect(g, t)
 	}
 }
-func TestAsyncDynamic(t *testing.T) {
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
-		g := LaunchGraphExecution("../../data/test_multiple_components.txt", true, true, false, false)
+func TestDynamic(t *testing.T) {
+	for tCount := 0; tCount < 10; tCount++ {
+		myOpts := baseOptions
+		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
+		myOpts.Dynamic = true
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), myOpts)
 		testGraphExpect(g, t)
-		PrintVertexProps(g, "")
-	}
-}
-
-func DynamicGraphExecutionFromSC(sc []graph.StructureChange[EdgeProperty]) *graph.Graph[VertexProperty, EdgeProperty, MessageValue] {
-	frame := framework.Framework[VertexProperty, EdgeProperty, MessageValue]{}
-	frame.OnInitVertex = OnInitVertex
-	frame.OnVisitVertex = OnVisitVertex
-	frame.OnFinish = OnFinish
-	frame.OnCheckCorrectness = OnCheckCorrectness
-	frame.OnEdgeAdd = OnEdgeAdd
-	frame.OnEdgeDel = OnEdgeDel
-	frame.MessageAggregator = MessageAggregator
-	frame.AggregateRetrieve = AggregateRetrieve
-
-	g := &graph.Graph[VertexProperty, EdgeProperty, MessageValue]{}
-	g.Options = graph.GraphOptions[MessageValue]{
-		Undirected:     true,
-		SourceInit:     false,
-		EmptyVal:       EMPTYVAL,
-		InitAllMessage: EMPTYVAL,
-	}
-
-	frame.Init(g, true, true)
-
-	var feederWg sync.WaitGroup
-	feederWg.Add(1)
-	var frameWait sync.WaitGroup
-	frameWait.Add(1)
-
-	go frame.Run(g, &feederWg, &frameWait)
-
-	for _, v := range sc {
-		switch v.Type {
-		case graph.ADD:
-			g.SendAdd(v.SrcRaw, v.DstRaw, v.EdgeProperty)
-			g.SendAdd(v.DstRaw, v.SrcRaw, v.EdgeProperty)
-			info("add ", v.SrcRaw, v.DstRaw)
-		case graph.DEL:
-			g.SendDel(v.SrcRaw, v.DstRaw)
-			g.SendDel(v.DstRaw, v.SrcRaw)
-			info("del ", v.SrcRaw, v.DstRaw)
-		}
-	}
-
-	for i := 0; i < graph.THREADS; i++ {
-		close(g.ThreadStructureQ[i])
-	}
-	feederWg.Done()
-	frameWait.Wait()
-	return g
-}
-
-func CheckGraphStructureEquality(t *testing.T, g1 *graph.Graph[VertexProperty, EdgeProperty, MessageValue], g2 *graph.Graph[VertexProperty, EdgeProperty, MessageValue]) {
-	if len(g1.Vertices) != len(g2.Vertices) {
-		t.Error("vertex count mismatch", len(g1.Vertices), len(g2.Vertices))
-	}
-
-	for vidx := range g1.Vertices {
-		g1raw := g1.Vertices[vidx].Id
-		g2idx := g2.VertexMap[g1raw]
-
-		//g1values := &g1.Vertices[vidx].Properties
-		//g2values := &g2.Vertices[g2idx].Properties
-
-		if len(g1.Vertices[vidx].OutEdges) != len(g2.Vertices[g2idx].OutEdges) {
-			log.Println("g1:")
-			g1.PrintStructure()
-			log.Println("g2:")
-			g2.PrintStructure()
-			t.Error("edge count mismatch", len(g1.Vertices[vidx].OutEdges), len(g2.Vertices[g2idx].OutEdges))
-		}
 	}
 }
 
 func TestDynamicCreation(t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
+	rand.NewSource(time.Now().UTC().UnixNano())
 
-	testFail := false
+	for count := 0; count < 10; count++ {
+		threads := uint32(rand.Intn(8-1) + 1)
 
-	for tcount := 0; tcount < 10; tcount++ {
-		graph.THREADS = rand.Intn(8-1) + 1
+		t.Log("TestDynamicCreation ", count, " t ", threads)
 
-		info("TestDynamicCreation ", tcount, " t ", graph.THREADS)
-
-		rawTestGraph := []graph.StructureChange[EdgeProperty]{
-			{Type: graph.ADD, SrcRaw: 1, DstRaw: 4},
-			{Type: graph.ADD, SrcRaw: 7, DstRaw: 0},
-			{Type: graph.ADD, SrcRaw: 2, DstRaw: 1},
-			{Type: graph.ADD, SrcRaw: 3, DstRaw: 0},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 2},
-			{Type: graph.ADD, SrcRaw: 8, DstRaw: 3},
-			{Type: graph.ADD, SrcRaw: 4, DstRaw: 5},
-			{Type: graph.ADD, SrcRaw: 6, DstRaw: 2},
-			{Type: graph.ADD, SrcRaw: 7, DstRaw: 3},
-			{Type: graph.ADD, SrcRaw: 8, DstRaw: 9},
-			{Type: graph.ADD, SrcRaw: 9, DstRaw: 0},
+		rawTestGraph := []graph.TopologyEvent[EdgeProperty]{
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(1), DstRaw: graph.AsRawType(4)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(7), DstRaw: graph.AsRawType(0)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(1)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(3), DstRaw: graph.AsRawType(0)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(4), DstRaw: graph.AsRawType(2)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(8), DstRaw: graph.AsRawType(3)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(4), DstRaw: graph.AsRawType(5)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(6), DstRaw: graph.AsRawType(2)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(7), DstRaw: graph.AsRawType(3)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(8), DstRaw: graph.AsRawType(9)},
+			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(9), DstRaw: graph.AsRawType(0)},
 		}
-		framework.ShuffleSC(rawTestGraph)
+		utils.Shuffle(rawTestGraph)
 
-		gDyn := DynamicGraphExecutionFromSC(rawTestGraph)
+		gDyn := &graph.Graph[VertexProperty, EdgeProperty, Message, Note]{}
+		gDyn.Options = graph.GraphOptions{
+			NumThreads:       threads,
+			Dynamic:          true,
+			Undirected:       true, // undirected should always be true.
+			CheckCorrectness: true,
+		}
 
-		gStatic := LaunchGraphExecution("../../data/test_multiple_components.txt", true, false, false, false)
+		graph.DynamicGraphExecutionFromTestEvents(new(CC), gDyn, rawTestGraph)
 
-		a := make([]uint32, len(gDyn.Vertices))
-		b := make([]uint32, len(gStatic.Vertices))
+		myOpts := baseOptions
+		myOpts.NumThreads = threads
 
-		CheckGraphStructureEquality(t, gDyn, gStatic)
+		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), myOpts)
 
-		for vidx := range gDyn.Vertices {
-			g1raw := gDyn.Vertices[vidx].Id
-			g2idx := gStatic.VertexMap[g1raw]
+		graph.CheckGraphStructureEquality(gDyn, gStatic)
 
-			g1values := &gDyn.Vertices[vidx]
-			g2values := &gStatic.Vertices[g2idx]
+		a := make([]uint32, gDyn.NodeVertexCount())
+		b := make([]uint32, gStatic.NodeVertexCount())
 
-			a[vidx] = g1values.Property.Value
-			b[vidx] = g2values.Property.Value
+		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+			g1raw := gDyn.NodeVertexRawID(v)
+			_, g2values := gStatic.NodeVertexFromRaw(g1raw)
 
-			if g1values.Property.Value != g2values.Property.Value {
-				PrintVertexProps(gStatic, "S ")
-				PrintVertexProps(gDyn, "D ")
-				t.Error("Value not equal", g1raw, g1values.Property.Value, g2values.Property.Value, "iteration", tcount)
-				testFail = true
+			a[i] = vertex.Property.Value
+			b[i] = g2values.Property.Value
+
+			if vertex.Property.Value != g2values.Property.Value {
+				gStatic.PrintVertexProps("S ")
+				gDyn.PrintVertexProps("D ")
+				t.Fatal("Value not equal ", g1raw, " ", vertex.Property.Value, " ", g2values.Property.Value, " iteration ", count)
 			}
-		}
-		enforce.ENFORCE(!testFail)
+		})
 	}
 }
