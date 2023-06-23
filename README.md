@@ -86,12 +86,23 @@ to represent addition and deletion events.
 Finally, note the input graph is assumed to potentially be a multi-graph (multiple edges between vertices).
 At the moment, this means simply defined deletions will remove the first edge that matches the pair (first in terms of order in the stream).
 
+### Graphs to Test With
+
+I suggest starting with the Wikipedia-Growth graph, which you can find here:
+```http://konect.cc/networks/wikipedia-growth/```
+
+Graphs from the PageRank paper can be found here (so long as I continue hosting!)
+```https://greymass.ca/graphs/```
+
+One can also find some graphs here:
+```https://snap.stanford.edu/data/```
+
 ### Notes
 
 If you make changes to the code, remember to rebuild with `go install ./...`
 
-Get larger graphs from `https://snap.stanford.edu/data/` and maybe try randomizing the edge list ordering with `lp-edgelist-tools`
-Ensure you remove any comments or headers from your input graph file -- keep it just as [src, dst, ...] format.
+Try randomizing the edge list ordering of a graph with `lp-edgelist-tools`
+But ensure you remove any comments or headers from your input graph file -- keep it just as [src, dst, ...] format.
 
 `export GOAMD64=v3` might be good if you have a recent AMD CPU.
 
