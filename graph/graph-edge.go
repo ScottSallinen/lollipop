@@ -81,6 +81,7 @@ func (TimestampEdge) GetWeight() float64 { return DEFAULT_WEIGHT }
 func (e *TimestampEdge) ReplaceTimestamp(ts uint64) {
 	e.ts = ts
 }
+
 func (*TimestampEdge) ReplaceWeight(float64) {}
 
 func (e *TimestampEdge) ParseProperty(fields []string, _ int32, tPos int32) {

@@ -19,7 +19,7 @@ type VertexProperty struct {
 
 // Defines the properties stored per edge.
 type EdgeProperty struct {
-	// The graph edge type is what will be parsed from the input stream. Check edge.go for more info.
+	// The graph edge type is what will be parsed from the input stream. Check graph-edge.go for more info.
 	graph.EmptyEdge // Inherit a default defined in edge.go, or define your own.
 	// Attach algorithm properties here if you like.
 }
@@ -95,7 +95,8 @@ func (*Template) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexPropert
 
 // The main function for basic algorithm behaviour, and is the entry point.
 // The data is pulled using aggregate retrieve above before being handed to this function.
-// Note that there is not guaranteed to by any actual useful information, depending on the result of the retrieve.
+// Note that there is not guaranteed to be any actual useful information, depending on the result of the retrieve.
+// Return the number of messages you sent.
 func (alg *Template) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], n graph.Notification[Note], m Mail) (sent uint64) {
 	/*
 		// Example: send mail to all neighbours. Use the unique notification strategy.
