@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
@@ -18,8 +17,7 @@ func assert(cond bool, msg string) {
 type VertexType uint8
 
 const (
-	EmptyValue = 0
-	MaxHeight  = math.MaxUint32
+	MaxHeight = math.MaxUint32
 
 	Normal VertexType = 0
 	Source VertexType = 1
@@ -42,7 +40,8 @@ func (t VertexType) String() string {
 	case Sink:
 		return "Sink"
 	default:
-		return fmt.Sprintf("%d", t)
+		log.Panic().Msg("Unknown VertexType: " + string(t))
+		return string(t)
 	}
 }
 
@@ -63,5 +62,7 @@ func main() {
 		graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](new(PushRelabelAgg), graphOptions)
 	case "msg":
 		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](new(PushRelabelMsg), graphOptions)
+	default:
+		log.Fatal().Msg("Unknown implementation: " + *implementation)
 	}
 }

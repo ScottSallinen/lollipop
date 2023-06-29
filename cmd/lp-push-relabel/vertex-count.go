@@ -1,11 +1,8 @@
 package main
 
 import (
-	"fmt"
-	"github.com/rs/zerolog/log"
 	"math"
 	"sync/atomic"
-	"unsafe"
 )
 
 const ALPHA = 1.1
@@ -19,7 +16,6 @@ type VertexCount struct {
 var VertexCountHelper VertexCount
 
 func (vc *VertexCount) Reset(initialEstimatedCount int64) {
-	log.Info().Msg("Size of VertexCount is " + fmt.Sprint(unsafe.Sizeof(VertexCount{})))
 	vc.source = math.MaxUint32
 	vc.realCount = 0
 	vc.estimatedCount = initialEstimatedCount
