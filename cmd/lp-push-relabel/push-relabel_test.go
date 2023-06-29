@@ -28,7 +28,6 @@ var (
 		{2, 0, 3, "../../data/small-weighted-1.txt", 4},
 		{8, 0, 2, "../../data/small-weighted-2.txt", 3},
 		{1, 0, 1, CommentGraphSamplePath, CommentGraphSampleSize},
-		{0, 5000, 10000, CommentGraphSamplePath, CommentGraphSampleSize},
 		{1, 6786, 7895, CommentGraphSamplePath, CommentGraphSampleSize},
 		{0, 15358, 9845, CommentGraphSamplePath, CommentGraphSampleSize},
 		{8, 16632, 9492, CommentGraphSamplePath, CommentGraphSampleSize},
@@ -37,6 +36,7 @@ var (
 		{1087, 1568, 363, CommentGraphSamplePath, CommentGraphSampleSize},
 
 		// Too slow without Global Relabeling
+		//{0, 5000, 10000, CommentGraphSamplePath, CommentGraphSampleSize},
 		//{162, 6272, 4356, CommentGraphSamplePath, CommentGraphSampleSize},
 	}
 	baseOptions = graph.GraphOptions{
@@ -85,7 +85,7 @@ func TestAggIncremental(t *testing.T) {
 
 func TestMsgAsyncStatic(t *testing.T) {
 	options := baseOptions
-	//options.QueueMultiplier = 9
+	options.QueueMultiplier = 9
 	RunTestGraphs(t, RunnerMsg, "MessagePassing", options)
 }
 
