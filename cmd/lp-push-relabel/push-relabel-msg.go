@@ -30,8 +30,8 @@ type MessageMsg struct {
 
 type NoteMsg struct {
 	Src    uint32
-	Flow   int32 // flow, -
-	Height int64 // height of sender, -
+	Flow   int32
+	Height int64
 
 	NewMaxVertexCount bool // source needs to increase height
 }
@@ -150,6 +150,13 @@ func (pr *PushRelabelMsg) Init(g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, No
 func (pr *PushRelabelMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, NoteMsg], v *graph.Vertex[VPropMsg, EPropMsg], n graph.Notification[NoteMsg], m MessageMsg) (sent uint64) {
 	if m.Init {
 		sent += pr.Init(g, v, n.Target)
+		var empty NoteMsg
+		if n.Note == empty { // FIXME: could be a real useful message
+			return
+		}
+	}
+	if n.Note.Src == n.Target {
+		return
 	}
 
 	// newMaxVertexCount
