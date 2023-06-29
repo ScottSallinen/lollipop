@@ -302,8 +302,58 @@ func (pr *PushRelabelMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, Mess
 }
 
 func (pr *PushRelabelMsg) OnEdgeAdd(g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], sidx uint32, eidxStart int, m MessageMsg) (sent uint64) {
-	// TODO
-	return 0
+	if m.Init {
+		sent += pr.Init(g, src, sidx)
+	} else {
+		for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
+			e := &src.OutEdges[eidx]
+			if e.Didx == sidx || e.Property.Weight <= 0 { // TODO: also skip if the target is source
+				continue
+			}
+
+			src.Property.ResCap[e.Didx] += int32(e.Property.Weight)
+
+			// new neighbour?
+			nbrHeight, isOldNbr := src.Property.NbrHeights[e.Didx]
+			if !isOldNbr {
+				outNotif := graph.Notification[NoteMsg]{
+					Target: e.Didx,
+					Note:   NoteMsg{Src: sidx, Flow: 0, Height: src.Property.NewHeight},
+				}
+				vtm, tidx := g.NodeVertexMessages(e.Didx)
+				sent += g.EnsureSend(g.ActiveNotification(sidx, outNotif, vtm, tidx))
+				src.Property.NbrHeights[e.Didx] = initialHeight
+				nbrHeight = initialHeight
+			}
+
+			// restoreHeightInvariant
+			maxHeight, resCap := nbrHeight+1, src.Property.ResCap[e.Didx]
+			if maxHeight < src.Property.NewHeight && resCap > 0 {
+				if src.Property.Excess > 0 {
+					amount := utils.Min(src.Property.Excess, resCap)
+					src.Property.Excess -= amount
+					resCap -= amount
+					src.Property.ResCap[e.Didx] = resCap
+
+					outNotif := graph.Notification[NoteMsg]{
+						Target: e.Didx,
+						Note:   NoteMsg{Src: sidx, Flow: amount, Height: src.Property.NewHeight},
+					}
+					vtm, tidx := g.NodeVertexMessages(e.Didx)
+					sent += g.EnsureSend(g.ActiveNotification(sidx, outNotif, vtm, tidx))
+				}
+				if resCap > 0 {
+					assert(src.Property.Type != Source, "")
+					src.Property.NewHeight = maxHeight
+				}
+			}
+
+			if src.Property.Type == Source {
+				src.Property.Excess += int32(e.Property.Weight)
+			}
+		}
+	}
+	return
 }
 
 func (*PushRelabelMsg) OnEdgeDel(g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], sidx uint32, deletedEdges []graph.Edge[EPropMsg], m MessageMsg) (sent uint64) {
