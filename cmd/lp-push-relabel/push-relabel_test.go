@@ -89,13 +89,12 @@ func TestMsgAsyncStatic(t *testing.T) {
 	RunTestGraphs(t, RunnerMsg, "MessagePassing", options)
 }
 
-// TODO Dynamic is not yet implemented
-//func TestIncrementalMsg(t *testing.T) {
-//	options := baseOptions
-//	options.QueueMultiplier = 9
-//	options.Dynamic = true
-//	RunTestGraphs(t, RunnerMsg, "MessagePassing", options)
-//}
+func TestIncrementalMsg(t *testing.T) {
+	options := baseOptions
+	options.QueueMultiplier = 9
+	options.Dynamic = true
+	RunTestGraphs(t, RunnerMsg, "MessagePassing", options)
+}
 
 func RunTestGraphs(t *testing.T, run func(options graph.GraphOptions) int32, prefix string, options graph.GraphOptions) {
 	for _, tg := range testGraphs {
