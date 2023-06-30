@@ -55,18 +55,6 @@ func assertEqual[C comparable](t *testing.T, expected C, actual C, prefix string
 	}
 }
 
-var RunnerAgg = func(options graph.GraphOptions) int32 {
-	alg := new(PushRelabelAgg)
-	g := graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options)
-	return alg.GetMaxFlowValue(g)
-}
-
-var RunnerMsg = func(options graph.GraphOptions) int32 {
-	alg := new(PushRelabelMsg)
-	g := graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](alg, options)
-	return alg.GetMaxFlowValue(g)
-}
-
 func TestMain(m *testing.M) {
 	c := m.Run()
 	os.Exit(c)
@@ -74,29 +62,29 @@ func TestMain(m *testing.M) {
 
 func TestAggAsyncStatic(t *testing.T) {
 	options := baseOptions
-	RunTestGraphs(t, RunnerAgg, "Aggregate", options)
+	RunTestGraphs(t, RunAgg, "Aggregate", options)
 }
 
 func TestAggIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	RunTestGraphs(t, RunnerAgg, "Aggregate", options)
+	RunTestGraphs(t, RunAgg, "Aggregate", options)
 }
 
 func TestMsgAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 9
-	RunTestGraphs(t, RunnerMsg, "MessagePassing", options)
+	RunTestGraphs(t, RunMsg, "MessagePassing", options)
 }
 
 func TestIncrementalMsg(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 9
 	options.Dynamic = true
-	RunTestGraphs(t, RunnerMsg, "MessagePassing", options)
+	RunTestGraphs(t, RunMsg, "MessagePassing", options)
 }
 
-func RunTestGraphs(t *testing.T, run func(options graph.GraphOptions) int32, prefix string, options graph.GraphOptions) {
+func RunTestGraphs(t *testing.T, run func(options graph.GraphOptions) (int32, int64), prefix string, options graph.GraphOptions) {
 	for _, tg := range testGraphs {
 		for i := 0; i < 5; i++ {
 			options.Name = tg.Filename
@@ -106,7 +94,7 @@ func RunTestGraphs(t *testing.T, run func(options graph.GraphOptions) int32, pre
 			sinkRawId = graph.RawType(tg.Sink)
 			VertexCountHelper.Reset(int64(tg.VertexCount))
 
-			maxFlow := run(options)
+			maxFlow, _ := run(options)
 			assertEqual(t, tg.MaxFlow, int64(maxFlow), fmt.Sprintf("%s: Graph \"%s\" Max flow", prefix, tg.Filename))
 		}
 	}

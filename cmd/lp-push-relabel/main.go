@@ -45,12 +45,30 @@ func (t VertexType) String() string {
 	}
 }
 
+var RunAgg = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
+	alg := new(PushRelabelAgg)
+	g := graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options)
+	return alg.GetMaxFlowValue(g), int64(g.AlgTimer.Elapsed())
+}
+
+var RunMsg = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
+	alg := new(PushRelabelMsg)
+	g := graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](alg, options)
+	return alg.GetMaxFlowValue(g), int64(g.AlgTimer.Elapsed())
+}
+
 func main() {
 	sourceId := flag.Int("S", -1, "Source vertex (raw id).")
 	sinkId := flag.Int("T", -1, "Sink vertex (raw id).")
 	initialEstimatedCount := flag.Uint("V", 30, "Initial estimated number of vertices.")
 	implementation := flag.String("I", "agg", "Implementation. Can be aggregation (agg) or direct message passing (msg)")
+	benchmark := flag.Bool("B", false, "Run benchmarks")
 	graphOptions := graph.FlagsToOptions()
+
+	if *benchmark {
+		RunBenchmarks()
+		return
+	}
 
 	initialHeight = 0
 	sourceRawId = graph.RawType(*sourceId)
@@ -59,9 +77,9 @@ func main() {
 
 	switch *implementation {
 	case "agg":
-		graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](new(PushRelabelAgg), graphOptions)
+		RunAgg(graphOptions)
 	case "msg":
-		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](new(PushRelabelMsg), graphOptions)
+		RunMsg(graphOptions)
 	default:
 		log.Fatal().Msg("Unknown implementation: " + *implementation)
 	}
