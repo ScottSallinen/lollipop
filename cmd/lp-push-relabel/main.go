@@ -17,7 +17,8 @@ func assert(cond bool, msg string) {
 type VertexType uint8
 
 const (
-	MaxHeight = math.MaxUint32
+	EmptyValue = math.MaxUint32
+	MaxHeight  = math.MaxUint32
 
 	Normal VertexType = 0
 	Source VertexType = 1
@@ -45,15 +46,21 @@ func (t VertexType) String() string {
 	}
 }
 
-var RunAgg = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
+var RunAggH = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
 	alg := new(PushRelabelAgg)
 	g := graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options)
 	return alg.GetMaxFlowValue(g), int64(g.AlgTimer.Elapsed())
 }
 
-var RunMsg = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
+var RunMsgH = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
 	alg := new(PushRelabelMsg)
 	g := graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](alg, options)
+	return alg.GetMaxFlowValue(g), int64(g.AlgTimer.Elapsed())
+}
+
+var RunMsgA = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
+	alg := new(PushRelabelMsgA)
+	g := graph.LaunchGraphExecution[*EdgePMsgA, VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA](alg, options)
 	return alg.GetMaxFlowValue(g), int64(g.AlgTimer.Elapsed())
 }
 
@@ -77,9 +84,11 @@ func main() {
 
 	switch *implementation {
 	case "agg":
-		RunAgg(graphOptions)
-	case "msg":
-		RunMsg(graphOptions)
+		RunAggH(graphOptions)
+	case "msg-h":
+		RunMsgH(graphOptions)
+	case "msg-a":
+		RunMsgA(graphOptions)
 	default:
 		log.Fatal().Msg("Unknown implementation: " + *implementation)
 	}

@@ -57,10 +57,13 @@ func runBenchmark(run func(options graph.GraphOptions) (int32, int64), options g
 }
 
 func RunBenchmarks() {
-	algTimesMsg, avgMsg := runBenchmark(RunMsg, baseOptionsBenchmark)
-	algTimesAgg, avgAgg := runBenchmark(RunAgg, baseOptionsBenchmark)
-	log.Info().Msg(fmt.Sprintf("Agg - Algorithm runtimes: %v", algTimesAgg))
-	log.Info().Msg(fmt.Sprintf("Agg - Algorithm runtime average: %v", avgAgg))
-	log.Info().Msg(fmt.Sprintf("Msg - Algorithm runtimes: %v", algTimesMsg))
-	log.Info().Msg(fmt.Sprintf("Msg - Algorithm runtime average: %v", avgMsg))
+	algTimesMsgA, avgMsgA := runBenchmark(RunMsgA, baseOptionsBenchmark)
+	algTimesMsgH, avgMsgH := runBenchmark(RunMsgH, baseOptionsBenchmark)
+	algTimesAggH, avgAggH := runBenchmark(RunAggH, baseOptionsBenchmark)
+	log.Info().Msg(fmt.Sprintf("MsgA - Algorithm runtimes: %v", algTimesMsgA))
+	log.Info().Msg(fmt.Sprintf("MsgA - Algorithm runtime average: %v", avgMsgA))
+	log.Info().Msg(fmt.Sprintf("AggH - Algorithm runtimes: %v", algTimesAggH))
+	log.Info().Msg(fmt.Sprintf("AggH - Algorithm runtime average: %v", avgAggH))
+	log.Info().Msg(fmt.Sprintf("MsgH - Algorithm runtimes: %v", algTimesMsgH))
+	log.Info().Msg(fmt.Sprintf("MsgH - Algorithm runtime average: %v", avgMsgH))
 }
