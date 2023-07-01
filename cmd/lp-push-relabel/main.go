@@ -46,22 +46,22 @@ func (t VertexType) String() string {
 	}
 }
 
-var RunAggH = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
+func RunAggH(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg]) {
 	alg := new(PushRelabelAgg)
-	g := graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options)
-	return alg.GetMaxFlowValue(g), int64(g.AlgTimer.Elapsed())
+	g = graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options)
+	return alg.GetMaxFlowValue(g), g
 }
 
-var RunMsgH = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
+func RunMsgH(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, NoteMsg]) {
 	alg := new(PushRelabelMsg)
-	g := graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](alg, options)
-	return alg.GetMaxFlowValue(g), int64(g.AlgTimer.Elapsed())
+	g = graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](alg, options)
+	return alg.GetMaxFlowValue(g), g
 }
 
-var RunMsgA = func(options graph.GraphOptions) (maxFlow int32, algTime int64) {
+func RunMsgA(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA]) {
 	alg := new(PushRelabelMsgA)
-	g := graph.LaunchGraphExecution[*EdgePMsgA, VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA](alg, options)
-	return alg.GetMaxFlowValue(g), int64(g.AlgTimer.Elapsed())
+	g = graph.LaunchGraphExecution[*EdgePMsgA, VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA](alg, options)
+	return alg.GetMaxFlowValue(g), g
 }
 
 func main() {
