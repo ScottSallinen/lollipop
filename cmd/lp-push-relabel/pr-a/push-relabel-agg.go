@@ -1,4 +1,4 @@
-package main
+package pr_a
 
 import (
 	"fmt"
@@ -49,6 +49,12 @@ func (VPropAgg) New() (new VPropAgg) {
 func (MessageAgg) New() (new MessageAgg) {
 	new.NbrHeights = make(map[uint32]int64)
 	return new
+}
+
+func RunAggH(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg]) {
+	alg := new(PushRelabelAgg)
+	g = graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options)
+	return alg.GetMaxFlowValue(g), g
 }
 
 func (pr *PushRelabelAgg) GetMaxFlowValue(g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg]) int32 {

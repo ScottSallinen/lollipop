@@ -1,4 +1,4 @@
-package main
+package pr_b
 
 import (
 	"fmt"
@@ -47,6 +47,12 @@ func (VPropMsg) New() (new VPropMsg) {
 
 func (MessageMsg) New() (new MessageMsg) {
 	return new
+}
+
+func RunMsgH(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, NoteMsg]) {
+	alg := new(PushRelabelMsg)
+	g = graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](alg, options)
+	return alg.GetMaxFlowValue(g), g
 }
 
 func (pr *PushRelabelMsg) GetMaxFlowValue(g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, NoteMsg]) int32 {
