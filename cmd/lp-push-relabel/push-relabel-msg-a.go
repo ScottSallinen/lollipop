@@ -5,6 +5,8 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
+
+	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type PushRelabelMsgA struct{}
@@ -57,7 +59,7 @@ func (MessageMsgA) New() (new MessageMsgA) {
 }
 
 func (pr *PushRelabelMsgA) GetMaxFlowValue(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA]) int32 {
-	_, sink := g.NodeVertexFromRaw(sinkRawId)
+	_, sink := g.NodeVertexFromRaw(SinkRawId)
 	return sink.Property.Excess
 }
 
@@ -66,18 +68,18 @@ func (pr *PushRelabelMsgA) InitAllMessage(vertex *graph.Vertex[VertexPMsgA, Edge
 }
 
 func (pr *PushRelabelMsgA) BaseVertexMessage(v *graph.Vertex[VertexPMsgA, EdgePMsgA], internalId uint32, rawId graph.RawType) (m MessageMsgA) {
-	v.Property.Height = initialHeight
-	if rawId == sourceRawId {
+	v.Property.Height = InitialHeight
+	if rawId == SourceRawId {
 		v.Property.Type = Source
 		v.Property.Height = VertexCountHelper.RegisterSource(internalId)
-	} else if rawId == sinkRawId {
+	} else if rawId == SinkRawId {
 		v.Property.Type = Sink
 		v.Property.Height = 0
 	}
 	v.Property.NewHeight = v.Property.Height
 
 	for i := range v.OutEdges {
-		v.OutEdges[i].Property.Height = initialHeight
+		v.OutEdges[i].Property.Height = InitialHeight
 	}
 
 	return m
@@ -109,9 +111,9 @@ func (pr *PushRelabelMsgA) Init(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMs
 			v.Property.Excess += int32(e.Property.Weight)
 		}
 
-		assert(e.Property.ResCap == 0, "")
+		Assert(e.Property.ResCap == 0, "")
 		e.Property.ResCap = int32(e.Property.Weight)
-		e.Property.Height = initialHeight
+		e.Property.Height = InitialHeight
 
 		// Initiate handshake
 		vtm, tidx := g.NodeVertexMessages(e.Didx)
@@ -142,20 +144,20 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 	}
 	// newMaxVertexCount?
 	if n.Note.NewMaxVertexCount {
-		assert(v.Property.Type != Source, "Non-source received NewMaxVertexCount")
+		Assert(v.Property.Type != Source, "Non-source received NewMaxVertexCount")
 		v.Property.NewHeight = VertexCountHelper.GetMaxVertexCount()
 	} else {
 		// Handle handshakes
 		var nbr *Nbr
 		var myPos uint32 // position of me in this neighbour
 		if n.Note.HandShake {
-			// Grow InNbrs and set new elements to initialHeight if necessary
+			// Grow InNbrs and set new elements to InitialHeight if necessary
 			if n.Note.SentForward && n.Note.SrcPos >= uint32(len(v.Property.InNbrs)) {
 				ol := len(v.Property.InNbrs)
 				nl := int(g.NodeVertexInEventPos(n.Target))
 				v.Property.InNbrs = append(v.Property.InNbrs, make([]InNbr, nl-ol)...)
 				for i := ol; i < nl; i++ {
-					v.Property.InNbrs[i].Height = initialHeight
+					v.Property.InNbrs[i].Height = InitialHeight
 				}
 			}
 			// send back my height
@@ -171,21 +173,21 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 					Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: myPos, Height: v.Property.NewHeight, SentForward: false, HandShake: true},
 				}, vtm, tidx))
 				nbr = &inNbr.Nbr
-				assert(n.Note.SrcInternalId == v.Property.InNbrs[n.Note.SrcPos].Didx, "")
+				Assert(n.Note.SrcInternalId == v.Property.InNbrs[n.Note.SrcPos].Didx, "")
 			} else {
 				nbr = &v.OutEdges[n.Note.SrcPos].Property.Nbr
 				myPos = v.OutEdges[n.Note.SrcPos].Pos
-				assert(n.Note.SrcInternalId == v.OutEdges[n.Note.SrcPos].Didx, "")
+				Assert(n.Note.SrcInternalId == v.OutEdges[n.Note.SrcPos].Didx, "")
 			}
 		} else {
 			if n.Note.SentForward {
 				nbr = &v.Property.InNbrs[n.Note.SrcPos].Nbr
 				myPos = v.Property.InNbrs[n.Note.SrcPos].Pos
-				assert(n.Note.SrcInternalId == v.Property.InNbrs[n.Note.SrcPos].Didx, "")
+				Assert(n.Note.SrcInternalId == v.Property.InNbrs[n.Note.SrcPos].Didx, "")
 			} else {
 				nbr = &v.OutEdges[n.Note.SrcPos].Property.Nbr
 				myPos = v.OutEdges[n.Note.SrcPos].Pos
-				assert(n.Note.SrcInternalId == v.OutEdges[n.Note.SrcPos].Didx, "")
+				Assert(n.Note.SrcInternalId == v.OutEdges[n.Note.SrcPos].Didx, "")
 			}
 		}
 
@@ -228,7 +230,7 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 					}, vtm, tidx))
 				}
 				if nbr.ResCap > 0 {
-					assert(v.Property.Type != Source, "")
+					Assert(v.Property.Type != Source, "")
 					v.Property.NewHeight = nbr.Height + 1
 				}
 			}
@@ -251,7 +253,7 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 					break
 				}
 				// lift
-				assert(nextHeight != MaxHeight, "")
+				Assert(nextHeight != MaxHeight, "")
 				v.Property.NewHeight = nextHeight
 			}
 		} else {
@@ -296,7 +298,7 @@ func (pr *PushRelabelMsgA) dischargeOnce(g *graph.Graph[VertexPMsgA, EdgePMsgA, 
 				amount := utils.Min(v.Property.Excess, nbr.ResCap)
 				v.Property.Excess -= amount
 				nbr.ResCap -= amount
-				assert(amount > 0, "")
+				Assert(amount > 0, "")
 
 				inNbr := &v.Property.InNbrs[i]
 				vtm, tidx := g.NodeVertexMessages(inNbr.Didx)
@@ -321,7 +323,7 @@ func (pr *PushRelabelMsgA) dischargeOnce(g *graph.Graph[VertexPMsgA, EdgePMsgA, 
 				amount := utils.Min(v.Property.Excess, nbr.ResCap)
 				v.Property.Excess -= amount
 				nbr.ResCap -= amount
-				assert(amount > 0, "")
+				Assert(amount > 0, "")
 
 				e := &v.OutEdges[i]
 				vtm, tidx := g.NodeVertexMessages(e.Didx)
@@ -351,13 +353,13 @@ func (*PushRelabelMsgA) OnEdgeDel(g *graph.Graph[VertexPMsgA, EdgePMsgA, Message
 
 func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA]) {
 	log.Info().Msg("Ensuring the vertex type is correct")
-	sourceInternalId, source := g.NodeVertexFromRaw(sourceRawId)
-	sinkInternalId, sink := g.NodeVertexFromRaw(sinkRawId)
-	assert(source.Property.Type == Source, "")
-	assert(sink.Property.Type == Sink, "")
+	sourceInternalId, source := g.NodeVertexFromRaw(SourceRawId)
+	sinkInternalId, sink := g.NodeVertexFromRaw(SinkRawId)
+	Assert(source.Property.Type == Source, "")
+	Assert(sink.Property.Type == Sink, "")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VertexPMsgA, EdgePMsgA]) {
 		if v.Property.Type != Normal {
-			assert(internalId == sourceInternalId || internalId == sinkInternalId, "")
+			Assert(internalId == sourceInternalId || internalId == sinkInternalId, "")
 		}
 	})
 
@@ -366,42 +368,42 @@ func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA
 		for i, e := range v.OutEdges {
 			target := g.NodeVertex(e.Didx)
 			inNbr := &target.Property.InNbrs[e.Pos]
-			assert(internalId == inNbr.Didx, "")
-			assert(uint32(i) == inNbr.Pos, "")
+			Assert(internalId == inNbr.Didx, "")
+			Assert(uint32(i) == inNbr.Pos, "")
 		}
 		for i, inNbr := range v.Property.InNbrs {
 			target := g.NodeVertex(inNbr.Didx)
 			outEdge := &target.OutEdges[inNbr.Pos]
-			assert(internalId == outEdge.Didx, "")
-			assert(uint32(i) == outEdge.Pos, "")
+			Assert(internalId == outEdge.Didx, "")
+			Assert(uint32(i) == outEdge.Pos, "")
 		}
 	})
 
 	log.Info().Msg("Ensuring all messages are processed")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VertexPMsgA, EdgePMsgA]) {
 		vtm, _ := g.NodeVertexMessages(internalId)
-		assert(vtm.Inbox.Init == false, "")
-		assert(v.Property.Height == v.Property.NewHeight, "")
+		Assert(vtm.Inbox.Init == false, "")
+		Assert(v.Property.Height == v.Property.NewHeight, "")
 	})
 
 	log.Info().Msg("Checking the heights of the source and the sink")
 	vertexCount := g.NodeVertexCount()
-	assert(source.Property.Height >= int64(vertexCount),
+	Assert(source.Property.Height >= int64(vertexCount),
 		fmt.Sprintf("Source height %d < # of vertices %d", source.Property.Height, vertexCount))
-	assert(sink.Property.Height == 0,
+	Assert(sink.Property.Height == 0,
 		fmt.Sprintf("Sink height %d != 0", sink.Property.Height))
 
 	// Check Excess & residual capacity
 	log.Info().Msg("Checking excess & residual capacity")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VertexPMsgA, EdgePMsgA]) {
 		if v.Property.Type == Normal {
-			assert(v.Property.Excess == 0, "")
+			Assert(v.Property.Excess == 0, "")
 		}
 		for _, inNbr := range v.Property.InNbrs {
-			assert(inNbr.ResCap >= 0, "")
+			Assert(inNbr.ResCap >= 0, "")
 		}
 		for _, e := range v.OutEdges {
-			assert(e.Property.ResCap >= 0, "")
+			Assert(e.Property.ResCap >= 0, "")
 		}
 	})
 
@@ -424,11 +426,11 @@ func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA
 		}
 
 		if v.Property.Type == Source {
-			assert(int64(v.Property.Excess) == capacityResidual, "")
+			Assert(int64(v.Property.Excess) == capacityResidual, "")
 		} else if v.Property.Type == Sink {
-			assert(capacityOriginal+int64(v.Property.Excess) == capacityResidual, "")
+			Assert(capacityOriginal+int64(v.Property.Excess) == capacityResidual, "")
 		} else {
-			assert(capacityOriginal == capacityResidual, "")
+			Assert(capacityOriginal == capacityResidual, "")
 		}
 	})
 
@@ -439,16 +441,16 @@ func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA
 	}
 	sourceOut -= int64(source.Property.Excess)
 	sinkIn := int64(sink.Property.Excess)
-	assert(sourceOut == sinkIn, "")
-	log.Info().Msg(fmt.Sprintf("Maximum flow from %d to %d is %d", sourceRawId, sinkRawId, sourceOut))
+	Assert(sourceOut == sinkIn, "")
+	log.Info().Msg(fmt.Sprintf("Maximum flow from %d to %d is %d", SourceRawId, SinkRawId, sourceOut))
 
 	log.Info().Msg("Ensuring NbrHeight is accurate")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VertexPMsgA, EdgePMsgA]) {
 		for _, inNbr := range v.Property.InNbrs {
-			assert(inNbr.Height == g.NodeVertex(inNbr.Didx).Property.Height, "")
+			Assert(inNbr.Height == g.NodeVertex(inNbr.Didx).Property.Height, "")
 		}
 		for _, e := range v.OutEdges {
-			assert(e.Property.Height == g.NodeVertex(e.Didx).Property.Height, "")
+			Assert(e.Property.Height == g.NodeVertex(e.Didx).Property.Height, "")
 		}
 	})
 
@@ -457,12 +459,12 @@ func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA
 		h := v.Property.Height
 		for _, inNbr := range v.Property.InNbrs {
 			if inNbr.ResCap > 0 {
-				assert(h <= inNbr.Height+1, "")
+				Assert(h <= inNbr.Height+1, "")
 			}
 		}
 		for _, e := range v.OutEdges {
 			if e.Property.ResCap > 0 {
-				assert(h <= e.Property.Height+1, "")
+				Assert(h <= e.Property.Height+1, "")
 			}
 		}
 	})

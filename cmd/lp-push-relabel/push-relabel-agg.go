@@ -8,6 +8,8 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
+
+	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type PushRelabelAgg struct{}
@@ -50,7 +52,7 @@ func (MessageAgg) New() (new MessageAgg) {
 }
 
 func (pr *PushRelabelAgg) GetMaxFlowValue(g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg]) int32 {
-	_, sink := g.NodeVertexFromRaw(sinkRawId)
+	_, sink := g.NodeVertexFromRaw(SinkRawId)
 	return sink.Property.Excess
 }
 
@@ -62,13 +64,13 @@ func (pr *PushRelabelAgg) BaseVertexMessage(v *graph.Vertex[VPropAgg, EPropAgg],
 	m.Mutex = &sync.Mutex{}
 	m.NbrHeights = make(map[uint32]int64)
 
-	v.Property.Height = initialHeight
+	v.Property.Height = InitialHeight
 	v.Property.ResCap = make(map[uint32]int32)
 
-	if rawId == sourceRawId {
+	if rawId == SourceRawId {
 		v.Property.Type = Source
 		v.Property.Height = VertexCountHelper.RegisterSource(internalId)
-	} else if rawId == sinkRawId {
+	} else if rawId == SinkRawId {
 		v.Property.Type = Sink
 		v.Property.Height = 0
 	}
@@ -82,7 +84,7 @@ func (pr *PushRelabelAgg) BaseVertexMessage(v *graph.Vertex[VPropAgg, EPropAgg],
 		_, isOldNbr := m.NbrHeights[e.Didx]
 		if !isOldNbr {
 			m.IdFlowPairs = append(m.IdFlowPairs, utils.Pair[uint32, int32]{First: e.Didx, Second: 0})
-			m.NbrHeights[e.Didx] = initialHeight
+			m.NbrHeights[e.Didx] = InitialHeight
 		}
 
 		v.Property.ResCap[e.Didx] += int32(e.Property.Weight)
@@ -182,7 +184,7 @@ func (*PushRelabelAgg) ComputeOutListAndNewHeight(v *VPropAgg, msgBox *MessageAg
 				v.ResCap[id] = resCap
 			}
 			if resCap > 0 {
-				assert(v.Type != Source, "")
+				Assert(v.Type != Source, "")
 				newHeight = maxHeight
 			}
 		}
@@ -204,14 +206,14 @@ func (*PushRelabelAgg) ComputeOutListAndNewHeight(v *VPropAgg, msgBox *MessageAg
 						amount := utils.Min(v.Excess, rc)
 						v.Excess -= amount
 						v.ResCap[n] -= amount
-						assert(amount > 0, "")
+						Assert(amount > 0, "")
 						v.OutList = append(v.OutList, utils.Pair[uint32, int32]{First: n, Second: amount})
 						if v.Excess == 0 {
 							break excessFor
 						}
 					}
 				}
-				assert(nextHeight != MaxHeight, "")
+				Assert(nextHeight != MaxHeight, "")
 				newHeight = nextHeight
 			}
 		} else {
@@ -280,7 +282,7 @@ func (pr *PushRelabelAgg) OnEdgeAdd(g *graph.Graph[VPropAgg, EPropAgg, MessageAg
 		_, isOldNbr := m.NbrHeights[e.Didx]
 		if !isOldNbr {
 			m.IdFlowPairs = append(m.IdFlowPairs, utils.Pair[uint32, int32]{First: e.Didx, Second: 0})
-			m.NbrHeights[e.Didx] = initialHeight
+			m.NbrHeights[e.Didx] = InitialHeight
 		}
 
 		src.Property.ResCap[e.Didx] += int32(e.Property.Weight)
@@ -303,45 +305,45 @@ func (*PushRelabelAgg) OnEdgeDel(g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, 
 
 func (*PushRelabelAgg) OnCheckCorrectness(g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg]) {
 	log.Info().Msg("Ensuring the vertex type is correct")
-	sourceInternalId, source := g.NodeVertexFromRaw(sourceRawId)
-	sinkInternalId, sink := g.NodeVertexFromRaw(sinkRawId)
-	assert(source.Property.Type == Source, "")
-	assert(sink.Property.Type == Sink, "")
+	sourceInternalId, source := g.NodeVertexFromRaw(SourceRawId)
+	sinkInternalId, sink := g.NodeVertexFromRaw(SinkRawId)
+	Assert(source.Property.Type == Source, "")
+	Assert(sink.Property.Type == Sink, "")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VPropAgg, EPropAgg]) {
 		if v.Property.Type != Normal {
-			assert(internalId == sourceInternalId || internalId == sinkInternalId, "")
+			Assert(internalId == sourceInternalId || internalId == sinkInternalId, "")
 		}
 	})
 
 	log.Info().Msg("Ensuring all messages are processed")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VPropAgg, EPropAgg]) {
-		assert(len(v.Property.OutList) == 0, "")
+		Assert(len(v.Property.OutList) == 0, "")
 		vtm, _ := g.NodeVertexMessages(internalId)
-		assert(vtm.Inbox.Height == 0, "")
-		assert(vtm.Inbox.Flow == 0, "")
-		assert(vtm.Inbox.Init == false, "")
-		assert(vtm.Inbox.NewMaxVertexCount == false, "")
-		assert(len(vtm.Inbox.IdFlowPairs) == 0, "")
-		assert(len(vtm.Inbox.HeightCheckList) == 0, "")
+		Assert(vtm.Inbox.Height == 0, "")
+		Assert(vtm.Inbox.Flow == 0, "")
+		Assert(vtm.Inbox.Init == false, "")
+		Assert(vtm.Inbox.NewMaxVertexCount == false, "")
+		Assert(len(vtm.Inbox.IdFlowPairs) == 0, "")
+		Assert(len(vtm.Inbox.HeightCheckList) == 0, "")
 
-		assert(len(v.Property.ResCap) == len(vtm.Inbox.NbrHeights), "")
+		Assert(len(v.Property.ResCap) == len(vtm.Inbox.NbrHeights), "")
 	})
 
 	log.Info().Msg("Checking the heights of the source and the sink")
 	vertexCount := g.NodeVertexCount()
-	assert(source.Property.Height >= int64(vertexCount),
+	Assert(source.Property.Height >= int64(vertexCount),
 		fmt.Sprintf("Source height %d < # of vertices %d", source.Property.Height, vertexCount))
-	assert(sink.Property.Height == 0,
+	Assert(sink.Property.Height == 0,
 		fmt.Sprintf("Sink height %d != 0", sink.Property.Height))
 
 	// Check Excess & residual capacity
 	log.Info().Msg("Checking excess & residual capacity")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VPropAgg, EPropAgg]) {
 		if v.Property.Type == Normal {
-			assert(v.Property.Excess == 0, "")
+			Assert(v.Property.Excess == 0, "")
 		}
 		for n, rc := range v.Property.ResCap {
-			assert(rc >= 0, fmt.Sprintf("%d -> %d has negative residual capacity (%d)", internalId, n, rc))
+			Assert(rc >= 0, fmt.Sprintf("%d -> %d has negative residual capacity (%d)", internalId, n, rc))
 		}
 	})
 
@@ -359,11 +361,11 @@ func (*PushRelabelAgg) OnCheckCorrectness(g *graph.Graph[VPropAgg, EPropAgg, Mes
 			capacityResidual += int64(rc)
 		}
 		if v.Property.Type == Source {
-			assert(int64(v.Property.Excess) == capacityResidual, "")
+			Assert(int64(v.Property.Excess) == capacityResidual, "")
 		} else if v.Property.Type == Sink {
-			assert(capacityOriginal+int64(v.Property.Excess) == capacityResidual, "")
+			Assert(capacityOriginal+int64(v.Property.Excess) == capacityResidual, "")
 		} else {
-			assert(capacityOriginal == capacityResidual, "")
+			Assert(capacityOriginal == capacityResidual, "")
 		}
 	})
 
@@ -374,15 +376,15 @@ func (*PushRelabelAgg) OnCheckCorrectness(g *graph.Graph[VPropAgg, EPropAgg, Mes
 	}
 	sourceOut -= int64(source.Property.Excess)
 	sinkIn := int64(sink.Property.Excess)
-	assert(sourceOut == sinkIn, "")
-	log.Info().Msg(fmt.Sprintf("Maximum flow from %d to %d is %d", sourceRawId, sinkRawId, sourceOut))
+	Assert(sourceOut == sinkIn, "")
+	log.Info().Msg(fmt.Sprintf("Maximum flow from %d to %d is %d", SourceRawId, SinkRawId, sourceOut))
 
 	log.Info().Msg("Ensuring NbrHeight is accurate")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VPropAgg, EPropAgg]) {
 		vtm, _ := g.NodeVertexMessages(internalId)
 		for n, h := range vtm.Inbox.NbrHeights {
 			realHeight := g.NodeVertex(n).Property.Height
-			assert(h == realHeight, "")
+			Assert(h == realHeight, "")
 		}
 	})
 
@@ -392,7 +394,7 @@ func (*PushRelabelAgg) OnCheckCorrectness(g *graph.Graph[VPropAgg, EPropAgg, Mes
 		h := v.Property.Height
 		for n, rc := range v.Property.ResCap {
 			if rc > 0 {
-				assert(h <= vtm.Inbox.NbrHeights[n]+1, "")
+				Assert(h <= vtm.Inbox.NbrHeights[n]+1, "")
 			}
 		}
 	})

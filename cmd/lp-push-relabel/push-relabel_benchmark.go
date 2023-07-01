@@ -5,6 +5,8 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
+
+	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type testCase struct {
@@ -50,15 +52,15 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 	result.name = name
 	for _, tc := range testCasesBenchmark {
 		options.Name = tc.Filename
-		sourceRawId = graph.RawType(tc.Source)
-		sinkRawId = graph.RawType(tc.Sink)
+		SourceRawId = graph.RawType(tc.Source)
+		SinkRawId = graph.RawType(tc.Sink)
 		VertexCountHelper.Reset(int64(tc.VertexCount))
 
-		initialHeight = MaxHeight
+		InitialHeight = MaxHeight
 		//options.Profile = true
 
 		maxFlow, g := run(options)
-		assert(tc.MaxFlow == int64(maxFlow), "")
+		Assert(tc.MaxFlow == int64(maxFlow), "")
 
 		msgSend := uint64(0)
 		for t := 0; t < int(g.NumThreads); t++ {
