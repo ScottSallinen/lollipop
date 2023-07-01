@@ -146,6 +146,8 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 		v.Property.NewHeight = VertexCountHelper.GetMaxVertexCount()
 	} else {
 		// Handle handshakes
+		var nbr *Nbr
+		var myPos uint32 // position of me in this neighbour
 		if n.Note.HandShake {
 			// Grow InNbrs and set new elements to initialHeight if necessary
 			if n.Note.SentForward && n.Note.SrcPos >= uint32(len(v.Property.InNbrs)) {
@@ -158,29 +160,33 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 			}
 			// send back my height
 			if n.Note.SentForward {
-				myPos := uint32(n.Note.Flow)
+				inNbr := &v.Property.InNbrs[n.Note.SrcPos]
+				myPos = uint32(n.Note.Flow)
 				n.Note.Flow = 0
-				v.Property.InNbrs[n.Note.SrcPos].Pos = myPos
-				v.Property.InNbrs[n.Note.SrcPos].Didx = n.Note.SrcInternalId
+				inNbr.Pos = myPos
+				inNbr.Didx = n.Note.SrcInternalId
 				vtm, tidx := g.NodeVertexMessages(n.Note.SrcInternalId)
 				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsgA]{
 					Target: n.Note.SrcInternalId,
 					Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: myPos, Height: v.Property.NewHeight, SentForward: false, HandShake: true},
 				}, vtm, tidx))
+				nbr = &inNbr.Nbr
+				assert(n.Note.SrcInternalId == v.Property.InNbrs[n.Note.SrcPos].Didx, "")
+			} else {
+				nbr = &v.OutEdges[n.Note.SrcPos].Property.Nbr
+				myPos = v.OutEdges[n.Note.SrcPos].Pos
+				assert(n.Note.SrcInternalId == v.OutEdges[n.Note.SrcPos].Didx, "")
 			}
-		}
-
-		// Get the Nbr
-		var nbr *Nbr
-		var myPos uint32 // position of me in this neighbour
-		if n.Note.SentForward {
-			nbr = &v.Property.InNbrs[n.Note.SrcPos].Nbr
-			myPos = v.Property.InNbrs[n.Note.SrcPos].Pos
-			assert(n.Note.SrcInternalId == v.Property.InNbrs[n.Note.SrcPos].Didx, "")
 		} else {
-			nbr = &v.OutEdges[n.Note.SrcPos].Property.Nbr
-			myPos = v.OutEdges[n.Note.SrcPos].Pos
-			assert(n.Note.SrcInternalId == v.OutEdges[n.Note.SrcPos].Didx, "")
+			if n.Note.SentForward {
+				nbr = &v.Property.InNbrs[n.Note.SrcPos].Nbr
+				myPos = v.Property.InNbrs[n.Note.SrcPos].Pos
+				assert(n.Note.SrcInternalId == v.Property.InNbrs[n.Note.SrcPos].Didx, "")
+			} else {
+				nbr = &v.OutEdges[n.Note.SrcPos].Property.Nbr
+				myPos = v.OutEdges[n.Note.SrcPos].Pos
+				assert(n.Note.SrcInternalId == v.OutEdges[n.Note.SrcPos].Didx, "")
+			}
 		}
 
 		// Update height

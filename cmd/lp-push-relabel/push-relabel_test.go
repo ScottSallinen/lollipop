@@ -73,31 +73,34 @@ func TestAggHIncremental(t *testing.T) {
 
 func TestMsgHAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 9
+	options.QueueMultiplier = 8
 	RunTestGraphs(t, RunMsgH, "MessagePassingHashtable", options)
 }
 
 func TestMsgHIncremental(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 9
+	options.QueueMultiplier = 8
 	options.Dynamic = true
 	RunTestGraphs(t, RunMsgH, "MessagePassingHashtable", options)
 }
 
 func TestMsgAAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 9
+	options.QueueMultiplier = 8
 	RunTestGraphs(t, RunMsgA, "MessagePassingArray", options)
 }
 
 func TestMsgAIncremental(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 9
+	options.QueueMultiplier = 8
 	options.Dynamic = true
 	RunTestGraphs(t, RunMsgA, "MessagePassingArray", options)
 }
 
-func RunTestGraphs(t *testing.T, run func(options graph.GraphOptions) (int32, int64), prefix string, options graph.GraphOptions) {
+func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *testing.T,
+	run func(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[V, E, M, N]),
+	prefix string, options graph.GraphOptions) {
+
 	for _, tg := range testGraphs {
 		for i := 0; i < 5; i++ {
 			options.Name = tg.Filename

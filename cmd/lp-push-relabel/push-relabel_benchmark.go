@@ -15,6 +15,12 @@ type testCase struct {
 	VertexCount uint32
 }
 
+type benchmarkResult struct {
+	name     string
+	runtimes []int64
+	messages []uint64
+}
+
 const (
 	GraphPath = "D:\\common\\hive-comments.txt"
 	GraphSize = 671295
@@ -32,38 +38,47 @@ var (
 	}
 	baseOptionsBenchmark = graph.GraphOptions{
 		CheckCorrectness: true,
-		NumThreads:       10,
-		QueueMultiplier:  9,
+		NumThreads:       16,
+		QueueMultiplier:  8,
 	}
 )
 
-func runBenchmark(run func(options graph.GraphOptions) (int32, int64), options graph.GraphOptions) (algTimes []int64, avg int64) {
+func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
+	run func(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[V, E, M, N]),
+	options graph.GraphOptions, name string) (result benchmarkResult) {
+
+	result.name = name
 	for _, tc := range testCasesBenchmark {
 		options.Name = tc.Filename
 		sourceRawId = graph.RawType(tc.Source)
 		sinkRawId = graph.RawType(tc.Sink)
 		VertexCountHelper.Reset(int64(tc.VertexCount))
 
-		options.NumThreads = 16
-		options.QueueMultiplier = 9
 		initialHeight = MaxHeight
 		//options.Profile = true
 
-		maxFlow, algTime := run(options)
+		maxFlow, g := run(options)
 		assert(tc.MaxFlow == int64(maxFlow), "")
-		algTimes = append(algTimes, algTime/1_000_000)
+
+		msgSend := uint64(0)
+		for t := 0; t < int(g.NumThreads); t++ {
+			msgSend += g.GraphThreads[t].MsgSend
+		}
+
+		result.runtimes = append(result.runtimes, int64(g.AlgTimer.Elapsed()/1_000_000))
+		result.messages = append(result.messages, msgSend)
 	}
-	return algTimes, utils.Sum(algTimes) / int64(len(algTimes))
+	return result
 }
 
 func RunBenchmarks() {
-	algTimesMsgA, avgMsgA := runBenchmark(RunMsgA, baseOptionsBenchmark)
-	algTimesMsgH, avgMsgH := runBenchmark(RunMsgH, baseOptionsBenchmark)
-	algTimesAggH, avgAggH := runBenchmark(RunAggH, baseOptionsBenchmark)
-	log.Info().Msg(fmt.Sprintf("MsgA - Algorithm runtimes: %v", algTimesMsgA))
-	log.Info().Msg(fmt.Sprintf("MsgA - Algorithm runtime average: %v", avgMsgA))
-	log.Info().Msg(fmt.Sprintf("AggH - Algorithm runtimes: %v", algTimesAggH))
-	log.Info().Msg(fmt.Sprintf("AggH - Algorithm runtime average: %v", avgAggH))
-	log.Info().Msg(fmt.Sprintf("MsgH - Algorithm runtimes: %v", algTimesMsgH))
-	log.Info().Msg(fmt.Sprintf("MsgH - Algorithm runtime average: %v", avgMsgH))
+	results := make([]benchmarkResult, 0, 4)
+	results = append(results, runBenchmark(RunAggH, baseOptionsBenchmark, "AggH"))
+	results = append(results, runBenchmark(RunMsgH, baseOptionsBenchmark, "MsgH"))
+	results = append(results, runBenchmark(RunMsgA, baseOptionsBenchmark, "MsgA"))
+	for _, r := range results {
+		log.Info().Msg(fmt.Sprintf("%s - Algorithm message counts: %v", r.name, r.messages))
+		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtimes: %v", r.name, r.runtimes))
+		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtime average: %v", r.name, utils.Sum(r.runtimes)/int64(len(r.runtimes))))
+	}
 }
