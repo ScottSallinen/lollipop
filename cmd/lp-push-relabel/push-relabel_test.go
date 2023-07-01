@@ -60,28 +60,41 @@ func TestMain(m *testing.M) {
 	os.Exit(c)
 }
 
-func TestAggAsyncStatic(t *testing.T) {
+func TestAggHAsyncStatic(t *testing.T) {
 	options := baseOptions
-	RunTestGraphs(t, RunAgg, "Aggregate", options)
+	RunTestGraphs(t, RunAggH, "AggregateHashtable", options)
 }
 
-func TestAggIncremental(t *testing.T) {
+func TestAggHIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	RunTestGraphs(t, RunAgg, "Aggregate", options)
+	RunTestGraphs(t, RunAggH, "AggregateHashtable", options)
 }
 
-func TestMsgAsyncStatic(t *testing.T) {
+func TestMsgHAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 9
-	RunTestGraphs(t, RunMsg, "MessagePassing", options)
+	RunTestGraphs(t, RunMsgH, "MessagePassingHashtable", options)
 }
 
-func TestIncrementalMsg(t *testing.T) {
+func TestMsgHIncremental(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 9
 	options.Dynamic = true
-	RunTestGraphs(t, RunMsg, "MessagePassing", options)
+	RunTestGraphs(t, RunMsgH, "MessagePassingHashtable", options)
+}
+
+func TestMsgAAsyncStatic(t *testing.T) {
+	options := baseOptions
+	options.QueueMultiplier = 9
+	RunTestGraphs(t, RunMsgA, "MessagePassingArray", options)
+}
+
+func TestMsgAIncremental(t *testing.T) {
+	options := baseOptions
+	options.QueueMultiplier = 9
+	options.Dynamic = true
+	RunTestGraphs(t, RunMsgA, "MessagePassingArray", options)
 }
 
 func RunTestGraphs(t *testing.T, run func(options graph.GraphOptions) (int32, int64), prefix string, options graph.GraphOptions) {

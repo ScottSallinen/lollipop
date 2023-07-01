@@ -93,6 +93,10 @@ func (pr *PushRelabelMsg) Init(g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, No
 			continue
 		}
 
+		if v.Property.Type == Source {
+			v.Property.Excess += int32(e.Property.Weight)
+		}
+
 		v.Property.ResCap[e.Didx] += int32(e.Property.Weight)
 
 		// new neighbour?
@@ -128,10 +132,6 @@ func (pr *PushRelabelMsg) Init(g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, No
 				assert(v.Property.Type != Source, "")
 				v.Property.NewHeight = maxHeight
 			}
-		}
-
-		if v.Property.Type == Source {
-			v.Property.Excess += int32(e.Property.Weight)
 		}
 	}
 
