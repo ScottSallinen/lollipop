@@ -7,6 +7,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-a"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-b"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-c"
 )
 
 type testCase struct {
@@ -75,9 +78,9 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 
 func RunBenchmarks() {
 	results := make([]benchmarkResult, 0, 4)
-	results = append(results, runBenchmark(RunAggH, baseOptionsBenchmark, "AggH"))
-	results = append(results, runBenchmark(RunMsgH, baseOptionsBenchmark, "MsgH"))
-	results = append(results, runBenchmark(RunMsgA, baseOptionsBenchmark, "MsgA"))
+	results = append(results, runBenchmark(pr_a.RunAggH, baseOptionsBenchmark, "AggH"))
+	results = append(results, runBenchmark(pr_b.RunMsgH, baseOptionsBenchmark, "MsgH"))
+	results = append(results, runBenchmark(pr_c.RunMsgA, baseOptionsBenchmark, "MsgA"))
 	for _, r := range results {
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm message counts: %v", r.name, r.messages))
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtimes: %v", r.name, r.runtimes))

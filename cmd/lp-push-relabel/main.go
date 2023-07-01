@@ -7,25 +7,10 @@ import (
 	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-a"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-b"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-c"
 )
-
-func RunAggH(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg]) {
-	alg := new(PushRelabelAgg)
-	g = graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options)
-	return alg.GetMaxFlowValue(g), g
-}
-
-func RunMsgH(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VPropMsg, EPropMsg, MessageMsg, NoteMsg]) {
-	alg := new(PushRelabelMsg)
-	g = graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](alg, options)
-	return alg.GetMaxFlowValue(g), g
-}
-
-func RunMsgA(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA]) {
-	alg := new(PushRelabelMsgA)
-	g = graph.LaunchGraphExecution[*EdgePMsgA, VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA](alg, options)
-	return alg.GetMaxFlowValue(g), g
-}
 
 func main() {
 	sourceId := flag.Int("S", -1, "Source vertex (raw id).")
@@ -47,11 +32,11 @@ func main() {
 
 	switch *implementation {
 	case "agg":
-		RunAggH(graphOptions)
+		pr_a.RunAggH(graphOptions)
 	case "msg-h":
-		RunMsgH(graphOptions)
+		pr_b.RunMsgH(graphOptions)
 	case "msg-a":
-		RunMsgA(graphOptions)
+		pr_c.RunMsgA(graphOptions)
 	default:
 		log.Fatal().Msg("Unknown implementation: " + *implementation)
 	}

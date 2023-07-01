@@ -1,4 +1,4 @@
-package main
+package pr_c
 
 import (
 	"fmt"
@@ -56,6 +56,12 @@ func (VertexPMsgA) New() (new VertexPMsgA) {
 
 func (MessageMsgA) New() (new MessageMsgA) {
 	return new
+}
+
+func RunMsgA(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA]) {
+	alg := new(PushRelabelMsgA)
+	g = graph.LaunchGraphExecution[*EdgePMsgA, VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA](alg, options)
+	return alg.GetMaxFlowValue(g), g
 }
 
 func (pr *PushRelabelMsgA) GetMaxFlowValue(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA]) int32 {

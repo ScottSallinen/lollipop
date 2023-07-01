@@ -9,6 +9,9 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-a"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-b"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-c"
 )
 
 type TestGraph struct {
@@ -64,39 +67,39 @@ func TestMain(m *testing.M) {
 
 func TestAggHAsyncStatic(t *testing.T) {
 	options := baseOptions
-	RunTestGraphs(t, RunAggH, "AggregateHashtable", options)
+	RunTestGraphs(t, pr_a.RunAggH, "AggregateHashtable", options)
 }
 
 func TestAggHIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	RunTestGraphs(t, RunAggH, "AggregateHashtable", options)
+	RunTestGraphs(t, pr_a.RunAggH, "AggregateHashtable", options)
 }
 
 func TestMsgHAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 8
-	RunTestGraphs(t, RunMsgH, "MessagePassingHashtable", options)
+	RunTestGraphs(t, pr_b.RunMsgH, "MessagePassingHashtable", options)
 }
 
 func TestMsgHIncremental(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 8
 	options.Dynamic = true
-	RunTestGraphs(t, RunMsgH, "MessagePassingHashtable", options)
+	RunTestGraphs(t, pr_b.RunMsgH, "MessagePassingHashtable", options)
 }
 
 func TestMsgAAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 8
-	RunTestGraphs(t, RunMsgA, "MessagePassingArray", options)
+	RunTestGraphs(t, pr_c.RunMsgA, "MessagePassingArray", options)
 }
 
 func TestMsgAIncremental(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 8
 	options.Dynamic = true
-	RunTestGraphs(t, RunMsgA, "MessagePassingArray", options)
+	RunTestGraphs(t, pr_c.RunMsgA, "MessagePassingArray", options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *testing.T,
