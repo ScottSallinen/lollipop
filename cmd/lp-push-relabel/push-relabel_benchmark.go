@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
@@ -9,7 +10,9 @@ import (
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-a"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-b"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-c"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-d"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-f"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-h"
 )
 
 type testCase struct {
@@ -52,6 +55,7 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 	run func(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[V, E, M, N]),
 	options graph.GraphOptions, name string) (result benchmarkResult) {
 
+	log.Info().Msg(fmt.Sprintf("%s - Start", name))
 	result.name = name
 	for _, tc := range testCasesBenchmark {
 		options.Name = tc.Filename
@@ -80,7 +84,12 @@ func RunBenchmarks() {
 	results := make([]benchmarkResult, 0, 4)
 	results = append(results, runBenchmark(pr_a.RunAggH, baseOptionsBenchmark, "AggH"))
 	results = append(results, runBenchmark(pr_b.RunMsgH, baseOptionsBenchmark, "MsgH"))
-	results = append(results, runBenchmark(pr_c.RunMsgA, baseOptionsBenchmark, "MsgA"))
+	// pr_c is too slow
+	results = append(results, runBenchmark(pr_d.Run, baseOptionsBenchmark, pr_d.Name))
+	// pr_e
+	results = append(results, runBenchmark(pr_f.Run, baseOptionsBenchmark, pr_f.Name))
+	// pr_g is too slow results
+	results = append(results, runBenchmark(pr_h.Run, baseOptionsBenchmark, pr_h.Name))
 	for _, r := range results {
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm message counts: %v", r.name, r.messages))
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtimes: %v", r.name, r.runtimes))

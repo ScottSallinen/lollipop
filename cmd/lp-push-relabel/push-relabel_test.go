@@ -12,6 +12,11 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-a"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-b"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-c"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-d"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-e"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-f"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-g"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-h"
 )
 
 type TestGraph struct {
@@ -78,28 +83,53 @@ func TestAggHIncremental(t *testing.T) {
 
 func TestMsgHAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 8
 	RunTestGraphs(t, pr_b.RunMsgH, "MessagePassingHashtable", options)
 }
 
 func TestMsgHIncremental(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 8
 	options.Dynamic = true
 	RunTestGraphs(t, pr_b.RunMsgH, "MessagePassingHashtable", options)
 }
 
 func TestMsgAAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 8
 	RunTestGraphs(t, pr_c.RunMsgA, "MessagePassingArray", options)
 }
 
 func TestMsgAIncremental(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 8
 	options.Dynamic = true
 	RunTestGraphs(t, pr_c.RunMsgA, "MessagePassingArray", options)
+}
+
+func TestDAsyncStatic(t *testing.T) {
+	options := baseOptions
+	RunTestGraphs(t, pr_d.Run, pr_d.Name, options)
+}
+
+func TestEAsyncStatic(t *testing.T) {
+	options := baseOptions
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, pr_e.Run, pr_e.Name, options)
+}
+
+func TestFAsyncStatic(t *testing.T) {
+	options := baseOptions
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, pr_f.Run, pr_f.Name, options)
+}
+
+func TestGAsyncStatic(t *testing.T) {
+	options := baseOptions
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, pr_g.Run, pr_g.Name, options)
+}
+
+func TestHAsyncStatic(t *testing.T) {
+	options := baseOptions
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, pr_h.Run, pr_h.Name, options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *testing.T,
