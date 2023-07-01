@@ -2,49 +2,12 @@ package main
 
 import (
 	"flag"
-	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/rs/zerolog/log"
+
+	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
-
-func assert(cond bool, msg string) {
-	if !cond {
-		log.Panic().Msg(msg)
-	}
-}
-
-type VertexType uint8
-
-const (
-	EmptyValue = math.MaxUint32
-	MaxHeight  = math.MaxUint32
-
-	Normal VertexType = 0
-	Source VertexType = 1
-	Sink   VertexType = 2
-)
-
-// Set these flags before running the algorithm
-var (
-	initialHeight = int64(0) // The initial height of a vertex that is newly added to the graph.
-	sourceRawId   = graph.AsRawType(-1)
-	sinkRawId     = graph.AsRawType(-1)
-)
-
-func (t VertexType) String() string {
-	switch t {
-	case Normal:
-		return "Normal"
-	case Source:
-		return "Source"
-	case Sink:
-		return "Sink"
-	default:
-		log.Panic().Msg("Unknown VertexType: " + string(t))
-		return string(t)
-	}
-}
 
 func RunAggH(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg]) {
 	alg := new(PushRelabelAgg)
@@ -77,9 +40,9 @@ func main() {
 		return
 	}
 
-	initialHeight = 0
-	sourceRawId = graph.RawType(*sourceId)
-	sinkRawId = graph.RawType(*sinkId)
+	InitialHeight = 0
+	SourceRawId = graph.RawType(*sourceId)
+	SinkRawId = graph.RawType(*sinkId)
 	VertexCountHelper.Reset(int64(*initialEstimatedCount))
 
 	switch *implementation {

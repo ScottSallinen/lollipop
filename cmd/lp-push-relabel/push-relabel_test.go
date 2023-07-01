@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/ScottSallinen/lollipop/graph"
+
+	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type TestGraph struct {
@@ -105,9 +107,9 @@ func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *tes
 		for i := 0; i < 5; i++ {
 			options.Name = tg.Filename
 			options.NumThreads = uint32(rand.Intn(MaxThreads-1) + 1)
-			initialHeight = MaxHeight
-			sourceRawId = graph.RawType(tg.Source)
-			sinkRawId = graph.RawType(tg.Sink)
+			InitialHeight = MaxHeight
+			SourceRawId = graph.RawType(tg.Source)
+			SinkRawId = graph.RawType(tg.Sink)
 			VertexCountHelper.Reset(int64(tg.VertexCount))
 
 			maxFlow, _ := run(options)
