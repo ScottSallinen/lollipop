@@ -403,7 +403,7 @@ func (rb *GrowableRingBuff[T]) Init(size uint64, maxGrowTimes uint64) {
 
 // Returns the total capacity of the ring buffer. Call this if you are the dequeuer (to avoid loading the enqueuer cache line).
 func (rb *GrowableRingBuff[T]) DeqCap() uint64 {
-	return rb.enqMask + 1
+	return rb.deqMask + 1
 }
 
 // Returns the total capacity of the ring buffer. Call this if you are the enqueuer (to avoid loading the dequeuer cache line).
