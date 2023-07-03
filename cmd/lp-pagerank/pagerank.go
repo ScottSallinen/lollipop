@@ -43,7 +43,7 @@ type EdgeProperty struct {
 	graph.TimestampEdge
 }
 
-type Message struct {
+type Mail struct {
 	Value float64
 }
 
@@ -53,15 +53,15 @@ func (VertexProperty) New() VertexProperty {
 	return VertexProperty{InFlow: 0, Mass: 0}
 }
 
-func (Message) New() Message {
-	return Message{0}
+func (Mail) New() Mail {
+	return Mail{0}
 }
 
-func (*PageRank) InitAllMessage(g *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) Message {
-	return Message{INITMASS}
+func (*PageRank) InitAllMail(g *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) Mail {
+	return Mail{INITMASS}
 }
 
-func (*PageRank) MessageMerge(incoming Message, _ uint32, existing *Message) bool {
+func (*PageRank) MailMerge(incoming Mail, _ uint32, existing *Mail) bool {
 	oldU, newU := utils.AtomicAddFloat64U(&existing.Value, incoming.Value)
 	return math.Float64frombits(oldU&^(1<<63)) < EPSILON && math.Float64frombits(newU&^(1<<63)) > EPSILON
 	// Has to be the ugliness above to inline... below for reference of what it is.
@@ -69,13 +69,13 @@ func (*PageRank) MessageMerge(incoming Message, _ uint32, existing *Message) boo
 	// return math.Abs(old) < EPSILON && math.Abs(old+incoming.Value) > EPSILON
 }
 
-func (*PageRank) MessageRetrieve(existing *Message, _ *graph.Vertex[VertexProperty, EdgeProperty]) (outgoing Message) {
+func (*PageRank) MailRetrieve(existing *Mail, _ *graph.Vertex[VertexProperty, EdgeProperty]) (outgoing Mail) {
 	outgoing.Value = utils.AtomicSwapFloat64(&existing.Value, 0)
 	return outgoing
 }
 
-func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], message Message) (sent uint64) {
-	src.Property.InFlow += message.Value
+func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], m Mail) (sent uint64) {
+	src.Property.InFlow += m.Value
 
 	if math.Abs(src.Property.InFlow) > EPSILON {
 		toDistribute := DAMPINGFACTOR * (src.Property.InFlow)
@@ -85,11 +85,11 @@ func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty,
 		src.Property.InFlow = 0.0
 
 		if len(src.OutEdges) > 0 {
-			distribute := Message{(toDistribute / float64(len(src.OutEdges)))}
+			distribute := Mail{(toDistribute / float64(len(src.OutEdges)))}
 			for _, e := range src.OutEdges {
-				vtm, tidx := g.NodeVertexMessages(e.Didx)
-				if alg.MessageMerge(distribute, notif.Target, &vtm.Inbox) {
-					sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
+				mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+				if alg.MailMerge(distribute, notif.Target, &mailbox.Inbox) {
+					sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 				}
 			}
 		}
@@ -100,10 +100,10 @@ func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty,
 // OnEdgeAdd: Function called upon a new edge add (which also bundles a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: eidxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, message Message) (sent uint64) {
+func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
 	distAllPrev := src.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
-	src.Property.InFlow += message.Value
+	src.Property.InFlow += m.Value
 	toDistribute := DAMPINGFACTOR * (src.Property.InFlow)
 	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.InFlow)
 	src.Property.Mass += toAbsorb
@@ -114,33 +114,33 @@ func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mess
 	if eidxStart != 0 { // Not just our first edge(s)
 		distOld := distAllPrev / (float64(eidxStart)) // Previous edge count
 		distDelta := distNew - distOld
-		prevEGet := Message{distDelta + distribute}
+		prevEGet := Mail{distDelta + distribute}
 
 		// Previously existing edges [0, new) get this adjustment.
 		for eidx := 0; eidx < eidxStart; eidx++ {
-			vtm, tidx := g.NodeVertexMessages(src.OutEdges[eidx].Didx)
-			if alg.MessageMerge(prevEGet, sidx, &vtm.Inbox) {
-				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, vtm, tidx))
+			mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[eidx].Didx)
+			if alg.MailMerge(prevEGet, sidx, &mailbox.Inbox) {
+				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, mailbox, tidx))
 			}
 		}
 	}
 
-	newEGet := Message{distNew + distribute}
+	newEGet := Mail{distNew + distribute}
 	// New edges [new, len) get this adjustment
 	for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
-		vtm, tidx := g.NodeVertexMessages((src.OutEdges[eidx].Didx))
-		if alg.MessageMerge(newEGet, sidx, &vtm.Inbox) {
-			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, vtm, tidx))
+		mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[eidx].Didx)
+		if alg.MailMerge(newEGet, sidx, &mailbox.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, mailbox, tidx))
 		}
 	}
 	return sent
 }
 
 // Version that merges with a visit
-func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], message Message) (sent uint64) {
+func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
 	distAllPrev := src.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
-	src.Property.InFlow += message.Value
+	src.Property.InFlow += m.Value
 	toDistribute := DAMPINGFACTOR * (src.Property.InFlow)
 	toAbsorb := (1.0 - DAMPINGFACTOR) * (src.Property.InFlow)
 	src.Property.Mass += toAbsorb
@@ -153,18 +153,18 @@ func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mess
 		distDelta := distNew - distOld
 
 		for _, e := range src.OutEdges {
-			vtm, tidx := g.NodeVertexMessages(e.Didx)
-			if alg.MessageMerge(Message{distDelta + distribute}, sidx, &vtm.Inbox) {
-				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
+			mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+			if alg.MailMerge(Mail{distDelta + distribute}, sidx, &mailbox.Inbox) {
+				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 			}
 		}
 	}
 
 	distOldEdges := -1.0 * distAllPrev / (float64(len(src.OutEdges) + len(deletedEdges)))
 	for _, e := range deletedEdges {
-		vtm, tidx := g.NodeVertexMessages(e.Didx)
-		if alg.MessageMerge(Message{distOldEdges}, sidx, &vtm.Inbox) {
-			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, vtm, tidx))
+		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+		if alg.MailMerge(Mail{distOldEdges}, sidx, &mailbox.Inbox) {
+			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}
 	}
 	return sent
@@ -179,14 +179,14 @@ func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mess
 // A minor modification has been made since the publication of the paper,
 // we no longer need to track latent values within a sink during processing, as it can actually be computed at the end
 // with simply the computation vertex.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
-func (*PageRank) OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func (*PageRank) OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	// Fix all sink node latent values
 	tNumSinks := make([]int, g.NumThreads)         // Number of sink nodes.
 	tGlobalLatent := make([]float64, g.NumThreads) // Total latent values from sinks.
 	tNonSinkSum := make([]float64, g.NumThreads)   // The total accumulated value in the non-sink graph.
 
 	// One pass over all vertices -- compute some global totals.
-	singletons := g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Message, Note]) int {
+	singletons := g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note]) int {
 		tidx := gt.Tidx
 		singletons := 0
 		for i := 0; i < len(gt.Vertices); i++ {
@@ -229,7 +229,7 @@ func (*PageRank) OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, Message, 
 	geometricLatentSum := globalLatent / (1.0 - DAMPINGFACTOR*(SinkQuota*(float64(numSinks-1))+(NormalQuota*retainSumPct)))
 
 	// One pass over all vertices -- make adjustment based on sink/non-sink status.
-	g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Message, Note]) int {
+	g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note]) int {
 		for i := 0; i < len(gt.Vertices); i++ {
 			v := &gt.Vertices[i]
 			if len(v.OutEdges) != 0 { // All vertices that are NOT a sink node

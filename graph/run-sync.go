@@ -9,11 +9,13 @@ import (
 	"github.com/ScottSallinen/lollipop/utils"
 )
 
-// Basic sync emulation. Runs through the vertex list.
-// Note that vertices early in the list may affect vertices later in the list (activate and send messages)
-// So this is not exactly emulating traditional BSP -- for that see below.
+// Basic sync emulation. Runs through the list of vertices in the graph in order (specifically the vertices of the graph thread, per thread).
+// Note that vertices early in the list  may target vertices later in that list (activate and send notifications or mail to them).
+// This new data may be viewed by that target, and hence this is actually semi-asynchronous -- but "fair", as vertices are looked at round-robin for an "iteration".
+// Thus, this is not exactly emulating traditional BSP -- for that see below.
+// Note Sync strategies are not compatible with notification-only algorithms (e.g. a pure-message-passing strategy).
 func ConvergeSync[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], wg *sync.WaitGroup) {
-	SendInitialMessages(alg, g)
+	SendInitialMail(alg, g)
 	if g.Options.OracleCompareSync {
 		CompareToOracle(alg, g, true, true, false, false)
 	}
@@ -22,14 +24,14 @@ func ConvergeSync[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 
 	for ; ; iteration++ {
 		activity := g.NodeParallelFor(func(_, threadOffset uint32, gt *GraphThread[V, E, M, N]) (tActivity int) {
-			var msg M
+			var mail M
 			for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
-				vertex, vtm := gt.VertexAndMessages(i)
-				active := atomic.SwapInt32(&vtm.Activity, 0) == 1
+				vertex, mailbox := gt.VertexAndMailbox(i)
+				active := atomic.SwapInt32(&mailbox.Activity, 0) == 1
 				if active {
 					gt.NotificationQueue.Accept() // must exist, should discard
-					msg = alg.MessageRetrieve(&vtm.Inbox, vertex)
-					sent := alg.OnUpdateVertex(g, vertex, Notification[N]{Target: (i | threadOffset)}, msg)
+					mail = alg.MailRetrieve(&mailbox.Inbox, vertex)
+					sent := alg.OnUpdateVertex(g, vertex, Notification[N]{Target: (i | threadOffset)}, mail)
 					tActivity += int(sent)
 					gt.MsgSend += sent
 					vertexUpdates[gt.Tidx]++
@@ -47,27 +49,28 @@ func ConvergeSync[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 	log.Info().Msg("Iterations: " + utils.V(iteration) + " Updates: " + utils.V(utils.Sum(vertexUpdates)))
 }
 
-// A sync variant that only only consumes messages generated from the previous iteration.
-// Does not consider messages generated from the current iteration.
+// A sync variant that only only consumes information that was generated from the **previous** iteration.
+// Does not consider any information generated from the **current** iteration.
+// This is a proper emulation of Bulk Synchronous Parallel.
 func ConvergeSyncPrevOnly[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], wg *sync.WaitGroup) {
-	SendInitialMessages(alg, g)
+	SendInitialMail(alg, g)
 	if g.Options.OracleCompareSync {
 		CompareToOracle(alg, g, true, true, false, false)
 	}
 	iteration := 1
 	vertexUpdates := make([]int, g.NumThreads)
 	numVertices := g.NodeVertexCount()
-	msgsLast := make([]M, numVertices)
+	mailLast := make([]M, numVertices)
 	frontier := make([]bool, numVertices)
 
 	for ; ; iteration++ {
 		g.NodeParallelFor(func(ordinalStart, _ uint32, gt *GraphThread[V, E, M, N]) int {
 			for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
-				vertex, vtm := gt.VertexAndMessages(i)
-				active := atomic.SwapInt32(&vtm.Activity, 0) == 1
+				vertex, mailbox := gt.VertexAndMailbox(i)
+				active := atomic.SwapInt32(&mailbox.Activity, 0) == 1
 				if active {
 					gt.NotificationQueue.Accept() // must exist, should discard
-					msgsLast[ordinalStart+i] = alg.MessageRetrieve(&vtm.Inbox, vertex)
+					mailLast[ordinalStart+i] = alg.MailRetrieve(&mailbox.Inbox, vertex)
 					frontier[ordinalStart+i] = true
 				}
 			}
@@ -79,7 +82,7 @@ func ConvergeSyncPrevOnly[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E,
 				if frontier[idx] {
 					frontier[idx] = false
 					vertexUpdates[gt.Tidx]++
-					sent := alg.OnUpdateVertex(g, gt.Vertex(i), Notification[N]{Target: (i | threadOffset)}, msgsLast[idx])
+					sent := alg.OnUpdateVertex(g, gt.Vertex(i), Notification[N]{Target: (i | threadOffset)}, mailLast[idx])
 					tActivity += int(sent)
 					gt.MsgSend += sent
 				}

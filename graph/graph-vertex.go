@@ -21,12 +21,12 @@ type VPI[V any] interface {
 
 // For Intra-Node communication. Represents an abstract mailbox system.
 // Data here is ephemeral.
-type VertexMessages[M MVI[M]] struct {
-	Inbox    M     // Message(s) for the vertex.
-	Activity int32 // Indicates if the vertex awaits a visit (has message(s)). For determining uniqueness.
+type VertexMailbox[M MVI[M]] struct {
+	Inbox    M     // Mail for the vertex.
+	Activity int32 // Indicates if the vertex is activated (e.g. has notification/mail). Used for either: unique notifications, or the number of notifications currently in the queue for it.
 }
 
-// Message Value Interface.
+// Mailbox Value Interface.
 type MVI[M any] interface {
 	New() (new M) // "Default constructor."
 }
@@ -62,11 +62,11 @@ func (gt *GraphThread[V, E, M, N]) Vertex(internalOrOffset uint32) *Vertex[V, E]
 	return &gt.Vertices[(internalOrOffset & THREAD_MASK)]
 }
 
-// Wrapper for getting a vertex and its messages; okay to provide a vidx or just the thread-local offset.
-func (gt *GraphThread[V, E, M, N]) VertexAndMessages(internalOrOffset uint32) (*Vertex[V, E], *VertexMessages[M]) {
+// Wrapper for getting a vertex and its mail; okay to provide a vidx or just the thread-local offset.
+func (gt *GraphThread[V, E, M, N]) VertexAndMailbox(internalOrOffset uint32) (*Vertex[V, E], *VertexMailbox[M]) {
 	idx := internalOrOffset & THREAD_MASK
 	bucket, bpos := idxToBucket(idx)
-	return &gt.Vertices[idx], &gt.VertexMessages[bucket][bpos]
+	return &gt.Vertices[idx], &gt.VertexMailboxes[bucket][bpos]
 }
 
 // Wrapper for getting a vertex structure; okay to provide a vidx or just the thread-local offset.
@@ -97,11 +97,11 @@ func (g *Graph[V, E, M, N]) NodeVertex(internalId uint32) *Vertex[V, E] {
 	return &g.GraphThreads[tidx].Vertices[id]
 }
 
-// Node level, gives a reference to the vertex messages, and the thread index.
-func (g *Graph[V, E, M, N]) NodeVertexMessages(internalId uint32) (*VertexMessages[M], uint32) {
+// Node level, gives a reference to the vertex mailbox, and the thread index.
+func (g *Graph[V, E, M, N]) NodeVertexMailbox(internalId uint32) (*VertexMailbox[M], uint32) {
 	idx, tidx := InternalExpand(internalId)
 	bucket, bpos := idxToBucket(idx)
-	return &g.GraphThreads[tidx].VertexMessages[bucket][bpos], tidx
+	return &g.GraphThreads[tidx].VertexMailboxes[bucket][bpos], tidx
 }
 
 // Node level, retrieves the supplemental structure for a vertex from a given internal index.
@@ -169,11 +169,11 @@ func (g *Graph[V, E, M, N]) NodeParallelFor(applicator func(ordinalStart uint32,
 	return accumulator
 }
 
-// For oracle comparison, newly allocates message buckets.
-func (gt *GraphThread[V, E, M, N]) NodeCopyVertexMessages() (out []*[BUCKET_SIZE]VertexMessages[M]) {
-	out = make([]*[BUCKET_SIZE]VertexMessages[M], len(gt.VertexMessages))
-	for b := 0; b < len(gt.VertexMessages); b++ {
-		out[b] = new([BUCKET_SIZE]VertexMessages[M])
+// For oracle comparison, newly allocates mailbox buckets.
+func (gt *GraphThread[V, E, M, N]) NodeCopyVertexMailboxes() (out []*[BUCKET_SIZE]VertexMailbox[M]) {
+	out = make([]*[BUCKET_SIZE]VertexMailbox[M], len(gt.VertexMailboxes))
+	for b := 0; b < len(gt.VertexMailboxes); b++ {
+		out[b] = new([BUCKET_SIZE]VertexMailbox[M])
 	}
 	return out
 }

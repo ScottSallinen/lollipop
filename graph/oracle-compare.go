@@ -41,7 +41,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		oracleGraph.Options.OracleCompareSync = false
 		oracleGraph.Options.LogTimeseries = false
 		oracleGraph.Options.TimeseriesEdgeCount = false
-		oracleGraph.InitMessages = g.InitMessages
+		oracleGraph.InitMail = g.InitMail
 		oracleGraph.Init()
 
 		log.Debug().Msg("Copying vertices: " + utils.V(numVertices))
@@ -52,15 +52,15 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			oracleGraph.GraphThreads[t].VertexStructures = g.GraphThreads[t].VertexStructures
 			// Copy base structures.
 			g.GraphThreads[t].NodeCopyVerticesInto(&oracleGraph.GraphThreads[t].Vertices)
-			oracleGraph.GraphThreads[t].VertexMessages = g.GraphThreads[t].NodeCopyVertexMessages()
+			oracleGraph.GraphThreads[t].VertexMailboxes = g.GraphThreads[t].NodeCopyVertexMailboxes()
 			oracleGraph.GraphThreads[t].NumEdges = g.GraphThreads[t].NumEdges
 			numEdges += int(oracleGraph.GraphThreads[t].NumEdges)
 		}
 
 		oracleGraph.NodeForEachVertex(func(_, internalId uint32, oracleVertex *Vertex[V, E]) {
 			oracleVertex.Property = oracleVertex.Property.New()
-			vtm, _ := oracleGraph.NodeVertexMessages(internalId)
-			vtm.Inbox = vtm.Inbox.New()
+			mailbox, _ := oracleGraph.NodeVertexMailbox(internalId)
+			mailbox.Inbox = mailbox.Inbox.New()
 		})
 
 		log.Debug().Msg("Creating result for graph with " + utils.V(numVertices) + " vertices and " + utils.V(numEdges) + " edges")

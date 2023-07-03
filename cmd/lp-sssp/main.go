@@ -10,10 +10,10 @@ import (
 )
 
 // Performs some sanity checks for correctness.
-func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	maxValue := make([]float64, g.NumThreads)
 	// Denote vertices that claim unvisited, and ensure out edges are at least as good as we could provide.
-	g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Message, Note]) int {
+	g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note]) int {
 		tidx := gt.Tidx
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 			vertex := &gt.Vertices[i]
@@ -22,7 +22,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mes
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
 			}
 
-			if initVal, ok := g.InitMessages[gt.VertexRawID(i)]; ok {
+			if initVal, ok := g.InitMail[gt.VertexRawID(i)]; ok {
 				if ourValue != float64(initVal) {
 					log.Panic().Msg("Expected rawId " + utils.V(gt.VertexRawID(i)) + " to have init, but has " + utils.V(ourValue))
 				}
@@ -45,7 +45,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mes
 }
 
 // Compares the results of the algorithm to the oracle.
-func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	// Default compare function is fine; diffs should all be zero (algorithm is deterministic).
 	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Value })
 }
@@ -55,9 +55,9 @@ func main() {
 	sourceInit := flag.String("i", "1", "Source init vertex (raw id).")
 	graphOptions := graph.FlagsToOptions()
 
-	initMessages := map[graph.RawType]Message{}
+	initMail := map[graph.RawType]Mail{}
 
-	initMessages[graph.AsRawTypeString(*sourceInit)] = 0.0
+	initMail[graph.AsRawTypeString(*sourceInit)] = 0.0
 
-	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(SSSP), graphOptions, initMessages)
+	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), graphOptions, initMail)
 }

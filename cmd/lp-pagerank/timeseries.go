@@ -41,7 +41,7 @@ func init() {
 
 var tsDB = make([]NamedEntry, 0)
 
-func (*PageRank) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexProperty, EdgeProperty, Message, Note], wg *sync.WaitGroup) {
+func (*PageRank) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note], wg *sync.WaitGroup) {
 	for tse := range entries {
 		var outEntry NamedEntry
 		if logWaterfall {

@@ -30,10 +30,10 @@ const THREAD_MASK = (1 << THREAD_SHIFT) - 1 // Bit mask
 // Some constants for the graph.
 const BASE_SIZE = 4096 * 4
 const GROW_LIMIT = 7             // Number of times certain buffers can grow (double in size)
-const MSG_MAX = 1024             // Max messages a thread MAY pull from the queue at a time, before cycling back to check other tasks.
+const MSG_MAX = 1024             // Max messages a thread MAY pull from the queue at a time, before cycling back to check other tasks. A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
 const FAKE_TIMESTAMP = false     // Replaces timestamp with an ordinal index. Useful for testing.
 const QUERY_EMULATE_BSP = false  // (Only if NoConvergeForQuery) If enabled, queries block in a fashion that makes the system emulate a bulk synchronous design. Slower than async, but good for debugging.
-const TOPOLOGY_FIRST = false     // Should be false. Only process topology events (no algorithm messages) until the topology is fully loaded. For testing how useful the topology hooks only are.
+const TOPOLOGY_FIRST = false     // Should be false. Only process topology events (no algorithm-only events) until the topology is fully loaded. For testing how useful the topology hooks only are.
 const QUERY_NON_BLOCKING = false // Should be false. Determines if the input stream should be non blocked while waiting for a query result -- this way until we can make a better async state view. If a small rate or bundle size is used it could work (otherwise the system moves too fast).
 
 // For vertex allocation.
@@ -47,7 +47,7 @@ type Graph[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	GraphThreads        [THREAD_MAX]GraphThread[V, E, M, N] // Graph threads. NOTE: do not len(GraphThreads)! Use g.NumThreads instead. (it is a fixed size for offset purposes).
 	NumThreads          uint32                              // Number of threads.
 	Options             GraphOptions                        // Graph options.
-	InitMessages        map[RawType]M                       // Note: takes priority over InitAllMessages! If used, this is the mapping from raw vertex ID to the initial messages they receive.
+	InitMail            map[RawType]M                       // Note: takes priority over InitAllMail! If used, this is the mapping from raw vertex ID to the initial mail they receive.
 	TerminateData       []int64                             // Value for each thread to share their (sent - received) messages.
 	TerminateView       []int64                             // Thread view to terminate.
 	TerminateVotes      []int64                             // Vote to terminate.
@@ -62,22 +62,22 @@ type Graph[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	warnZeroTimestamp   uint64                              // Detection of zero timestamp; used for a unique notification.
 }
 
-// Graph Thread. Elements here are typically thread-local only (though queues/messages/channels have in/out positions).
+// Graph Thread. Elements here are typically thread-local only (though queues/channels have in/out positions).
 type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
-	_              [0]atomic.Int64                   // Alignment.
-	Vertices       []Vertex[V, E]                    // Internal vertex storage (see vertex.go). Ok to mem move, as other threads are not allowed to access.
-	VertexMessages []*[BUCKET_SIZE]VertexMessages[M] // For intra-node communication. Must NOT mem move.
-	Tidx           uint16                            // Thread self index.
-	Status         GraphThreadStatus                 // Thread's status. For debugging.
-	NumEdges       uint32                            // Thread's current total outgoing edge count (i.e., adds less deletes; ease of access here).
-	Command        chan Command                      // Incoming command channel.
+	_               [0]atomic.Int64                  // Alignment.
+	Vertices        []Vertex[V, E]                   // Internal vertex storage (see vertex.go). Ok to mem move, as other threads are not allowed to access.
+	VertexMailboxes []*[BUCKET_SIZE]VertexMailbox[M] // For intra-node communication. Must NOT mem move.
+	Tidx            uint16                           // Thread self index.
+	Status          GraphThreadStatus                // Thread's status. For debugging.
+	NumEdges        uint32                           // Thread's current total outgoing edge count (i.e., adds less deletes; ease of access here).
+	Command         chan Command                     // Incoming command channel.
 
 	NotificationQueue utils.RingBuffMPSC[Notification[N]] // Inbound notification queue for the thread.
 	NotificationBuff  utils.Deque[Notification[N]]        // Overfill buffer for notifications.
 
-	Notifications     []Notification[N] // Regular buffer for notifications.
-	MsgSend           uint64            // Number of messages sent by the thread.
-	MsgRecv           uint64            // Number of messages received by the thread.
+	Notifications     []Notification[N] // Regular buffer for notifications. A notification represents a vertex is 'active' as it has work to do (e.g. has mail in its inbox, or the notification itself is important).
+	MsgSend           uint64            // Number of messages sent by the thread. A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
+	MsgRecv           uint64            // Number of messages received by the thread.  A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
 	TopologyEventBuff []RawEdgeEvent[E] // Buffer for thread topology events that are ready to apply (been remitted).
 
 	VertexStructures  []*[BUCKET_SIZE]VertexStructure // Supplemental vertex structure (see vertex.go). Tracks extra structural properties (e.g. internal to external id).
@@ -141,7 +141,7 @@ func (g *Graph[V, E, M, N]) Init() {
 		}
 
 		gt.Vertices = make([]Vertex[V, E], 0, (BASE_SIZE * 4))
-		gt.VertexMessages = make([]*[BUCKET_SIZE]VertexMessages[M], 0, (BASE_SIZE*4)/BUCKET_SIZE)
+		gt.VertexMailboxes = make([]*[BUCKET_SIZE]VertexMailbox[M], 0, (BASE_SIZE*4)/BUCKET_SIZE)
 		gt.VertexStructures = make([]*[BUCKET_SIZE]VertexStructure, 0, (BASE_SIZE*4)/BUCKET_SIZE)
 		gt.VertexMap = make(map[RawType]uint32, (BASE_SIZE * 4))
 	}
@@ -154,7 +154,7 @@ func (g *Graph[V, E, M, N]) Init() {
 	if g.Options.DebugLevel >= 3 || g.Options.Profile {
 		log.Debug().Msg("Bit sizes (  Given  ): VertexPropType: " + utils.V(unsafe.Sizeof(*new(V))) + " EdgePropType: " + utils.V(unsafe.Sizeof(*new(E))) + " MsgType: " + utils.V(unsafe.Sizeof(*new(M))) + " NoteType " + utils.V(unsafe.Sizeof(*new(N))))
 		log.Debug().Msg("Bit sizes (Ephemeral): TopologyEvent: " + utils.V(unsafe.Sizeof(*new(TopologyEvent[E]))) + " RawEdgeEvent: " + utils.V(unsafe.Sizeof(*new(RawEdgeEvent[E]))) + " Notification: " + utils.V(unsafe.Sizeof(*new(Notification[N]))))
-		log.Debug().Msg("Bit sizes ( Derived ): Vertex: " + utils.V(unsafe.Sizeof(*new(Vertex[V, E]))) + " VertexMsg: " + utils.V(unsafe.Sizeof(*new(VertexMessages[M]))) + " VertexStruc " + utils.V(unsafe.Sizeof(*new(VertexStructure))) + " Edge: " + utils.V(unsafe.Sizeof(*new(Edge[E]))))
+		log.Debug().Msg("Bit sizes ( Derived ): Vertex: " + utils.V(unsafe.Sizeof(*new(Vertex[V, E]))) + " VertexMsg: " + utils.V(unsafe.Sizeof(*new(VertexMailbox[M]))) + " VertexStruc " + utils.V(unsafe.Sizeof(*new(VertexStructure))) + " Edge: " + utils.V(unsafe.Sizeof(*new(Edge[E]))))
 		log.Debug().Msg("Bit sizes: Graph: " + utils.V(unsafe.Sizeof(*new(Graph[V, E, M, N]))) + " GraphThread: " + utils.V(unsafe.Sizeof(*new(GraphThread[V, E, M, N]))) + " GraphOptions: " + utils.V(unsafe.Sizeof(*new(GraphOptions))))
 		log.Debug().Msg("Bit sizes: RingBuffSPSC: " + utils.V(unsafe.Sizeof(*new(utils.RingBuffSPSC[TopologyEvent[E]]))) + " RingBuffMPSC: " + utils.V(unsafe.Sizeof(*new(utils.RingBuffMPSC[uint32]))) + " GrowableRingBuff: " + utils.V(unsafe.Sizeof(*new(utils.GrowableRingBuff[TopologyEvent[E]]))) + " NotifDeque " + utils.V(unsafe.Sizeof(*new(utils.Deque[Notification[N]]))))
 		log.Debug().Msg("Initial caps: FromEmit: " + utils.V(g.GraphThreads[0].FromEmitQueue.EnqCap()) + " ToRemit: " + utils.V(g.GraphThreads[0].ToRemitQueue.EnqCap()))
@@ -339,11 +339,11 @@ func (g *Graph[V, E, M, N]) PrintStructure() {
 }
 
 // Debugging function to print properties of the graph.
-func (g *Graph[V, E, M, N]) PrintVertexProps(message string) {
+func (g *Graph[V, E, M, N]) PrintVertexProps(prefix string) {
 	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E]) {
-		message += utils.V(g.NodeVertexRawID(internalId)) + ":" + utils.V(vertex.Property) + ", "
+		prefix += utils.V(g.NodeVertexRawID(internalId)) + ":" + utils.V(vertex.Property) + ", "
 	})
-	log.Info().Msg(message)
+	log.Info().Msg(prefix)
 }
 
 // Writes the vertex properties to a file.

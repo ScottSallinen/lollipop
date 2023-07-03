@@ -8,7 +8,7 @@ import (
 )
 
 // Performs some sanity checks for correctness.
-func (*CC) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func (*CC) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	uniqueComponents := make(map[uint32]bool)
 
 	// Make sure the labels inside connected components are consistent
@@ -31,7 +31,7 @@ func (*CC) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Messa
 }
 
 // Compares the results of the algorithm to the oracle.
-func (*CC) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func (*CC) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	// Default compare function is fine; diffs should all be zero (algorithm is deterministic).
 	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) uint32 { return vp.Value })
 }
@@ -40,5 +40,5 @@ func (*CC) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Message,
 func main() {
 	graphOptions := graph.FlagsToOptions()
 	graphOptions.Undirected = true // undirected should always be true.
-	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), graphOptions)
+	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(CC), graphOptions)
 }

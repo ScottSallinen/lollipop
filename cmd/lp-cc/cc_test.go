@@ -10,7 +10,7 @@ import (
 )
 
 // Expect two connected components.
-func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], t *testing.T) {
+func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], t *testing.T) {
 	expectations := []uint32{0, 1, 1, 0, 1, 1, 1, 0, 0, 0}
 	for i := range expectations {
 		internal, gV := g.NodeVertexFromRaw(graph.AsRawType(i))
@@ -33,7 +33,7 @@ func TestAsyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = false
 		myOpts.Dynamic = false
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), myOpts)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(CC), myOpts)
 		testGraphExpect(g, t)
 	}
 }
@@ -43,7 +43,7 @@ func TestSyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = true
 		myOpts.Dynamic = false
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), myOpts)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(CC), myOpts)
 		testGraphExpect(g, t)
 	}
 }
@@ -52,7 +52,7 @@ func TestDynamic(t *testing.T) {
 		myOpts := baseOptions
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Dynamic = true
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), myOpts)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(CC), myOpts)
 		testGraphExpect(g, t)
 	}
 }
@@ -80,7 +80,7 @@ func TestDynamicCreation(t *testing.T) {
 		}
 		utils.Shuffle(rawTestGraph)
 
-		gDyn := &graph.Graph[VertexProperty, EdgeProperty, Message, Note]{}
+		gDyn := &graph.Graph[VertexProperty, EdgeProperty, Mail, Note]{}
 		gDyn.Options = graph.GraphOptions{
 			NumThreads:       threads,
 			Dynamic:          true,
@@ -93,7 +93,7 @@ func TestDynamicCreation(t *testing.T) {
 		myOpts := baseOptions
 		myOpts.NumThreads = threads
 
-		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(CC), myOpts)
+		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(CC), myOpts)
 
 		graph.CheckGraphStructureEquality(gDyn, gStatic)
 

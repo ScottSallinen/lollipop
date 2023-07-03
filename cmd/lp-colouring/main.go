@@ -9,7 +9,7 @@ import (
 	"github.com/ScottSallinen/lollipop/utils"
 )
 
-func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	maxColour := uint32(0)
 	allColours := make([]uint32, 1, 64)
 	g.NodeForEachVertex(func(_, _ uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
@@ -28,7 +28,7 @@ func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Mess
 	log.Info().Msg("Max colour: " + utils.V(maxColour) + " Number of colours: " + utils.V(nColours) + " Ratio: " + utils.V(float64(maxColour+1)/float64(nColours)))
 }
 
-func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	g.NodeForEachVertex(func(i, sidx uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
 		colour := vertex.Property.Colour
 		rawId := g.NodeVertexRawID(sidx)
@@ -39,8 +39,8 @@ func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty
 			log.Panic().Msg("vertex rawId " + utils.V(rawId) + " is not coloured. dg " + utils.V(outDegree) + " internalIdx: " + utils.V(sidx) + " tidx " + utils.V(tidx))
 		} else if colour > outDegree && colour > inDegree {
 			log.Error().Msg("vertex rawId " + utils.V(rawId) + " has a colour " + utils.V(colour) + " that is larger than its own degree: (out: " + utils.V(outDegree) + " in: " + utils.V(inDegree) + ")")
-			vtm, _ := g.NodeVertexMessages(sidx)
-			log.Error().Msg(utils.V(vtm.Inbox.NbrScratch))
+			mailbox, _ := g.NodeVertexMailbox(sidx)
+			log.Error().Msg(utils.V(mailbox.Inbox.NbrScratch))
 			log.Panic().Msg("")
 		}
 		for _, e := range vertex.OutEdges {
@@ -48,13 +48,13 @@ func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty
 			target := g.NodeVertex(didx)
 			if colour == target.Property.Colour && g.NodeVertexRawID(didx) != rawId {
 				log.Error().Msg("An edge exists from vertex Source " + utils.V(sidx) + " [raw " + utils.V(rawId) + "] and Target " + utils.V(didx) + " [raw " + utils.V(g.NodeVertexRawID(didx)) + "] which have the same colour " + utils.V(colour))
-				vtm, _ := g.NodeVertexMessages(didx)
-				log.Error().Msg("Target has view of Source: " + utils.V(vtm.Inbox.NbrScratch[e.Pos]))
+				mailbox, _ := g.NodeVertexMailbox(didx)
+				log.Error().Msg("Target has view of Source: " + utils.V(mailbox.Inbox.NbrScratch[e.Pos]))
 				for _, te := range target.OutEdges {
 					if te.Didx == sidx {
 						log.Error().Msg("Found edge from target to source")
-						selfMessages, _ := g.NodeVertexMessages(sidx)
-						log.Error().Msg("Source has view of target: " + utils.V(selfMessages.Inbox.NbrScratch[te.Pos]))
+						selfMailbox, _ := g.NodeVertexMailbox(sidx)
+						log.Error().Msg("Source has view of target: " + utils.V(selfMailbox.Inbox.NbrScratch[te.Pos]))
 						log.Panic().Msg("")
 					}
 				}
@@ -75,16 +75,16 @@ func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty
 
 // Launch point. Parses command line arguments, and launches the graph execution.
 func main() {
-	useMsgStrategy := flag.Bool("msg", false, "Use direct messaging strategy instead of message merging.")
+	useMsgStrategy := flag.Bool("msg", false, "Use direct messaging strategy instead of mailbox and merging.")
 	options := graph.FlagsToOptions()
 	options.Undirected = true // undirected should always be true.
 	if *useMsgStrategy {
 		if options.Sync {
 			log.Panic().Msg("Cannot use a messaging strategy with synchronous iterations.")
 		}
-		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MessageMsg, NoteMsg](new(ColouringMsg), options)
+		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MailMsg, NoteMsg](new(ColouringMsg), options)
 	} else {
-		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(Colouring), options)
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), options)
 	}
 
 }

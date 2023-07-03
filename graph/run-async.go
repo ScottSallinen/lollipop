@@ -10,72 +10,74 @@ import (
 	"github.com/ScottSallinen/lollipop/utils"
 )
 
-// Sends message(s) that will start the algorithm.
-func SendInitialMessages[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N]) {
-	if aBVM, ok := any(alg).(AlgorithmBaseVertexMessage[V, E, M, N]); ok {
+// Sends initial data that will start the algorithm.
+func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N]) {
+	if aBVM, ok := any(alg).(AlgorithmBaseVertexMailbox[V, E, M, N]); ok {
 		now := g.AlgTimer.Elapsed()
-		// First, set the message to the algorithm defined base value.
+		// First, set the mailbox to the algorithm defined base value.
 		g.NodeParallelFor(func(_, threadOffset uint32, gt *GraphThread[V, E, M, N]) int {
 			for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
-				vertex, vtm := gt.VertexAndMessages(i)
-				vtm.Inbox = aBVM.BaseVertexMessage(vertex, (threadOffset | i), gt.VertexRawID(i))
+				vertex, mailbox := gt.VertexAndMailbox(i)
+				mailbox.Inbox = aBVM.BaseVertexMailbox(vertex, (threadOffset | i), gt.VertexRawID(i))
 			}
 			return 0
 		})
-		log.Trace().Msg(", base_messages, " + utils.F("%0.3f", (g.AlgTimer.Elapsed()-now).Seconds()*1000))
+		log.Trace().Msg(", base_mailbox, " + utils.F("%0.3f", (g.AlgTimer.Elapsed()-now).Seconds()*1000))
 	}
 
 	now := g.AlgTimer.Elapsed()
-	if g.InitMessages == nil {
-		if aIAM, ok := any(alg).(AlgorithmInitAllMessage[V, E, M, N]); ok {
-			// Target all vertices: send the algorithm defined initial visit value as a message.
+	if g.InitMail == nil {
+		if aIAM, ok := any(alg).(AlgorithmInitAllMail[V, E, M, N]); ok {
+			// Target all vertices: send the algorithm defined initial value as mail.
 			g.NodeParallelFor(func(_, threadOffset uint32, gt *GraphThread[V, E, M, N]) int {
 				sent := uint64(0)
 				for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
-					vertex, vtm := gt.VertexAndMessages(i)
+					vertex, mailbox := gt.VertexAndMailbox(i)
 					rawId := gt.VertexRawID(i)
 					vidx := (threadOffset | i)
 
-					msg := aIAM.InitAllMessage(vertex, vidx, rawId)
+					mail := aIAM.InitAllMail(vertex, vidx, rawId)
 
-					if newInfo := alg.MessageMerge(msg, vidx, &vtm.Inbox); newInfo {
-						activity := atomic.LoadInt32(&vtm.Activity)
-						msg = alg.MessageRetrieve(&vtm.Inbox, vertex)
-						sent += alg.OnUpdateVertex(g, vertex, Notification[N]{Target: vidx, Activity: activity}, msg)
+					if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
+						activity := atomic.LoadInt32(&mailbox.Activity)
+						mail = alg.MailRetrieve(&mailbox.Inbox, vertex)
+						sent += alg.OnUpdateVertex(g, vertex, Notification[N]{Target: vidx, Activity: activity}, mail)
 					}
 				}
 				gt.MsgSend += sent
 				return 0
 			})
 		} else {
-			log.Warn().Msg("WARNING: No initial messages defined for algorithm? InitMessages is nil and algorithm does not implement InitAllMessage.")
+			log.Warn().Msg("WARNING: No initial data defined for algorithm? InitMail is nil and algorithm does not implement InitAllMail.")
 		}
 	} else {
-		// Target specific vertices: send the algorithm defined initial visit value as a message.
-		for vRawId, msg := range g.InitMessages {
+		// Target specific vertices: send the algorithm defined initial value as mail.
+		for vRawId, mail := range g.InitMail {
 			vidx, vertex := g.NodeVertexFromRaw(vRawId)
 			if vertex == nil {
 				log.Warn().Msg("WARNING: Target source init vertex not found: " + utils.V(vRawId))
 				continue
 			}
-			vtm, tidx := g.NodeVertexMessages(vidx)
+			mailbox, tidx := g.NodeVertexMailbox(vidx)
 
-			if newInfo := alg.MessageMerge(msg, vidx, &vtm.Inbox); newInfo {
-				msg = alg.MessageRetrieve(&vtm.Inbox, vertex)
-				activity := atomic.LoadInt32(&vtm.Activity)
-				sent := alg.OnUpdateVertex(g, vertex, Notification[N]{Target: vidx, Activity: activity}, msg)
+			if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
+				mail = alg.MailRetrieve(&mailbox.Inbox, vertex)
+				activity := atomic.LoadInt32(&mailbox.Activity)
+				sent := alg.OnUpdateVertex(g, vertex, Notification[N]{Target: vidx, Activity: activity}, mail)
 				g.GraphThreads[tidx].MsgSend += sent
 			}
 		}
 	}
-	log.Trace().Msg(", init_messages, " + utils.F("%.3f", (g.AlgTimer.Elapsed()-now).Seconds()*1000))
+	log.Trace().Msg(", init_mail, " + utils.F("%.3f", (g.AlgTimer.Elapsed()-now).Seconds()*1000))
 }
 
-// Will pull a bundle of messages targeting this thread, and then process them all.
+// Will pull a bundle of notifications targeting this thread, and then process them all.
+// A notification represents a vertex is 'active' as it has work to do (e.g. has mail in its inbox, or the notification itself is important).
+// We define a message as a notification that was genuinely sent and is thus in the queue (e.g. it was not discarded due to non-uniqueness).
 // Will check for termination only if the bool is set.
 func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], exitCheck bool) (done bool, algCount int) {
 
-	// First check for any back-pressure messages from the last attempt. This are first in FIFO.
+	// First check for any back-pressure from the last attempt. This are first in FIFO.
 	if gt.NotificationBuff.Len() != 0 {
 		for ; algCount < MSG_MAX; algCount++ {
 			if notif, ok := gt.NotificationBuff.TryPopFront(); !ok {
@@ -87,7 +89,7 @@ func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M,
 		}
 	}
 
-	// If we still have room (no back-pressure), then pull directly from the queue.
+	// If we still have room (no more back-pressure), then pull directly from the queue.
 	for ; algCount < MSG_MAX; algCount++ {
 		if notif, ok := gt.NotificationQueue.Accept(); !ok {
 			break
@@ -96,13 +98,13 @@ func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M,
 		}
 	}
 
-	// If we have too many messages in the queue, drain them all: push them back into the back-pressure queue.
+	// If we have too much in the queue, drain it all: push them back into the back-pressure queue.
 	if gt.NotificationQueue.DeqCheckRange() > (gt.NotificationQueue.DeqCap())/2 { // TODO: good ratio?
 		if g.warnBackPressure == 0 && atomic.CompareAndSwapUint64(&g.warnBackPressure, 0, 1) {
-			log.Warn().Msg("WARNING: Detected large pressure on notification queue. Consider increasing flag \"-m\" capacity.")
+			log.Warn().Msg("WARNING: Detected large pressure on queue. Consider increasing flag \"-m\" capacity.")
 			log.Warn().Msg("Will attempt to prevent blocking with a second buffer.")
 		}
-		for { // TODO: we should probably call this if we get blocked while trying to send messages.
+		for { // TODO: we should probably call this if we get blocked while trying to send.
 			if notif, ok := gt.NotificationQueue.Accept(); !ok {
 				break
 			} else {
@@ -114,12 +116,12 @@ func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M,
 	}
 
 	sent := uint64(0)
-	// Process all messages that we pulled.
+	// Process all that we pulled.
 	for i := 0; i < algCount; i++ {
-		vertex, vtm := gt.VertexAndMessages(gt.Notifications[i].Target)
-		gt.Notifications[i].Activity = atomic.AddInt32(&(vtm.Activity), -1)
-		msg := alg.MessageRetrieve(&(vtm.Inbox), vertex)
-		sent += alg.OnUpdateVertex(g, vertex, gt.Notifications[i], msg)
+		vertex, mailbox := gt.VertexAndMailbox(gt.Notifications[i].Target)
+		gt.Notifications[i].Activity = atomic.AddInt32(&(mailbox.Activity), -1)
+		mail := alg.MailRetrieve(&(mailbox.Inbox), vertex)
+		sent += alg.OnUpdateVertex(g, vertex, gt.Notifications[i], mail)
 	}
 
 	if algCount != 0 { // Update send and receive counts.
@@ -168,15 +170,15 @@ func ConvergeAsync[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 		go g.PrintTerminationStatus(&stopTimers)
 	}
 
-	// Send initial visit message(s)
-	SendInitialMessages(alg, g)
+	// Send initial data to start the algorithm.
+	SendInitialMail(alg, g)
 
 	// Launch threads.
 	for t := uint32(0); t < g.NumThreads; t++ {
 		go ConvergeAsyncThread(alg, g, t, wg)
 	}
 
-	wg.Wait() // Wait for alg termination.
+	wg.Wait() // Wait for algorithm termination.
 	stopTimers = true
 	g.EnsureCompleteness()
 }

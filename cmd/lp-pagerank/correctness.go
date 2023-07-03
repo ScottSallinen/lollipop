@@ -12,7 +12,7 @@ import (
 var oracleFile *os.File // File for oracle results
 
 // PrintTopN: Prints the top N vertices and their scores.
-func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], size uint32) {
+func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], size uint32) {
 	data := make([]float64, g.NodeVertexCount())
 	vIds := make([]uint32, g.NodeVertexCount())
 	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
@@ -32,7 +32,7 @@ func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], size
 }
 
 // Performs some sanity checks for correctness.
-func (*PageRank) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func (*PageRank) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	sum := 0.0
 	remain := 0.0
 	nEdges := 0
@@ -71,7 +71,7 @@ func (*PageRank) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty,
 }
 
 // Compares the results of the algorithm to an oracle solution.
-func (*PageRank) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Message, Note]) {
+func (*PageRank) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	ia := make([]float64, oracle.NodeVertexCount())
 	ib := make([]float64, g.NodeVertexCount())
 	numEdges := uint64(0)

@@ -19,11 +19,11 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 	gt.VertexMap[rawId] = vidx
 
 	bucket, pos := idxToBucket(idx)
-	if bucket >= uint32(len(gt.VertexMessages)) {
-		gt.VertexMessages = append(gt.VertexMessages, new([BUCKET_SIZE]VertexMessages[M]))
+	if bucket >= uint32(len(gt.VertexMailboxes)) {
+		gt.VertexMailboxes = append(gt.VertexMailboxes, new([BUCKET_SIZE]VertexMailbox[M]))
 		gt.VertexStructures = append(gt.VertexStructures, new([BUCKET_SIZE]VertexStructure))
 	}
-	gt.VertexMessages[bucket][pos].Inbox = gt.VertexMessages[bucket][pos].Inbox.New()
+	gt.VertexMailboxes[bucket][pos].Inbox = gt.VertexMailboxes[bucket][pos].Inbox.New()
 
 	gt.Vertices = append(gt.Vertices, Vertex[V, E]{})
 	gt.Vertices[idx].Property = gt.Vertices[idx].Property.New()
@@ -35,28 +35,28 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 	}
 
 	v := &gt.Vertices[idx]
-	vtm := &gt.VertexMessages[bucket][pos]
+	mailbox := &gt.VertexMailboxes[bucket][pos]
 
 	// TODO: Optimize? This is a runtime type check that hits every time. Maybe we can do better.
-	if aBVM, ok := any(alg).(AlgorithmBaseVertexMessage[V, E, M, N]); ok {
-		vtm.Inbox = aBVM.BaseVertexMessage(v, vidx, rawId)
+	if aBVM, ok := any(alg).(AlgorithmBaseVertexMailbox[V, E, M, N]); ok {
+		mailbox.Inbox = aBVM.BaseVertexMailbox(v, vidx, rawId)
 	}
 
-	var msg M
+	var mail M
 	if !srcInit {
 		// TODO: Same as above, runtime type check.
-		if algIAM, ok := any(alg).(AlgorithmInitAllMessage[V, E, M, N]); ok {
-			msg = algIAM.InitAllMessage(v, vidx, rawId)
+		if algIAM, ok := any(alg).(AlgorithmInitAllMail[V, E, M, N]); ok {
+			mail = algIAM.InitAllMail(v, vidx, rawId)
 		}
 	} else {
-		if msg, srcInit = g.InitMessages[rawId]; !srcInit {
+		if mail, srcInit = g.InitMail[rawId]; !srcInit {
 			return vidx
 		}
 	}
 
-	if newInfo := alg.MessageMerge(msg, vidx, &vtm.Inbox); newInfo {
-		msg = alg.MessageRetrieve(&vtm.Inbox, v)
-		sent := alg.OnUpdateVertex(g, v, Notification[N]{Target: vidx}, msg)
+	if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
+		mail = alg.MailRetrieve(&mailbox.Inbox, v)
+		sent := alg.OnUpdateVertex(g, v, Notification[N]{Target: vidx}, mail)
 		gt.MsgSend += sent
 	}
 	return vidx
@@ -67,7 +67,7 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 	var ok bool
 	var didx uint32
 	var event TopologyEvent[E]
-	srcInit := (g.InitMessages != nil)
+	srcInit := (g.InitMail != nil)
 
 	spaceAvailable := gt.ToRemitQueue.EnqCheckRange()
 	for ; count < spaceAvailable; count++ {
@@ -175,7 +175,7 @@ func (gt *GraphThread[V, E, M, N]) checkInsertPending(sidx uint32, pending uint3
 
 // Main function to enact topology events. Will look through the topology event buffer and apply changes to the graph.
 func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount int, delOnExpire uint64) (addEvents uint32, delEvents uint32) {
-	srcInit := (g.InitMessages != nil)
+	srcInit := (g.InitMail != nil)
 	numInjected := 0
 	uniqueCount := uint64(0)
 	canCheckTimestamp := (g.Options.TimestampPos != 0) || FAKE_TIMESTAMP
@@ -208,7 +208,7 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 	for u := uint64(0); u < uniqueCount; u++ {
 		pendIdx := gt.VertexPendingBuff[u]
 		sidx = pendIdx[0] // First entry is the source vertex internalId.
-		src, vtm := gt.VertexAndMessages(sidx)
+		src, mailbox := gt.VertexAndMailbox(sidx)
 
 		// Here we loop over changes to a vertices edges.
 		for idx := 1; idx < len(pendIdx); {
@@ -225,8 +225,8 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 			}
 			// From the gathered set of consecutive adds, apply them.
 			if len(src.OutEdges) > eidxStart {
-				msg := alg.MessageRetrieve(&vtm.Inbox, src)
-				sent += alg.OnEdgeAdd(g, src, sidx, eidxStart, msg)
+				mail := alg.MailRetrieve(&mailbox.Inbox, src)
+				sent += alg.OnEdgeAdd(g, src, sidx, eidxStart, mail)
 			}
 			addEvents += uint32(len(src.OutEdges) - eidxStart)
 
@@ -323,8 +323,8 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 				}
 
 				// From the gathered set of consecutive deletes, apply them.
-				msg := alg.MessageRetrieve(&vtm.Inbox, src)
-				sent += alg.OnEdgeDel(g, src, sidx, deletedEdges, msg)
+				mail := alg.MailRetrieve(&mailbox.Inbox, src)
+				sent += alg.OnEdgeDel(g, src, sidx, deletedEdges, mail)
 				delEvents += uint32(len(deletedEdges))
 			} // Addressed the delete(s), continue the loop (go back to checking for consecutive adds).
 		}

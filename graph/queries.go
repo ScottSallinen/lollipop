@@ -143,12 +143,12 @@ func QueryFinishConcurrent[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E
 		tse.Latency = (g.Watch.Elapsed() - tse.CurrentRuntime)
 		nQueries++
 
-		msg := ", query, " + utils.V(nQueries) + ", dE, " + utils.V(int64(tse.EdgeCount)-edgesLast)
+		toPrint := ", query, " + utils.V(nQueries) + ", dE, " + utils.V(int64(tse.EdgeCount)-edgesLast)
 		if finish {
-			msg += ", preFinish, " + utils.F("%.3f", preFinish.Seconds()*1000)
+			toPrint += ", preFinish, " + utils.F("%.3f", preFinish.Seconds()*1000)
 		}
-		msg += ", totalQuery, " + utils.F("%.3f", tse.Latency.Seconds()*1000) + ", algTimeSinceLast, " + utils.F("%.3f", tse.AlgTimeSinceLast.Seconds()*1000) + ", totalRuntime, " + utils.F("%.3f", tse.CurrentRuntime.Seconds()*1000)
-		log.Info().Msg(msg)
+		toPrint += ", totalQuery, " + utils.F("%.3f", tse.Latency.Seconds()*1000) + ", algTimeSinceLast, " + utils.F("%.3f", tse.AlgTimeSinceLast.Seconds()*1000) + ", totalRuntime, " + utils.F("%.3f", tse.CurrentRuntime.Seconds()*1000)
+		log.Info().Msg(toPrint)
 
 		edgesLast = int64(tse.EdgeCount)
 		if sendTimeSeries {

@@ -12,19 +12,19 @@ import (
 
 // Basic algorithm template. Se cmd/lp-template for better descriptions.
 type Algorithm[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	OnUpdateVertex(g *Graph[V, E, M, N], v *Vertex[V, E], n Notification[N], message M) (sent uint64)
-	MessageMerge(incoming M, sidx uint32, existing *M) (newInfo bool)
-	MessageRetrieve(existing *M, v *Vertex[V, E]) (outgoing M)
-	OnEdgeAdd(g *Graph[V, E, M, N], v *Vertex[V, E], sidx uint32, eidxStart int, message M) (sent uint64)
-	OnEdgeDel(g *Graph[V, E, M, N], v *Vertex[V, E], sidx uint32, deletedEdges []Edge[E], message M) (sent uint64)
+	OnUpdateVertex(g *Graph[V, E, M, N], v *Vertex[V, E], n Notification[N], mail M) (sent uint64)
+	MailMerge(incoming M, sidx uint32, existing *M) (newInfo bool)
+	MailRetrieve(existing *M, v *Vertex[V, E]) (outgoing M)
+	OnEdgeAdd(g *Graph[V, E, M, N], v *Vertex[V, E], sidx uint32, eidxStart int, mail M) (sent uint64)
+	OnEdgeDel(g *Graph[V, E, M, N], v *Vertex[V, E], sidx uint32, deletedEdges []Edge[E], mail M) (sent uint64)
 }
 
-type AlgorithmInitAllMessage[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	InitAllMessage(v *Vertex[V, E], internalId uint32, rawId RawType) (initialMessage M)
+type AlgorithmInitAllMail[V VPI[V], E EPI[E], M MVI[M], N any] interface {
+	InitAllMail(v *Vertex[V, E], internalId uint32, rawId RawType) (initialMail M)
 }
 
-type AlgorithmBaseVertexMessage[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	BaseVertexMessage(v *Vertex[V, E], internalId uint32, rawId RawType) (baseMessage M)
+type AlgorithmBaseVertexMailbox[V VPI[V], E EPI[E], M MVI[M], N any] interface {
+	BaseVertexMailbox(v *Vertex[V, E], internalId uint32, rawId RawType) (baseMail M)
 }
 
 type AlgorithmOnFinish[V VPI[V], E EPI[E], M MVI[M], N any] interface {
@@ -43,7 +43,7 @@ type AlgorithmOnApplyTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 	OnApplyTimeSeries(tse chan TimeseriesEntry[V, E, M, N], wg *sync.WaitGroup)
 }
 
-// Wrapper function that will block if the message queue is full.
+// Wrapper function that will block if the notification queue is full.
 // TODO: should drain our incoming queue if we are blocked... but how to make another function call without sacrificing the inlining...
 func (g *Graph[V, E, M, N]) EnsureSend(want bool, success bool, n Notification[N], s uint32, pos uint64, tidx uint32) (sent uint64) {
 	// Why is it this way? Because Go has this weird fetish for the number 80... and functions have to keep under that limit.
@@ -60,9 +60,9 @@ func (g *Graph[V, E, M, N]) EnsureSend(want bool, success bool, n Notification[N
 	return 0
 }
 
-// Send a message to a vertex. Will check for uniqueness, only desiring a real message if the target vertex has not yet been activated.
-func (g *Graph[V, E, M, N]) UniqueNotification(sidx uint32, n Notification[N], vtm *VertexMessages[M], tidx uint32) (want bool, ok bool, d Notification[N], s uint32, pos uint64, t uint32) {
-	if atomic.CompareAndSwapInt32(&vtm.Activity, 0, 1) { // if atomic.SwapInt32(&vtm.Activity, 1) == 0 {
+// Send a notification to a vertex. Will check for uniqueness, only emplacing if the target vertex has not yet been activated.
+func (g *Graph[V, E, M, N]) UniqueNotification(sidx uint32, n Notification[N], mailbox *VertexMailbox[M], tidx uint32) (want bool, ok bool, d Notification[N], s uint32, pos uint64, t uint32) {
+	if atomic.CompareAndSwapInt32(&mailbox.Activity, 0, 1) {
 		pos, ok = g.GraphThreads[tidx].NotificationQueue.PutFastMP(n)
 		return true, ok, n, sidx, pos, tidx
 	}
@@ -70,8 +70,9 @@ func (g *Graph[V, E, M, N]) UniqueNotification(sidx uint32, n Notification[N], v
 }
 
 // As opposed to a unique notification, this will increment activity and always send a notification.
-func (g *Graph[V, E, M, N]) ActiveNotification(sidx uint32, n Notification[N], vtm *VertexMessages[M], tidx uint32) (want bool, ok bool, d Notification[N], s uint32, pos uint64, t uint32) {
-	atomic.AddInt32(&vtm.Activity, 1)
+// This us useful for a "pure-message-passing" strategy.
+func (g *Graph[V, E, M, N]) ActiveNotification(sidx uint32, n Notification[N], mailbox *VertexMailbox[M], tidx uint32) (want bool, ok bool, d Notification[N], s uint32, pos uint64, t uint32) {
+	atomic.AddInt32(&mailbox.Activity, 1)
 	pos, ok = g.GraphThreads[tidx].NotificationQueue.PutFastMP(n)
 	return true, ok, n, sidx, pos, tidx
 }
@@ -140,13 +141,13 @@ func Run[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]
 }
 
 // Helper function to launch a graph execution.
-func LaunchGraphExecution[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](a Algorithm[V, E, M, N], options GraphOptions, initMessages ...map[RawType]M) *Graph[V, E, M, N] {
+func LaunchGraphExecution[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](a Algorithm[V, E, M, N], options GraphOptions, initMail ...map[RawType]M) *Graph[V, E, M, N] {
 	g := new(Graph[V, E, M, N])
 	g.Options = options
-	if len(initMessages) > 0 {
-		g.InitMessages = initMessages[0]
+	if len(initMail) > 0 {
+		g.InitMail = initMail[0]
 	} else {
-		g.InitMessages = nil
+		g.InitMail = nil
 	}
 
 	Launch[EP](a, g)
@@ -267,8 +268,8 @@ type blankAlg[V VPI[V], E EPI[E], M MVI[M], N any] struct{}
 func (e *blankAlg[V, E, M, N]) OnUpdateVertex(*Graph[V, E, M, N], *Vertex[V, E], Notification[N], M) (s uint64) {
 	return
 }
-func (e *blankAlg[V, E, M, N]) MessageMerge(M, uint32, *M) (b bool)     { return false }
-func (e *blankAlg[V, E, M, N]) MessageRetrieve(*M, *Vertex[V, E]) (m M) { return }
+func (e *blankAlg[V, E, M, N]) MailMerge(M, uint32, *M) (b bool)     { return false }
+func (e *blankAlg[V, E, M, N]) MailRetrieve(*M, *Vertex[V, E]) (m M) { return }
 func (e *blankAlg[V, E, M, N]) OnEdgeAdd(*Graph[V, E, M, N], *Vertex[V, E], uint32, int, M) (s uint64) {
 	return
 }

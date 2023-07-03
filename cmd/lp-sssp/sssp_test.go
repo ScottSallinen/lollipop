@@ -11,7 +11,7 @@ import (
 
 // Expectation when 1 is src.
 // TODO: Test other sources!
-func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note], t *testing.T) {
+func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], t *testing.T) {
 	expectations := []float64{4.0, 1.0, 3.0, 3.0, 2.0, 3.0, EMPTY_VAL}
 	for i := range expectations {
 		internal, v := g.NodeVertexFromRaw(graph.AsRawType(i))
@@ -22,7 +22,7 @@ func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, Message, Note]
 	}
 }
 
-var testInitMsgs = map[graph.RawType]Message{graph.AsRawType(1): 1.0}
+var testInitMsgs = map[graph.RawType]Mail{graph.AsRawType(1): 1.0}
 
 var baseOptions = graph.GraphOptions{
 	Name:             "../../data/test.txt",
@@ -35,7 +35,7 @@ func TestAsyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = false
 		myOpts.Dynamic = false
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(SSSP), myOpts, testInitMsgs)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs)
 		testGraphExpect(g, t)
 	}
 }
@@ -45,7 +45,7 @@ func TestSyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = true
 		myOpts.Dynamic = false
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(SSSP), myOpts, testInitMsgs)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs)
 		testGraphExpect(g, t)
 	}
 }
@@ -55,7 +55,7 @@ func TestDynamic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = false
 		myOpts.Dynamic = true
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(SSSP), myOpts, testInitMsgs)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs)
 		testGraphExpect(g, t)
 	}
 }
@@ -83,21 +83,21 @@ func TestDynamicCreation(t *testing.T) {
 		}
 		utils.Shuffle(rawTestGraph)
 
-		gDyn := &graph.Graph[VertexProperty, EdgeProperty, Message, Note]{}
+		gDyn := &graph.Graph[VertexProperty, EdgeProperty, Mail, Note]{}
 		gDyn.Options = graph.GraphOptions{
 			// No name; doing special load.
 			NumThreads:       THREADS,
 			CheckCorrectness: true,
 			Dynamic:          true,
 		}
-		gDyn.InitMessages = testInitMsgs
+		gDyn.InitMail = testInitMsgs
 
 		graph.DynamicGraphExecutionFromTestEvents(new(SSSP), gDyn, rawTestGraph)
 
 		myOpts := baseOptions
 		myOpts.NumThreads = THREADS
 
-		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(SSSP), myOpts, testInitMsgs)
+		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs)
 
 		graph.CheckGraphStructureEquality(gDyn, gStatic)
 

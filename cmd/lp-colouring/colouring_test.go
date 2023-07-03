@@ -19,7 +19,7 @@ func TestSyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Dynamic = false
 		myOpts.Sync = true
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(Colouring), myOpts)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), myOpts)
 		g.PrintVertexProps("Sync colours: ")
 	}
 }
@@ -30,7 +30,7 @@ func TestAsyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Dynamic = false
 		myOpts.Sync = false
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(Colouring), myOpts)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), myOpts)
 		g.PrintVertexProps("Async colours: ")
 	}
 }
@@ -41,7 +41,7 @@ func TestAsyncDynamic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Dynamic = true
 		myOpts.Sync = false
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Message, Note](new(Colouring), myOpts)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), myOpts)
 		g.PrintVertexProps("Dynamic colours: ")
 	}
 }
@@ -63,7 +63,7 @@ func TestAsyncDynamicWithDelete(t *testing.T) {
 
 		THREADS := uint32(rand.Intn(8-1) + 1)
 
-		g := &graph.Graph[VertexProperty, EdgeProperty, Message, Note]{}
+		g := &graph.Graph[VertexProperty, EdgeProperty, Mail, Note]{}
 		g.Options = graph.GraphOptions{
 			NumThreads:       THREADS,
 			Undirected:       true,
