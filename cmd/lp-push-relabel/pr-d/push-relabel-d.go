@@ -124,16 +124,17 @@ func (pr *PushRelabelD) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 			pos = int32(len(v.Property.Nbrs))
 			v.Property.Nbrs = append(v.Property.Nbrs, Neighbour{Height: InitialHeight, ResCap: 0, Pos: -1, Didx: e.Didx})
 			v.Property.NbrMap[e.Didx] = pos
-			// Initiate a handshake
-			vtm, tidx := g.NodeVertexMessages(e.Didx)
-			sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
-				Target: e.Didx,
-				Note:   Note{Height: v.Property.NewHeight, Flow: pos, SrcId: myId, SrcPos: -1, Handshake: true},
-			}, vtm, tidx))
 			v.Property.UnknownPosCount++
 		}
 
 		v.Property.Nbrs[pos].ResCap += int32(e.Property.Weight)
+	}
+	for i, nbr := range v.Property.Nbrs {
+		vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+		sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
+			Target: nbr.Didx,
+			Note:   Note{Height: v.Property.NewHeight, Flow: int32(i), SrcId: myId, SrcPos: nbr.Pos, Handshake: true},
+		}, vtm, tidx))
 	}
 
 	source := VertexCountHelper.NewVertex()
