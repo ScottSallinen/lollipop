@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
@@ -13,6 +12,7 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-d"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-f"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-h"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-i"
 )
 
 type testCase struct {
@@ -88,8 +88,9 @@ func RunBenchmarks() {
 	results = append(results, runBenchmark(pr_d.Run, baseOptionsBenchmark, pr_d.Name))
 	// pr_e
 	results = append(results, runBenchmark(pr_f.Run, baseOptionsBenchmark, pr_f.Name))
-	// pr_g is too slow results
+	// pr_g is too slow
 	results = append(results, runBenchmark(pr_h.Run, baseOptionsBenchmark, pr_h.Name))
+	results = append(results, runBenchmark(pr_i.Run, baseOptionsBenchmark, pr_i.Name))
 	for _, r := range results {
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm message counts: %v", r.name, r.messages))
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtimes: %v", r.name, r.runtimes))

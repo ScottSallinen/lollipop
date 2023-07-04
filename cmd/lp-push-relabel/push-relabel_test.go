@@ -17,6 +17,7 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-f"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-g"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-h"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-i"
 )
 
 type TestGraph struct {
@@ -130,6 +131,19 @@ func TestHAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 2
 	RunTestGraphs(t, pr_h.Run, pr_h.Name, options)
+}
+
+func TestIAsyncStatic(t *testing.T) {
+	options := baseOptions
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, pr_i.Run, pr_i.Name, options)
+}
+
+func TestIIncremental(t *testing.T) {
+	options := baseOptions
+	options.Dynamic = true
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, pr_i.Run, pr_i.Name, options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *testing.T,
