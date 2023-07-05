@@ -30,7 +30,7 @@ type EdgeProperty struct {
 
 type Mail struct {
 	NbrScratch []uint32 // Colours of neighbours
-	Pos        uint32   // Position of the sender in the receiver's OutEdges
+	Pos        uint32   // Unique identifier of the mail sender, that the mail receiver can use to (re)identify the sender. The value is ordinal, and corresponds uniquely to an edge (that has ever existed) that targets the receiver.
 	Colour     uint32   // Multi-purposed (fake union); used as Wait count on existing (if USE_WAIT_COUNT is true)
 	Mutex      *sync.RWMutex
 }
