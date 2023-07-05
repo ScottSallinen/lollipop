@@ -1,12 +1,17 @@
-
-
-
-- A: Hashtable, aggregation, zero direct message passing
-- B:
-- C: No message aggregation, using array to store neighbours, destination of each edge is treated as a new neighbour
-- D: No message aggregation, using array to store neighbours, no duplicate neighbours
-- E: No message aggregation, using array to store neighbours, no duplicate neighbours, tracks incoming ResCap
-- F: No message aggregation, using array to store neighbours, no duplicate neighbours, tracks incoming ResCap, skip sending heights if ResCapIn == 0
-- G: Message passing with aggregation (copy heights on retrieve), using array to store neighbours, no duplicate neighbours, tracks incoming ResCap, skip sending heights if ResCapIn == 0
-- H: Message passing with aggregation (directly access heights in the inbox), using array to store neighbours, no duplicate neighbours, tracks incoming ResCap, skip sending heights if ResCapIn == 0
-- I: Based on F, Pure message passing, using array to store neighbours, no duplicate neighbours, tracks incoming ResCap, skip sending heights if ResCapIn == 0, track index of the next push target in discharge
+- A: Always aggregates messages, uses hashtable to store neighbours
+  - Best in terms of performance on dynamic graphs
+- B: Pure message passing, uses hashtable to store neighbours
+- C: Pure message passing, uses array to store neighbours, destination of each edge is treated as a new neighbour
+  - Very slow
+- D: Pure message passing, uses array to store neighbours, uses hashtable to map internalIds to indexes in the array (no duplicate neighbours)
+  - Best when considering the following aspects together: (i) performance on static graphs, (ii) performance on dynamic graphs, and (iii) simplicity
+- E: Based on D, tracks incoming residual capacities
+  - Only for analyzing the cost of tracking incoming residual capacities
+- F: Based on E, skips sending heights if ResCapIn == 0
+- G: Based on F, but use aggregation when sending heights, copies the height array on retrieve
+- H: Based on F, but use aggregation when sending heights, locks the height array and pass a reference when updating vertex
+- I: Based on F, tracks index of the next push target in discharge
+  - Best in terms of performance on static graphs
+  - Potential reasons why the performance on dynamic graphs is worse than A:
+    - On static graphs, access to the hashtable (mapping from ID to index in array) has better temporal locality
+- **J**: Based on D, tracks index of the next push target in discharge

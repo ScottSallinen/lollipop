@@ -1,4 +1,4 @@
-package pr_f
+package e
 
 import (
 	"fmt"
@@ -55,7 +55,7 @@ type Vertex = graph.Vertex[VertexProp, EdgeProp]
 type Edge = graph.Edge[EdgeProp]
 
 const (
-	Name = "PushRelabel: MergedArray, MessagePassing, TrackResCapIn, SkipBroadcastWhenResCapInIs0"
+	Name = "PushRelabel: MergedArray, MessagePassing, TrackResCapIn"
 )
 
 func (VertexProp) New() (new VertexProp) {
@@ -164,7 +164,6 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 		Assert(v.Property.Type != Source, "Non-source received NewMaxVertexCount")
 		v.Property.NewHeight = VertexCountHelper.GetMaxVertexCount()
 	} else {
-		var alreadySentHeight bool
 		// Handle handshakes
 		var nbr *Neighbour
 		if n.Note.Handshake {
@@ -185,7 +184,6 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 						Target: n.Note.SrcId,
 						Note:   Note{Height: v.Property.NewHeight, Flow: pos, SrcId: n.Target, SrcPos: myPos, Handshake: true},
 					}, vtm, tidx))
-					alreadySentHeight = true
 				} else {
 					// already told them
 				}
@@ -201,10 +199,10 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 			Assert(n.Note.SrcPos >= 0, "")
 			nbr = &v.Property.Nbrs[n.Note.SrcPos]
 		}
-		//Assert(n.Note.SrcId == nbr.Didx, "")
+		Assert(n.Note.SrcId == nbr.Didx, "")
 
 		// Update height and ResCap
-		oldHeight, oldResCapIn := nbr.Height, nbr.ResCapIn
+		oldHeight := nbr.Height
 		nbr.Height = n.Note.Height
 		nbr.ResCapIn += n.Note.ResCapOffset
 
@@ -222,7 +220,6 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 					Target: n.Note.SrcId,
 					Note:   Note{Height: v.Property.NewHeight, Flow: -amount, SrcId: n.Target, SrcPos: nbr.Pos},
 				}, vtm, tidx))
-				alreadySentHeight = true
 			}
 		} else if n.Note.Flow > 0 {
 			// additional flow
@@ -245,21 +242,12 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 						Target: n.Note.SrcId,
 						Note:   Note{Height: v.Property.NewHeight, Flow: amount, SrcId: n.Target, SrcPos: nbr.Pos},
 					}, vtm, tidx))
-					alreadySentHeight = true
 				}
 				if nbr.ResCapOut > 0 {
 					Assert(v.Property.Type != Source, "")
 					v.Property.NewHeight = nbr.Height + 1
 				}
 			}
-		}
-
-		if !alreadySentHeight && oldResCapIn <= 0 && nbr.ResCapIn > 0 {
-			vtm, tidx := g.NodeVertexMessages(nbr.Didx)
-			sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
-				Target: nbr.Didx,
-				Note:   Note{Height: v.Property.NewHeight, Flow: 0, SrcId: n.Target, SrcPos: nbr.Pos},
-			}, vtm, tidx))
 		}
 	}
 
@@ -296,13 +284,11 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 	if v.Property.NewHeight != v.Property.Height {
 		v.Property.Height = v.Property.NewHeight
 		for _, nbr := range v.Property.Nbrs {
-			if nbr.ResCapIn > 0 {
-				vtm, tidx := g.NodeVertexMessages(nbr.Didx)
-				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
-					Target: nbr.Didx,
-					Note:   Note{Height: v.Property.NewHeight, Flow: 0, SrcId: n.Target, SrcPos: nbr.Pos},
-				}, vtm, tidx))
-			}
+			vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+			sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
+				Target: nbr.Didx,
+				Note:   Note{Height: v.Property.NewHeight, Flow: 0, SrcId: n.Target, SrcPos: nbr.Pos},
+			}, vtm, tidx))
 		}
 	}
 
@@ -449,9 +435,7 @@ func (*PushRelabel) OnCheckCorrectness(g *Graph) {
 	log.Info().Msg("Ensuring NbrHeight is accurate")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
 		for _, nbr := range v.Property.Nbrs {
-			if nbr.ResCapOut > 0 {
-				Assert(nbr.Height == g.NodeVertex(nbr.Didx).Property.Height, "")
-			}
+			Assert(nbr.Height == g.NodeVertex(nbr.Didx).Property.Height, "")
 		}
 	})
 

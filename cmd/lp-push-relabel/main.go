@@ -4,19 +4,16 @@ import (
 	"flag"
 
 	"github.com/ScottSallinen/lollipop/graph"
-	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-a"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-b"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-c"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/d"
 )
 
 func main() {
 	sourceId := flag.Int("S", -1, "Source vertex (raw id).")
 	sinkId := flag.Int("T", -1, "Sink vertex (raw id).")
 	initialEstimatedCount := flag.Uint("V", 30, "Initial estimated number of vertices.")
-	implementation := flag.String("I", "agg", "Implementation. Can be aggregation (agg) or direct message passing (msg)")
+	//implementation := flag.String("I", "agg", "Implementation. see README.md")
 	benchmark := flag.Bool("B", false, "Run benchmarks")
 	graphOptions := graph.FlagsToOptions()
 
@@ -30,14 +27,15 @@ func main() {
 	SinkRawId = graph.RawType(*sinkId)
 	VertexCountHelper.Reset(int64(*initialEstimatedCount))
 
-	switch *implementation {
-	case "agg":
-		pr_a.RunAggH(graphOptions)
-	case "msg-h":
-		pr_b.RunMsgH(graphOptions)
-	case "msg-a":
-		pr_c.RunMsgA(graphOptions)
-	default:
-		log.Fatal().Msg("Unknown implementation: " + *implementation)
-	}
+	//switch *implementation {
+	//case "agg":
+	//	a.RunAggH(graphOptions)
+	//case "msg-h":
+	//	b.RunMsgH(graphOptions)
+	//case "msg-a":
+	//	c.RunMsgA(graphOptions)
+	//default:
+	//	log.Fatal().Msg("Unknown implementation: " + *implementation)
+	//}
+	d.Run(graphOptions)
 }

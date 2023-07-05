@@ -1,7 +1,9 @@
-package pr_e
+package d
 
 import (
 	"fmt"
+	"sync/atomic"
+
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
@@ -9,14 +11,13 @@ import (
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
-type PushRelabel struct{}
+type PushRelabelD struct{}
 
 type Neighbour struct {
-	Height    int64
-	ResCapOut int32
-	ResCapIn  int32
-	Pos       int32 // Position of me in the neighbour, -1 means unknown
-	Didx      uint32
+	Height int64
+	ResCap int32
+	Pos    int32 // Position of me in the neighbour, -1 means unknown
+	Didx   uint32
 }
 
 type VertexProp struct {
@@ -39,9 +40,8 @@ type Message struct {
 }
 
 type Note struct {
-	Height       int64
-	Flow         int32 // Could be used for my position when hand-shaking
-	ResCapOffset int32 // Use this only for new/deleted edges
+	Height int64
+	Flow   int32 // Could be used for my position when hand-shaking
 
 	SrcId  uint32 // FIXME: better if this is given by the framework
 	SrcPos int32  // position of the sender in the receiver's InNbrs or OutEdges, -1 means unknown
@@ -55,7 +55,7 @@ type Vertex = graph.Vertex[VertexProp, EdgeProp]
 type Edge = graph.Edge[EdgeProp]
 
 const (
-	Name = "PushRelabel: MergedArray, MessagePassing, TrackResCapIn"
+	Name = "PushRelabel: MergedArray, MessagePassing"
 )
 
 func (VertexProp) New() (new VertexProp) {
@@ -68,21 +68,21 @@ func (Message) New() (new Message) {
 }
 
 func Run(options graph.GraphOptions) (maxFlow int32, g *Graph) {
-	alg := new(PushRelabel)
+	alg := new(PushRelabelD)
 	g = graph.LaunchGraphExecution[*EdgeProp, VertexProp, EdgeProp, Message, Note](alg, options)
 	return alg.GetMaxFlowValue(g), g
 }
 
-func (pr *PushRelabel) GetMaxFlowValue(g *Graph) int32 {
+func (pr *PushRelabelD) GetMaxFlowValue(g *Graph) int32 {
 	_, sink := g.NodeVertexFromRaw(SinkRawId)
 	return sink.Property.Excess
 }
 
-func (pr *PushRelabel) InitAllMessage(vertex *Vertex, internalId uint32, rawId graph.RawType) Message {
+func (pr *PushRelabelD) InitAllMessage(vertex *Vertex, internalId uint32, rawId graph.RawType) Message {
 	return Message{Init: true}
 }
 
-func (pr *PushRelabel) BaseVertexMessage(v *Vertex, internalId uint32, rawId graph.RawType) (m Message) {
+func (pr *PushRelabelD) BaseVertexMessage(v *Vertex, internalId uint32, rawId graph.RawType) (m Message) {
 	v.Property.Height = InitialHeight
 	if rawId == SourceRawId {
 		v.Property.Type = Source
@@ -95,14 +95,14 @@ func (pr *PushRelabel) BaseVertexMessage(v *Vertex, internalId uint32, rawId gra
 	return m
 }
 
-func (*PushRelabel) MessageMerge(incoming Message, sidx uint32, existing *Message) (newInfo bool) {
+func (*PushRelabelD) MessageMerge(incoming Message, sidx uint32, existing *Message) (newInfo bool) {
 	if incoming.Init {
 		*existing = incoming
 	}
 	return true
 }
 
-func (*PushRelabel) MessageRetrieve(existing *Message, vertex *Vertex) (outgoing Message) {
+func (*PushRelabelD) MessageRetrieve(existing *Message, vertex *Vertex) (outgoing Message) {
 	if existing.Init {
 		existing.Init = false
 		return Message{true}
@@ -110,9 +110,8 @@ func (*PushRelabel) MessageRetrieve(existing *Message, vertex *Vertex) (outgoing
 	return outgoing
 }
 
-func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
+func (pr *PushRelabelD) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 	// Iterate over existing edges
-	Assert(len(v.Property.NbrMap) == 0, "")
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
 		if e.Didx == myId || e.Property.Weight <= 0 { // TODO: also skip if the target is source
@@ -125,18 +124,18 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 		pos, exist := v.Property.NbrMap[e.Didx]
 		if !exist {
 			pos = int32(len(v.Property.Nbrs))
-			v.Property.Nbrs = append(v.Property.Nbrs, Neighbour{Height: InitialHeight, Pos: -1, Didx: e.Didx})
+			v.Property.Nbrs = append(v.Property.Nbrs, Neighbour{Height: InitialHeight, ResCap: 0, Pos: -1, Didx: e.Didx})
 			v.Property.NbrMap[e.Didx] = pos
 			v.Property.UnknownPosCount++
 		}
 
-		v.Property.Nbrs[pos].ResCapOut += int32(e.Property.Weight)
+		v.Property.Nbrs[pos].ResCap += int32(e.Property.Weight)
 	}
 	for i, nbr := range v.Property.Nbrs {
 		vtm, tidx := g.NodeVertexMessages(nbr.Didx)
 		sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 			Target: nbr.Didx,
-			Note:   Note{Height: v.Property.NewHeight, ResCapOffset: nbr.ResCapOut, Flow: int32(i), SrcId: myId, SrcPos: nbr.Pos, Handshake: true},
+			Note:   Note{Height: v.Property.NewHeight, Flow: int32(i), SrcId: myId, SrcPos: nbr.Pos, Handshake: true},
 		}, vtm, tidx))
 	}
 
@@ -151,11 +150,10 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 	return
 }
 
-func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[Note], m Message) (sent uint64) {
+func (pr *PushRelabelD) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[Note], m Message) (sent uint64) {
 	if m.Init {
 		sent += pr.Init(g, v, n.Target)
-		var empty Note
-		if n.Note == empty { // FIXME: could be a real useful message
+		if n.Note == (Note{}) { // FIXME: could be a real useful message
 			return
 		}
 	}
@@ -163,7 +161,7 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 	if n.Note.NewMaxVertexCount {
 		Assert(v.Property.Type != Source, "Non-source received NewMaxVertexCount")
 		v.Property.NewHeight = VertexCountHelper.GetMaxVertexCount()
-	} else {
+	} else if n.Note != (Note{}) {
 		// Handle handshakes
 		var nbr *Neighbour
 		if n.Note.Handshake {
@@ -176,8 +174,9 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 				if !exist {
 					Assert(n.Note.SrcPos == -1, "")
 					pos = int32(len(v.Property.Nbrs))
-					v.Property.Nbrs = append(v.Property.Nbrs, Neighbour{Height: n.Note.Height, Pos: myPos, Didx: n.Note.SrcId})
+					v.Property.Nbrs = append(v.Property.Nbrs, Neighbour{Height: n.Note.Height, ResCap: 0, Pos: myPos, Didx: n.Note.SrcId})
 					v.Property.NbrMap[n.Note.SrcId] = pos
+					nbr = &v.Property.Nbrs[pos]
 					// send back their pos and my height
 					vtm, tidx := g.NodeVertexMessages(n.Note.SrcId)
 					sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
@@ -186,8 +185,8 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 					}, vtm, tidx))
 				} else {
 					// already told them
+					nbr = &v.Property.Nbrs[pos]
 				}
-				nbr = &v.Property.Nbrs[pos]
 			} else {
 				nbr = &v.Property.Nbrs[n.Note.SrcPos]
 			}
@@ -196,23 +195,20 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 				v.Property.UnknownPosCount--
 			}
 		} else {
-			Assert(n.Note.SrcPos >= 0, "")
 			nbr = &v.Property.Nbrs[n.Note.SrcPos]
 		}
 		Assert(n.Note.SrcId == nbr.Didx, "")
 
-		// Update height and ResCap
+		// Update height
 		oldHeight := nbr.Height
 		nbr.Height = n.Note.Height
-		nbr.ResCapIn += n.Note.ResCapOffset
 
 		// handleFlow
 		if n.Note.Flow < 0 {
 			// retract request
-			amount := utils.Max(n.Note.Flow, -nbr.ResCapOut)
+			amount := utils.Max(n.Note.Flow, -nbr.ResCap)
 			if amount < 0 {
-				nbr.ResCapOut -= -amount
-				nbr.ResCapIn += -amount
+				nbr.ResCap -= -amount
 				v.Property.Excess -= -amount
 
 				vtm, tidx := g.NodeVertexMessages(n.Note.SrcId)
@@ -223,19 +219,17 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 			}
 		} else if n.Note.Flow > 0 {
 			// additional flow
-			nbr.ResCapOut += n.Note.Flow
-			nbr.ResCapIn -= n.Note.Flow
+			nbr.ResCap += n.Note.Flow
 			v.Property.Excess += n.Note.Flow
 		}
 
 		// restoreHeightInvariant
 		if n.Note.Handshake || oldHeight > nbr.Height || n.Note.Flow > 0 {
-			if nbr.Height+1 < v.Property.NewHeight && nbr.ResCapOut > 0 {
+			if nbr.Height+1 < v.Property.NewHeight && nbr.ResCap > 0 {
 				if v.Property.Excess > 0 {
-					amount := utils.Min(v.Property.Excess, nbr.ResCapOut)
+					amount := utils.Min(v.Property.Excess, nbr.ResCap)
 					v.Property.Excess -= amount
-					nbr.ResCapOut -= amount
-					nbr.ResCapIn += amount
+					nbr.ResCap -= amount
 
 					vtm, tidx := g.NodeVertexMessages(n.Note.SrcId)
 					sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
@@ -243,7 +237,7 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 						Note:   Note{Height: v.Property.NewHeight, Flow: amount, SrcId: n.Target, SrcPos: nbr.Pos},
 					}, vtm, tidx))
 				}
-				if nbr.ResCapOut > 0 {
+				if nbr.ResCap > 0 {
 					Assert(v.Property.Type != Source, "")
 					v.Property.NewHeight = nbr.Height + 1
 				}
@@ -295,18 +289,17 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 	return
 }
 
-func (pr *PushRelabel) dischargeOnce(g *Graph, v *Vertex, n graph.Notification[Note]) (sent uint64, nextHeight int64) {
+func (pr *PushRelabelD) dischargeOnce(g *Graph, v *Vertex, n graph.Notification[Note]) (sent uint64, nextHeight int64) {
 	nextHeight = int64(MaxHeight)
 	for i := range v.Property.Nbrs {
 		nbr := &v.Property.Nbrs[i]
-		if nbr.ResCapOut > 0 {
+		if nbr.ResCap > 0 {
 			if !(v.Property.NewHeight > nbr.Height) {
 				nextHeight = utils.Min(nextHeight, nbr.Height+1)
 			} else {
-				amount := utils.Min(v.Property.Excess, nbr.ResCapOut)
+				amount := utils.Min(v.Property.Excess, nbr.ResCap)
 				v.Property.Excess -= amount
-				nbr.ResCapOut -= amount
-				nbr.ResCapIn += amount
+				nbr.ResCap -= amount
 				Assert(amount > 0, "")
 
 				vtm, tidx := g.NodeVertexMessages(nbr.Didx)
@@ -324,17 +317,66 @@ func (pr *PushRelabel) dischargeOnce(g *Graph, v *Vertex, n graph.Notification[N
 	return sent, nextHeight
 }
 
-func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart int, m Message) (sent uint64) {
+func (pr *PushRelabelD) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart int, m Message) (sent uint64) {
 	// TODO
+	if !m.Init {
+		for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
+			e := &src.OutEdges[eidx]
+			if e.Didx == sidx || e.Property.Weight <= 0 { // TODO: also skip if the target is source
+				continue
+			}
+			if src.Property.Type == Source {
+				src.Property.Excess += int32(e.Property.Weight)
+			}
+
+			pos, exist := src.Property.NbrMap[e.Didx]
+			if !exist {
+				pos = int32(len(src.Property.Nbrs))
+				src.Property.Nbrs = append(src.Property.Nbrs, Neighbour{Height: InitialHeight, Pos: -1, Didx: e.Didx})
+				src.Property.NbrMap[e.Didx] = pos
+				src.Property.UnknownPosCount++
+			}
+
+			nbr := &src.Property.Nbrs[pos]
+			nbr.ResCap += int32(e.Property.Weight)
+			if nbr.Pos == -1 {
+				vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+				sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[Note]{
+					Target: nbr.Didx,
+					Note:   Note{Height: src.Property.NewHeight, Flow: pos, SrcId: sidx, SrcPos: nbr.Pos, Handshake: true},
+				}, vtm, tidx))
+			} else {
+				if src.Property.NewHeight > nbr.Height+1 && nbr.ResCap > 0 {
+					if src.Property.Excess > 0 {
+						amount := utils.Min(src.Property.Excess, nbr.ResCap)
+						src.Property.Excess -= amount
+						nbr.ResCap -= amount
+
+						vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+						sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[Note]{
+							Target: nbr.Didx,
+							Note:   Note{Height: src.Property.NewHeight, Flow: amount, SrcId: sidx, SrcPos: nbr.Pos},
+						}, vtm, tidx))
+					}
+					if nbr.ResCap > 0 {
+						Assert(src.Property.Type != Source, "")
+						src.Property.NewHeight = nbr.Height + 1
+					}
+				}
+			}
+		}
+	}
+	vtm, _ := g.NodeVertexMessages(sidx)
+	sent += pr.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx, Activity: atomic.LoadInt32(&vtm.Activity)}, m)
 	return
 }
 
-func (*PushRelabel) OnEdgeDel(g *Graph, src *Vertex, sidx uint32, deletedEdges []Edge, m Message) (sent uint64) {
+func (*PushRelabelD) OnEdgeDel(g *Graph, src *Vertex, sidx uint32, deletedEdges []Edge, m Message) (sent uint64) {
 	// TODO
 	return 0
 }
 
-func (*PushRelabel) OnCheckCorrectness(g *Graph) {
+func (*PushRelabelD) OnCheckCorrectness(g *Graph) {
 	log.Info().Msg("Ensuring the vertex type is correct")
 	sourceInternalId, source := g.NodeVertexFromRaw(SourceRawId)
 	sinkInternalId, sink := g.NodeVertexFromRaw(SinkRawId)
@@ -371,15 +413,6 @@ func (*PushRelabel) OnCheckCorrectness(g *Graph) {
 		}
 	})
 
-	log.Info().Msg("Checking ResCapIn are correct")
-	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
-		for _, nbr := range v.Property.Nbrs {
-			targetVertex := g.NodeVertex(nbr.Didx)
-			realResCap := targetVertex.Property.Nbrs[nbr.Pos].ResCapOut
-			Assert(nbr.ResCapIn == realResCap, "")
-		}
-	})
-
 	log.Info().Msg("Checking the heights of the source and the sink")
 	vertexCount := g.NodeVertexCount()
 	Assert(source.Property.Height >= int64(vertexCount),
@@ -394,7 +427,7 @@ func (*PushRelabel) OnCheckCorrectness(g *Graph) {
 			Assert(v.Property.Excess == 0, "")
 		}
 		for _, nbr := range v.Property.Nbrs {
-			Assert(nbr.ResCapOut >= 0, "")
+			Assert(nbr.ResCap >= 0, "")
 		}
 	})
 
@@ -410,7 +443,7 @@ func (*PushRelabel) OnCheckCorrectness(g *Graph) {
 		}
 
 		for _, nbr := range v.Property.Nbrs {
-			capacityResidual += int64(nbr.ResCapOut)
+			capacityResidual += int64(nbr.ResCap)
 		}
 
 		if v.Property.Type == Source {
@@ -443,7 +476,7 @@ func (*PushRelabel) OnCheckCorrectness(g *Graph) {
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
 		h := v.Property.Height
 		for _, nbr := range v.Property.Nbrs {
-			if nbr.ResCapOut > 0 {
+			if nbr.ResCap > 0 {
 				Assert(h <= nbr.Height+1, "")
 			}
 		}
