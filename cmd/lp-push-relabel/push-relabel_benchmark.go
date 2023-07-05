@@ -9,8 +9,7 @@ import (
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/b"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/j"
 )
 
@@ -87,11 +86,7 @@ func RunBenchmarks() {
 
 	results := make([]benchmarkResult, 0, 4)
 	results = append(results, runBenchmark(a.RunAggH, options, "AggH"))
-	//results = append(results, runBenchmark(b.RunMsgH, options, "MsgH"))
-	// pr_e
-	//results = append(results, runBenchmark(pr_f.Run, options, pr_f.Name))
-	results = append(results, runBenchmark(h.Run, options, h.Name))
-	results = append(results, runBenchmark(i.Run, options, i.Name))
+	results = append(results, runBenchmark(b.RunMsgH, options, "MsgH"))
 	results = append(results, runBenchmark(j.Run, options, j.Name))
 	for _, r := range results {
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm message counts: %v", r.name, r.messages))
