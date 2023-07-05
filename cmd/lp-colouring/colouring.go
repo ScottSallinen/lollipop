@@ -78,7 +78,7 @@ func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgePro
 	edgeAmount := len(vertex.OutEdges)        // Note: will be zero for dynamic graphs.
 	m.NbrScratch = make([]uint32, edgeAmount) // This is for a thread unsafe view // m.NbrScratch.Store(ns)
 
-	for i := 0; i < edgeAmount; i++ {
+	for i := 0; i < edgeAmount; i++ { // Note: does nothing for dynamic graphs.
 		m.NbrScratch[i] = EMPTY_VAL
 	}
 	return m
