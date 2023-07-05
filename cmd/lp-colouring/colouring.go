@@ -159,7 +159,7 @@ func (*Colouring) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProper
 	for i := range ns {
 		nsc := atomic.LoadUint32(&ns[i])
 		col := (nsc & MSB_MASK)
-		if col <= uint32(len(ns)) { // Ignore colour > len(ns)
+		if col <= uint32(len(ns)) { // Ignore colour > len(ns), since this implies we will have a colour available within |InDegree|
 			if !prop.coloursIndexed.QuickSet(col) {
 				prop.coloursIndexed.Set(col)
 			}
