@@ -89,7 +89,7 @@ func (*Colouring) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty]
 	return m
 }
 
-// Dynamic: need to reallocate. Expand the size of existing.NbrScratch. ln: target length - 1.
+// Dynamic: need to reallocate. Expand the size of existing.NbrScratch. New size must fit NbrScratch[ln], so we expect after that len(NbrScratch) == ln + 1.
 func mExpand(ln int, existing *Mail, colour uint32) {
 	existing.Mutex.Lock()
 	ns := existing.NbrScratch
