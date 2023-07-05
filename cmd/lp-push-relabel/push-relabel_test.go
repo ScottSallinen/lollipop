@@ -53,6 +53,7 @@ var (
 	}
 	baseOptions = graph.GraphOptions{
 		CheckCorrectness: true,
+		QueueMultiplier:  2,
 	}
 )
 
@@ -83,12 +84,12 @@ func TestAggHIncremental(t *testing.T) {
 	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
 }
 
-func TestMsgHAsyncStatic(t *testing.T) {
+func TestBAsyncStatic(t *testing.T) {
 	options := baseOptions
 	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
 }
 
-func TestMsgHIncremental(t *testing.T) {
+func TestBIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
 	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
@@ -107,71 +108,60 @@ func TestMsgAIncremental(t *testing.T) {
 
 func TestDAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, d.Run, d.Name, options)
 }
 
 func TestDIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, d.Run, d.Name, options)
 }
 
 func TestEAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, e.Run, e.Name, options)
 }
 
 func TestFAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, f.Run, f.Name, options)
 }
 
 func TestGAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, g.Run, g.Name, options)
 }
 
 func TestHAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, h.Run, h.Name, options)
 }
 
 func TestHIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, h.Run, h.Name, options)
 }
 
 func TestIAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, i.Run, i.Name, options)
 }
 
 func TestIIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, i.Run, i.Name, options)
 }
 
 func TestJAsyncStatic(t *testing.T) {
 	options := baseOptions
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, j.Run, j.Name, options)
 }
 
 func TestJIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	options.QueueMultiplier = 2
 	RunTestGraphs(t, j.Run, j.Name, options)
 }
 
