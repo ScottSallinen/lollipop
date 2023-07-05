@@ -9,15 +9,15 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-a"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-b"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-c"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-d"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-e"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-f"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-g"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-h"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-i"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/b"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/c"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/d"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/e"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/f"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/g"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
 )
 
 type TestGraph struct {
@@ -73,77 +73,92 @@ func TestMain(m *testing.M) {
 
 func TestAggHAsyncStatic(t *testing.T) {
 	options := baseOptions
-	RunTestGraphs(t, pr_a.RunAggH, "AggregateHashtable", options)
+	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
 }
 
 func TestAggHIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	RunTestGraphs(t, pr_a.RunAggH, "AggregateHashtable", options)
+	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
 }
 
 func TestMsgHAsyncStatic(t *testing.T) {
 	options := baseOptions
-	RunTestGraphs(t, pr_b.RunMsgH, "MessagePassingHashtable", options)
+	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
 }
 
 func TestMsgHIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	RunTestGraphs(t, pr_b.RunMsgH, "MessagePassingHashtable", options)
+	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
 }
 
 func TestMsgAAsyncStatic(t *testing.T) {
 	options := baseOptions
-	RunTestGraphs(t, pr_c.RunMsgA, "MessagePassingArray", options)
+	RunTestGraphs(t, c.RunMsgA, "MessagePassingArray", options)
 }
 
 func TestMsgAIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
-	RunTestGraphs(t, pr_c.RunMsgA, "MessagePassingArray", options)
+	RunTestGraphs(t, c.RunMsgA, "MessagePassingArray", options)
 }
 
 func TestDAsyncStatic(t *testing.T) {
 	options := baseOptions
-	RunTestGraphs(t, pr_d.Run, pr_d.Name, options)
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, d.Run, d.Name, options)
+}
+
+func TestDIncremental(t *testing.T) {
+	options := baseOptions
+	options.Dynamic = true
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, d.Run, d.Name, options)
 }
 
 func TestEAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 2
-	RunTestGraphs(t, pr_e.Run, pr_e.Name, options)
+	RunTestGraphs(t, e.Run, e.Name, options)
 }
 
 func TestFAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 2
-	RunTestGraphs(t, pr_f.Run, pr_f.Name, options)
+	RunTestGraphs(t, f.Run, f.Name, options)
 }
 
 func TestGAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 2
-	RunTestGraphs(t, pr_g.Run, pr_g.Name, options)
+	RunTestGraphs(t, g.Run, g.Name, options)
 }
 
 func TestHAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 2
-	RunTestGraphs(t, pr_h.Run, pr_h.Name, options)
+	RunTestGraphs(t, h.Run, h.Name, options)
+}
+
+func TestHIncremental(t *testing.T) {
+	options := baseOptions
+	options.Dynamic = true
+	options.QueueMultiplier = 2
+	RunTestGraphs(t, h.Run, h.Name, options)
 }
 
 func TestIAsyncStatic(t *testing.T) {
 	options := baseOptions
 	options.QueueMultiplier = 2
-	RunTestGraphs(t, pr_i.Run, pr_i.Name, options)
+	RunTestGraphs(t, i.Run, i.Name, options)
 }
 
 func TestIIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
 	options.QueueMultiplier = 2
-	RunTestGraphs(t, pr_i.Run, pr_i.Name, options)
+	RunTestGraphs(t, i.Run, i.Name, options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *testing.T,

@@ -7,12 +7,10 @@ import (
 	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-a"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-b"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-d"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-f"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-h"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/pr-i"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/d"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
 )
 
 type testCase struct {
@@ -81,16 +79,19 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 }
 
 func RunBenchmarks() {
+	options := baseOptionsBenchmark
+	//options.Dynamic = true
+	//options.LogTimeseries = true
+	//options.TimeSeriesInterval = 86400 * 8
+
 	results := make([]benchmarkResult, 0, 4)
-	results = append(results, runBenchmark(pr_a.RunAggH, baseOptionsBenchmark, "AggH"))
-	results = append(results, runBenchmark(pr_b.RunMsgH, baseOptionsBenchmark, "MsgH"))
-	// pr_c is too slow
-	results = append(results, runBenchmark(pr_d.Run, baseOptionsBenchmark, pr_d.Name))
+	results = append(results, runBenchmark(a.RunAggH, options, "AggH"))
+	//results = append(results, runBenchmark(b.RunMsgH, options, "MsgH"))
+	results = append(results, runBenchmark(d.Run, options, d.Name))
 	// pr_e
-	results = append(results, runBenchmark(pr_f.Run, baseOptionsBenchmark, pr_f.Name))
-	// pr_g is too slow
-	results = append(results, runBenchmark(pr_h.Run, baseOptionsBenchmark, pr_h.Name))
-	results = append(results, runBenchmark(pr_i.Run, baseOptionsBenchmark, pr_i.Name))
+	//results = append(results, runBenchmark(pr_f.Run, options, pr_f.Name))
+	results = append(results, runBenchmark(h.Run, options, h.Name))
+	results = append(results, runBenchmark(i.Run, options, i.Name))
 	for _, r := range results {
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm message counts: %v", r.name, r.messages))
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtimes: %v", r.name, r.runtimes))

@@ -1,4 +1,4 @@
-package pr_c
+package c
 
 import (
 	"fmt"

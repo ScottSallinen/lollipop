@@ -1,4 +1,4 @@
-package pr_b
+package b
 
 import (
 	"fmt"
