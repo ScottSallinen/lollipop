@@ -317,6 +317,9 @@ func (pr *PushRelabelMsg) OnEdgeAdd(g *graph.Graph[VPropMsg, EPropMsg, MessageMs
 			}
 
 			src.Property.ResCap[e.Didx] += int32(e.Property.Weight)
+			if src.Property.Type == Source {
+				src.Property.Excess += int32(e.Property.Weight)
+			}
 
 			// new neighbour?
 			nbrHeight, isOldNbr := src.Property.NbrHeights[e.Didx]
@@ -333,10 +336,6 @@ func (pr *PushRelabelMsg) OnEdgeAdd(g *graph.Graph[VPropMsg, EPropMsg, MessageMs
 
 			// restoreHeightInvariant
 			sent += pr.restoreHeightInvariant(g, src, sidx, e.Didx, nbrHeight)
-
-			if src.Property.Type == Source {
-				src.Property.Excess += int32(e.Property.Weight)
-			}
 		}
 	}
 	sent += pr.finalizeVertexState(g, src, sidx)
