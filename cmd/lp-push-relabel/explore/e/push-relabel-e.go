@@ -161,7 +161,7 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 	}
 	// newMaxVertexCount?
 	if n.Note.NewMaxVertexCount {
-		Assert(v.Property.Type != Source, "Non-source received NewMaxVertexCount")
+		Assert(v.Property.Type == Source, "Non-source received NewMaxVertexCount")
 		v.Property.NewHeight = VertexCountHelper.GetMaxVertexCount()
 	} else {
 		// Handle handshakes

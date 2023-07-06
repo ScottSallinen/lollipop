@@ -59,7 +59,11 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 		options.Name = tc.Filename
 		SourceRawId = graph.RawType(tc.Source)
 		SinkRawId = graph.RawType(tc.Sink)
-		VertexCountHelper.Reset(int64(tc.VertexCount))
+		if options.Dynamic {
+			VertexCountHelper.Reset(1000)
+		} else {
+			VertexCountHelper.Reset(int64(tc.VertexCount))
+		}
 
 		InitialHeight = MaxHeight
 		//options.Profile = true

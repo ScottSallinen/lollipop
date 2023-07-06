@@ -149,7 +149,7 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[Note]) (sent uint64) {
 	// newMaxVertexCount?
 	if n.Note.NewMaxVertexCount {
-		Assert(v.Property.Type != Source, "Non-source received NewMaxVertexCount")
+		Assert(v.Property.Type == Source, "Non-source received NewMaxVertexCount")
 		v.Property.NewHeight = VertexCountHelper.GetMaxVertexCount()
 		return
 	}

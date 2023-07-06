@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/utils"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
@@ -188,7 +189,11 @@ func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *tes
 			InitialHeight = MaxHeight
 			SourceRawId = graph.RawType(tg.Source)
 			SinkRawId = graph.RawType(tg.Sink)
-			VertexCountHelper.Reset(int64(tg.VertexCount))
+			if options.Dynamic {
+				VertexCountHelper.Reset(utils.Min(1000, int64(tg.VertexCount)))
+			} else {
+				VertexCountHelper.Reset(int64(tg.VertexCount))
+			}
 
 			maxFlow, _ := run(options)
 			assertEqual(t, tg.MaxFlow, int64(maxFlow), fmt.Sprintf("%s: Graph \"%s\" Max flow", prefix, tg.Filename))
