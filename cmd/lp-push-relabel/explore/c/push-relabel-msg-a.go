@@ -372,6 +372,7 @@ func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA
 	log.Info().Msg("Checking Pos are correct")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VertexPMsgA, EdgePMsgA]) {
 		for i, e := range v.OutEdges {
+			// FIXME: skip some edges
 			target := g.NodeVertex(e.Didx)
 			inNbr := &target.Property.InNbrs[e.Pos]
 			Assert(internalId == inNbr.Didx, "")
