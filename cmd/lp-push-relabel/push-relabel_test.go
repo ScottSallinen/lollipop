@@ -169,12 +169,14 @@ func TestJIncremental(t *testing.T) {
 
 func TestKAsyncStatic(t *testing.T) {
 	options := baseOptions
+	GlobalRelabelingEnabled = true
 	RunTestGraphs(t, k.Run, k.Name, options)
 }
 
 func TestKIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
+	GlobalRelabelingEnabled = true
 	RunTestGraphs(t, k.Run, k.Name, options)
 }
 
@@ -189,6 +191,7 @@ func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *tes
 			InitialHeight = MaxHeight
 			SourceRawId = graph.RawType(tg.Source)
 			SinkRawId = graph.RawType(tg.Sink)
+			GlobalRelabelingHelper.UpdateInterval(int64(tg.VertexCount), 0)
 			if options.Dynamic {
 				VertexCountHelper.Reset(utils.Min(1000, int64(tg.VertexCount)))
 			} else {
