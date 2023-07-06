@@ -34,7 +34,7 @@ type VertexProp struct {
 }
 
 type EdgeProp struct {
-	graph.WeightedEdge
+	graph.TimestampWeightedEdge
 }
 
 type Message struct{}
@@ -72,6 +72,7 @@ func (Message) New() (new Message) {
 func Run(options graph.GraphOptions) (maxFlow int32, g *Graph) {
 	alg := new(PushRelabel)
 	GlobalRelabelingHelper.Reset()
+	TimeSeriesReset()
 	g = graph.LaunchGraphExecution[*EdgeProp, VertexProp, EdgeProp, Message, Note](alg, options)
 	return alg.GetMaxFlowValue(g), g
 }
@@ -427,9 +428,14 @@ func (*PushRelabel) OnEdgeDel(g *Graph, src *Vertex, sidx uint32, deletedEdges [
 }
 
 func (*PushRelabel) OnCheckCorrectness(g *Graph) {
-	log.Info().Msg("Ensuring the vertex type is correct")
 	sourceInternalId, source := g.NodeVertexFromRaw(SourceRawId)
 	sinkInternalId, sink := g.NodeVertexFromRaw(SinkRawId)
+	if source == nil || sink == nil {
+		log.Debug().Msg("Skipping OnCheckCorrectness due to missing source or sink")
+		return
+	}
+
+	log.Info().Msg("Ensuring the vertex type is correct")
 	Assert(source.Property.Type == Source, "")
 	Assert(sink.Property.Type == Sink, "")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
