@@ -150,7 +150,7 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 	}
 	// newMaxVertexCount?
 	if n.Note.NewMaxVertexCount {
-		Assert(v.Property.Type != Source, "Non-source received NewMaxVertexCount")
+		Assert(v.Property.Type == Source, "Non-source received NewMaxVertexCount")
 		v.Property.NewHeight = VertexCountHelper.GetMaxVertexCount()
 	} else {
 		// Handle handshakes
