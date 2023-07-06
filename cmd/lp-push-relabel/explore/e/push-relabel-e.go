@@ -31,7 +31,7 @@ type VertexProp struct {
 }
 
 type EdgeProp struct {
-	graph.WeightedEdge
+	graph.TimestampWeightedEdge
 }
 
 type Message struct {

@@ -26,7 +26,7 @@ type VPropAgg struct {
 }
 
 type EPropAgg struct {
-	graph.WeightedEdge
+	graph.TimestampWeightedEdge
 }
 
 type MessageAgg struct {
