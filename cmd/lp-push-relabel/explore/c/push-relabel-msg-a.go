@@ -31,7 +31,7 @@ type VertexPMsgA struct {
 }
 
 type EdgePMsgA struct {
-	graph.WeightedEdge
+	graph.TimestampWeightedEdge
 	Nbr
 }
 
