@@ -19,6 +19,7 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/j"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/k"
 )
 
 type TestGraph struct {
@@ -163,6 +164,17 @@ func TestJIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
 	RunTestGraphs(t, j.Run, j.Name, options)
+}
+
+func TestKAsyncStatic(t *testing.T) {
+	options := baseOptions
+	RunTestGraphs(t, k.Run, k.Name, options)
+}
+
+func TestKIncremental(t *testing.T) {
+	options := baseOptions
+	options.Dynamic = true
+	RunTestGraphs(t, k.Run, k.Name, options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *testing.T,
