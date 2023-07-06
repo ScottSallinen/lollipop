@@ -4,7 +4,6 @@
 - C: Pure message passing, uses array to store neighbours, destination of each edge is treated as a new neighbour
   - Very slow
 - D: Pure message passing, uses array to store neighbours, uses hashtable to map internalIds to indexes in the array (no duplicate neighbours)
-  - Best when considering the following aspects together: (i) performance on static graphs, (ii) performance on dynamic graphs, and (iii) simplicity
 - E: Based on D, tracks incoming residual capacities
   - Only for analyzing the cost of tracking incoming residual capacities
 - F: Based on E, skips sending heights if ResCapIn == 0
@@ -15,3 +14,4 @@
   - Potential reasons why the performance on dynamic graphs is worse than A:
     - On static graphs, access to the hashtable (mapping from ID to index in array) has better temporal locality
 - **J**: Based on D, tracks index of the next push target in discharge
+  - Best when considering the following aspects together: (i) performance on static graphs, (ii) performance on dynamic graphs, and (iii) simplicity

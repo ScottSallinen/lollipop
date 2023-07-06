@@ -67,7 +67,7 @@ type Vertex = graph.Vertex[VertexProp, EdgeProp]
 type Edge = graph.Edge[EdgeProp]
 
 const (
-	Name = "PushRelabel: MergedArray, Aggregation(Shared Heights), TrackResCapIn, SkipBroadcastWhenResCapInIs0"
+	Name = "PushRelabel (H)"
 )
 
 var (
