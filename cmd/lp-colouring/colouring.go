@@ -21,7 +21,7 @@ const MSB = (1 << 31)
 
 type VertexProperty struct {
 	Colour         uint32
-	coloursIndexed utils.Bitmap
+	coloursIndexed utils.Bitmap // Mark colours that are already used by neighbours
 }
 
 type EdgeProperty struct {
@@ -29,9 +29,9 @@ type EdgeProperty struct {
 }
 
 type Mail struct {
-	NbrScratch []uint32
-	Pos        uint32
-	Colour     uint32 // Multi-purposed (fake union); used as Wait count on existing (if USE_WAIT_COUNT is true)
+	NbrScratch []uint32 // Colours of neighbours
+	Pos        uint32   // Unique identifier of the mail sender, that the mail receiver can use to (re)identify the sender. The value is ordinal, and corresponds uniquely to an edge (that has ever existed) that targets the receiver.
+	Colour     uint32   // Multi-purposed (fake union); used as Wait count on existing (if USE_WAIT_COUNT is true)
 	Mutex      *sync.RWMutex
 }
 
@@ -78,10 +78,8 @@ func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgePro
 	edgeAmount := len(vertex.OutEdges)        // Note: will be zero for dynamic graphs.
 	m.NbrScratch = make([]uint32, edgeAmount) // This is for a thread unsafe view // m.NbrScratch.Store(ns)
 
-	if edgeAmount > 0 {
-		for i := 0; i < edgeAmount; i++ {
-			m.NbrScratch[i] = EMPTY_VAL
-		}
+	for i := 0; i < edgeAmount; i++ { // Note: does nothing for dynamic graphs.
+		m.NbrScratch[i] = EMPTY_VAL
 	}
 	return m
 }
@@ -91,7 +89,7 @@ func (*Colouring) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty]
 	return m
 }
 
-// Dynamic: need to reallocate.
+// Dynamic: need to reallocate. Expand the size of existing.NbrScratch. New size must fit NbrScratch[ln], so we expect after that len(NbrScratch) == ln + 1.
 func mExpand(ln int, existing *Mail, colour uint32) {
 	existing.Mutex.Lock()
 	ns := existing.NbrScratch
@@ -142,7 +140,7 @@ func (*Colouring) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo
 
 	// Check wait count.
 	if atomic.LoadUint32(&existing.Colour) > 0 {
-		newWaitCount := atomic.AddUint32(&existing.Colour, ^uint32(0))
+		newWaitCount := atomic.AddUint32(&existing.Colour, ^uint32(0)) // Subtract 1
 		if newWaitCount == 0 {
 			atomic.StoreUint32(&existing.Colour, ^uint32(0)) // Likely to prevent second update cycle
 			return true
@@ -161,7 +159,7 @@ func (*Colouring) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProper
 	for i := range ns {
 		nsc := atomic.LoadUint32(&ns[i])
 		col := (nsc & MSB_MASK)
-		if col <= uint32(len(ns)) {
+		if col <= uint32(len(ns)) { // Ignore colour > len(ns), since this implies we will have a colour available within |InDegree|
 			if !prop.coloursIndexed.QuickSet(col) {
 				prop.coloursIndexed.Set(col)
 			}
@@ -189,7 +187,7 @@ func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty
 	for _, e := range src.OutEdges {
 		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
 		if alg.MailMerge(Mail{Colour: src.Property.Colour, Pos: e.Pos}, notif.Target, &mailbox.Inbox) {
-			sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: (e.Didx)}, mailbox, tidx))
+			sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}
 	}
 	return sent
