@@ -25,9 +25,11 @@ const (
 
 // Set these flags before running the algorithm
 var (
-	InitialHeight = int64(0) // The initial height of a vertex that is newly added to the graph.
-	SourceRawId   = graph.AsRawType(-1)
-	SinkRawId     = graph.AsRawType(-1)
+	InitialHeight           = int64(0) // The initial height of a vertex that is newly added to the graph.
+	GlobalRelabelingEnabled = false
+
+	SourceRawId = graph.AsRawType(-1)
+	SinkRawId   = graph.AsRawType(-1)
 )
 
 func (t VertexType) String() string {
