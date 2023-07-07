@@ -166,7 +166,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			prev = curr
 		}
 
-		if !remitClosed && !blockTop {
+		if !epoch && !remitClosed && !blockTop {
 			gt.Status = REMIT
 			remitClosed, remitCount = checkToRemit(alg, g, gt)
 			gt.EventActions += remitCount
@@ -182,6 +182,8 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 				gt.LoopTimes[1] += curr.Sub(prev)
 				prev = curr
 			}
+		} else {
+			remitCount = 0
 		}
 
 		// The main check for updates to topology. This occurs with priority over algorithmic messages.
