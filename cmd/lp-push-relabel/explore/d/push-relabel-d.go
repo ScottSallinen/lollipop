@@ -25,7 +25,7 @@ type VertexProp struct {
 	Type      VertexType
 	Excess    int32
 	Height    int64
-	NewHeight int64
+	NewHeight int64 // FIXME
 
 	Nbrs            []Neighbour
 	NbrMap          map[uint32]int32 // Id -> Pos
@@ -77,11 +77,11 @@ func (pr *PushRelabelD) GetMaxFlowValue(g *Graph) int32 {
 	return sink.Property.Excess
 }
 
-func (pr *PushRelabelD) InitAllMessage(_ *Vertex, _ uint32, _ graph.RawType) Message {
+func (pr *PushRelabelD) InitAllMail(_ *Vertex, _ uint32, _ graph.RawType) Message {
 	return Message{}
 }
 
-func (pr *PushRelabelD) BaseVertexMessage(v *Vertex, internalId uint32, rawId graph.RawType) (m Message) {
+func (pr *PushRelabelD) BaseVertexMailbox(v *Vertex, internalId uint32, rawId graph.RawType) (m Message) {
 	v.Property.Height = InitialHeight
 	if rawId == SourceRawId {
 		v.Property.Type = Source
@@ -95,11 +95,11 @@ func (pr *PushRelabelD) BaseVertexMessage(v *Vertex, internalId uint32, rawId gr
 	return m
 }
 
-func (*PushRelabelD) MessageMerge(incoming Message, sidx uint32, existing *Message) (newInfo bool) {
+func (*PushRelabelD) MailMerge(incoming Message, sidx uint32, existing *Message) (newInfo bool) {
 	return true
 }
 
-func (*PushRelabelD) MessageRetrieve(existing *Message, vertex *Vertex) (outgoing Message) {
+func (*PushRelabelD) MailRetrieve(existing *Message, vertex *Vertex) (outgoing Message) {
 	return outgoing
 }
 
@@ -125,20 +125,20 @@ func (pr *PushRelabelD) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 		v.Property.Nbrs[pos].ResCap += int32(e.Property.Weight)
 	}
 	for i, nbr := range v.Property.Nbrs {
-		vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+		mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 		sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 			Target: nbr.Didx,
 			Note:   Note{Height: v.Property.NewHeight, Flow: int32(i), SrcId: myId, SrcPos: nbr.Pos, Handshake: true},
-		}, vtm, tidx))
+		}, mailbox, tidx))
 	}
 
 	source := VertexCountHelper.NewVertex()
 	if source != EmptyValue {
-		vtm, tidx := g.NodeVertexMessages(source)
+		mailbox, tidx := g.NodeVertexMailbox(source)
 		sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 			Target: source,
 			Note:   Note{NewMaxVertexCount: true},
-		}, vtm, tidx))
+		}, mailbox, tidx))
 	}
 	return
 }
@@ -173,11 +173,11 @@ func (pr *PushRelabelD) dischargeOnce(g *Graph, v *Vertex, myId uint32) (sent ui
 				nbr.ResCap -= amount
 				Assert(amount > 0, "")
 
-				vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+				mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 				sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 					Target: nbr.Didx,
 					Note:   Note{Height: v.Property.NewHeight, Flow: amount, SrcId: myId, SrcPos: nbr.Pos},
-				}, vtm, tidx))
+				}, mailbox, tidx))
 
 				if v.Property.Excess == 0 {
 					return
@@ -210,11 +210,11 @@ func (pr *PushRelabelD) processMessage(g *Graph, v *Vertex, n graph.Notification
 					v.Property.NbrMap[n.Note.SrcId] = pos
 					nbr = &v.Property.Nbrs[pos]
 					// send back their pos and my height
-					vtm, tidx := g.NodeVertexMessages(n.Note.SrcId)
+					mailbox, tidx := g.NodeVertexMailbox(n.Note.SrcId)
 					sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
 						Target: n.Note.SrcId,
 						Note:   Note{Height: v.Property.NewHeight, Flow: pos, SrcId: n.Target, SrcPos: myPos, Handshake: true},
-					}, vtm, tidx))
+					}, mailbox, tidx))
 				} else {
 					// already told them
 					nbr = &v.Property.Nbrs[pos]
@@ -242,11 +242,11 @@ func (pr *PushRelabelD) processMessage(g *Graph, v *Vertex, n graph.Notification
 				nbr.ResCap -= -amount
 				v.Property.Excess -= -amount
 
-				vtm, tidx := g.NodeVertexMessages(n.Note.SrcId)
+				mailbox, tidx := g.NodeVertexMailbox(n.Note.SrcId)
 				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
 					Target: n.Note.SrcId,
 					Note:   Note{Height: v.Property.NewHeight, Flow: -amount, SrcId: n.Target, SrcPos: nbr.Pos},
-				}, vtm, tidx))
+				}, mailbox, tidx))
 			}
 		} else if n.Note.Flow > 0 {
 			// additional flow
@@ -266,11 +266,11 @@ func (pr *PushRelabelD) restoreHeightInvariant(g *Graph, v *Vertex, nbr *Neighbo
 			v.Property.Excess -= amount
 			nbr.ResCap -= amount
 
-			vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+			mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 			sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 				Target: nbr.Didx,
 				Note:   Note{Height: v.Property.NewHeight, Flow: amount, SrcId: myId, SrcPos: nbr.Pos},
-			}, vtm, tidx))
+			}, mailbox, tidx))
 		}
 		if nbr.ResCap > 0 {
 			Assert(v.Property.Type != Source, "")
@@ -307,11 +307,11 @@ func (pr *PushRelabelD) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (s
 	if v.Property.NewHeight != v.Property.Height {
 		v.Property.Height = v.Property.NewHeight
 		for _, nbr := range v.Property.Nbrs {
-			vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+			mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 			sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 				Target: nbr.Didx,
 				Note:   Note{Height: v.Property.NewHeight, SrcId: myId, SrcPos: nbr.Pos},
-			}, vtm, tidx))
+			}, mailbox, tidx))
 		}
 	}
 	return sent
@@ -342,18 +342,18 @@ func (pr *PushRelabelD) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart 
 			nbr := &src.Property.Nbrs[pos]
 			nbr.ResCap += int32(e.Property.Weight)
 			if nbr.Pos == -1 {
-				vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+				mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 				sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[Note]{
 					Target: nbr.Didx,
 					Note:   Note{Height: src.Property.NewHeight, Flow: pos, SrcId: sidx, SrcPos: nbr.Pos, Handshake: true},
-				}, vtm, tidx))
+				}, mailbox, tidx))
 			} else {
 				sent += pr.restoreHeightInvariant(g, src, nbr, sidx)
 			}
 		}
 	}
-	vtm, _ := g.NodeVertexMessages(sidx)
-	if src.Property.UnknownPosCount == 0 && atomic.LoadInt32(&vtm.Activity) == 0 {
+	mailbox, _ := g.NodeVertexMailbox(sidx)
+	if src.Property.UnknownPosCount == 0 && atomic.LoadInt32(&mailbox.Activity) == 0 {
 		sent += pr.finalizeVertexState(g, src, sidx)
 	}
 	return

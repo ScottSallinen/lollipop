@@ -26,7 +26,7 @@ type VertexPMsgA struct {
 	Type      VertexType
 	Excess    int32
 	Height    int64
-	NewHeight int64
+	NewHeight int64 // FIXME
 	InNbrs    []InNbr
 }
 
@@ -69,11 +69,11 @@ func (pr *PushRelabelMsgA) GetMaxFlowValue(g *graph.Graph[VertexPMsgA, EdgePMsgA
 	return sink.Property.Excess
 }
 
-func (pr *PushRelabelMsgA) InitAllMessage(vertex *graph.Vertex[VertexPMsgA, EdgePMsgA], internalId uint32, rawId graph.RawType) MessageMsgA {
+func (pr *PushRelabelMsgA) InitAllMail(vertex *graph.Vertex[VertexPMsgA, EdgePMsgA], internalId uint32, rawId graph.RawType) MessageMsgA {
 	return MessageMsgA{Init: true}
 }
 
-func (pr *PushRelabelMsgA) BaseVertexMessage(v *graph.Vertex[VertexPMsgA, EdgePMsgA], internalId uint32, rawId graph.RawType) (m MessageMsgA) {
+func (pr *PushRelabelMsgA) BaseVertexMailbox(v *graph.Vertex[VertexPMsgA, EdgePMsgA], internalId uint32, rawId graph.RawType) (m MessageMsgA) {
 	v.Property.Height = InitialHeight
 	if rawId == SourceRawId {
 		v.Property.Type = Source
@@ -91,14 +91,14 @@ func (pr *PushRelabelMsgA) BaseVertexMessage(v *graph.Vertex[VertexPMsgA, EdgePM
 	return m
 }
 
-func (*PushRelabelMsgA) MessageMerge(incoming MessageMsgA, sidx uint32, existing *MessageMsgA) (newInfo bool) {
+func (*PushRelabelMsgA) MailMerge(incoming MessageMsgA, sidx uint32, existing *MessageMsgA) (newInfo bool) {
 	if incoming.Init {
 		*existing = incoming
 	}
 	return true
 }
 
-func (*PushRelabelMsgA) MessageRetrieve(existing *MessageMsgA, vertex *graph.Vertex[VertexPMsgA, EdgePMsgA]) (outgoing MessageMsgA) {
+func (*PushRelabelMsgA) MailRetrieve(existing *MessageMsgA, vertex *graph.Vertex[VertexPMsgA, EdgePMsgA]) (outgoing MessageMsgA) {
 	if existing.Init {
 		existing.Init = false
 		return MessageMsgA{true}
@@ -122,20 +122,20 @@ func (pr *PushRelabelMsgA) Init(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMs
 		e.Property.Height = InitialHeight
 
 		// Initiate handshake
-		vtm, tidx := g.NodeVertexMessages(e.Didx)
+		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
 		sent += g.EnsureSend(g.ActiveNotification(internalId, graph.Notification[NoteMsgA]{
 			Target: e.Didx,
 			Note:   NoteMsgA{SrcInternalId: internalId, SrcPos: e.Pos, Height: v.Property.NewHeight, Flow: int32(eidx), SentForward: true, HandShake: true},
-		}, vtm, tidx))
+		}, mailbox, tidx))
 	}
 
 	source := VertexCountHelper.NewVertex()
 	if source != EmptyValue {
-		vtm, tidx := g.NodeVertexMessages(source)
+		mailbox, tidx := g.NodeVertexMailbox(source)
 		sent += g.EnsureSend(g.ActiveNotification(internalId, graph.Notification[NoteMsgA]{
 			Target: source,
 			Note:   NoteMsgA{NewMaxVertexCount: true},
-		}, vtm, tidx))
+		}, mailbox, tidx))
 	}
 	return
 }
@@ -173,11 +173,11 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 				n.Note.Flow = 0
 				inNbr.Pos = myPos
 				inNbr.Didx = n.Note.SrcInternalId
-				vtm, tidx := g.NodeVertexMessages(n.Note.SrcInternalId)
+				mailbox, tidx := g.NodeVertexMailbox(n.Note.SrcInternalId)
 				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsgA]{
 					Target: n.Note.SrcInternalId,
 					Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: myPos, Height: v.Property.NewHeight, SentForward: false, HandShake: true},
-				}, vtm, tidx))
+				}, mailbox, tidx))
 				nbr = &inNbr.Nbr
 				Assert(n.Note.SrcInternalId == v.Property.InNbrs[n.Note.SrcPos].Didx, "")
 			} else {
@@ -209,11 +209,11 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 				nbr.ResCap -= -amount
 				v.Property.Excess -= -amount
 
-				vtm, tidx := g.NodeVertexMessages(n.Note.SrcInternalId)
+				mailbox, tidx := g.NodeVertexMailbox(n.Note.SrcInternalId)
 				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsgA]{
 					Target: n.Note.SrcInternalId,
 					Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: myPos, Height: v.Property.NewHeight, Flow: -amount, SentForward: !n.Note.SentForward},
-				}, vtm, tidx))
+				}, mailbox, tidx))
 			}
 		} else if n.Note.Flow > 0 {
 			// additional flow
@@ -229,11 +229,11 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 					v.Property.Excess -= amount
 					nbr.ResCap -= amount
 
-					vtm, tidx := g.NodeVertexMessages(n.Note.SrcInternalId)
+					mailbox, tidx := g.NodeVertexMailbox(n.Note.SrcInternalId)
 					sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsgA]{
 						Target: n.Note.SrcInternalId,
 						Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: myPos, Height: v.Property.NewHeight, Flow: amount, SentForward: !n.Note.SentForward},
-					}, vtm, tidx))
+					}, mailbox, tidx))
 				}
 				if nbr.ResCap > 0 {
 					Assert(v.Property.Type != Source, "")
@@ -275,18 +275,18 @@ func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA,
 	if v.Property.NewHeight != v.Property.Height {
 		v.Property.Height = v.Property.NewHeight
 		for _, inNbr := range v.Property.InNbrs {
-			vtm, tidx := g.NodeVertexMessages(inNbr.Didx)
+			mailbox, tidx := g.NodeVertexMailbox(inNbr.Didx)
 			sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsgA]{
 				Target: inNbr.Didx,
 				Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: inNbr.Pos, Height: v.Property.NewHeight, SentForward: false},
-			}, vtm, tidx))
+			}, mailbox, tidx))
 		}
 		for _, e := range v.OutEdges {
-			vtm, tidx := g.NodeVertexMessages(e.Didx)
+			mailbox, tidx := g.NodeVertexMailbox(e.Didx)
 			sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsgA]{
 				Target: e.Didx,
 				Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: e.Pos, Height: v.Property.NewHeight, SentForward: true},
-			}, vtm, tidx))
+			}, mailbox, tidx))
 		}
 	}
 
@@ -307,11 +307,11 @@ func (pr *PushRelabelMsgA) dischargeOnce(g *graph.Graph[VertexPMsgA, EdgePMsgA, 
 				Assert(amount > 0, "")
 
 				inNbr := &v.Property.InNbrs[i]
-				vtm, tidx := g.NodeVertexMessages(inNbr.Didx)
+				mailbox, tidx := g.NodeVertexMailbox(inNbr.Didx)
 				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsgA]{
 					Target: inNbr.Didx,
 					Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: inNbr.Pos, Height: v.Property.NewHeight, Flow: amount, SentForward: false},
-				}, vtm, tidx))
+				}, mailbox, tidx))
 
 				if v.Property.Excess == 0 {
 					return
@@ -332,11 +332,11 @@ func (pr *PushRelabelMsgA) dischargeOnce(g *graph.Graph[VertexPMsgA, EdgePMsgA, 
 				Assert(amount > 0, "")
 
 				e := &v.OutEdges[i]
-				vtm, tidx := g.NodeVertexMessages(e.Didx)
+				mailbox, tidx := g.NodeVertexMailbox(e.Didx)
 				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsgA]{
 					Target: e.Didx,
 					Note:   NoteMsgA{SrcInternalId: n.Target, SrcPos: e.Pos, Height: v.Property.NewHeight, Flow: amount, SentForward: true},
-				}, vtm, tidx))
+				}, mailbox, tidx))
 
 				if v.Property.Excess == 0 {
 					return
@@ -388,8 +388,8 @@ func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA
 
 	log.Info().Msg("Ensuring all messages are processed")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *graph.Vertex[VertexPMsgA, EdgePMsgA]) {
-		vtm, _ := g.NodeVertexMessages(internalId)
-		Assert(vtm.Inbox.Init == false, "")
+		mailbox, _ := g.NodeVertexMailbox(internalId)
+		Assert(mailbox.Inbox.Init == false, "")
 		Assert(v.Property.Height == v.Property.NewHeight, "")
 	})
 

@@ -25,7 +25,7 @@ type VertexProp struct {
 	Type      VertexType
 	Excess    int32
 	Height    int64
-	NewHeight int64
+	NewHeight int64 // FIXME
 
 	Nbrs            []Neighbour
 	NbrMap          map[uint32]int32 // Id -> Pos
@@ -94,11 +94,11 @@ func (pr *PushRelabel) GetMaxFlowValue(g *Graph) int32 {
 	return sink.Property.Excess
 }
 
-func (pr *PushRelabel) InitAllMessage(vertex *Vertex, internalId uint32, rawId graph.RawType) Message {
+func (pr *PushRelabel) InitAllMail(vertex *Vertex, internalId uint32, rawId graph.RawType) Message {
 	return Message{Init: true}
 }
 
-func (pr *PushRelabel) BaseVertexMessage(v *Vertex, internalId uint32, rawId graph.RawType) (m Message) {
+func (pr *PushRelabel) BaseVertexMailbox(v *Vertex, internalId uint32, rawId graph.RawType) (m Message) {
 	v.Property.Height = InitialHeight
 	if rawId == SourceRawId {
 		v.Property.Type = Source
@@ -111,7 +111,7 @@ func (pr *PushRelabel) BaseVertexMessage(v *Vertex, internalId uint32, rawId gra
 	return Message{Inbox: new(Inbox)}
 }
 
-func (*PushRelabel) MessageMerge(incoming Message, sidx uint32, existing *Message) (newInfo bool) {
+func (*PushRelabel) MailMerge(incoming Message, sidx uint32, existing *Message) (newInfo bool) {
 	if incoming.Init {
 		existing.Init = true
 		return true
@@ -129,7 +129,7 @@ func (*PushRelabel) MessageMerge(incoming Message, sidx uint32, existing *Messag
 	return newInfo
 }
 
-func (*PushRelabel) MessageRetrieve(existing *Message, v *Vertex) (outgoing Message) {
+func (*PushRelabel) MailRetrieve(existing *Message, v *Vertex) (outgoing Message) {
 	existing.Inbox.Lock.Lock()
 	if existing.Init {
 		outgoing.Init = true
@@ -163,20 +163,20 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, inbox *Inbox, myId uint32) (sen
 		v.Property.Nbrs[pos].ResCapOut += int32(e.Property.Weight)
 	}
 	for i, nbr := range v.Property.Nbrs {
-		vtm, tidx := g.NodeVertexMessages(nbr.Didx)
+		mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 		sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 			Target: nbr.Didx,
 			Note:   Note{ResCapOffset: nbr.ResCapOut, Flow: int32(i), SrcId: myId, SrcPos: nbr.Pos, Handshake: true},
-		}, vtm, tidx))
+		}, mailbox, tidx))
 	}
 
 	source := VertexCountHelper.NewVertex()
 	if source != EmptyValue {
-		vtm, tidx := g.NodeVertexMessages(source)
+		mailbox, tidx := g.NodeVertexMailbox(source)
 		sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 			Target: source,
 			Note:   Note{NewMaxVertexCount: true},
-		}, vtm, tidx))
+		}, mailbox, tidx))
 	}
 	return
 }
@@ -208,12 +208,12 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 					// TODO: what if initial height is 0, do we need to check it?
 					v.Property.NbrMap[n.Note.SrcId] = pos
 					// send back their pos and my height
-					vtm, tidx := g.NodeVertexMessages(n.Note.SrcId)
-					//pr.MessageMerge(Message{Height: v.Property.NewHeight, Pos: myPos}, n.Target, &vtm.Inbox)
+					mailbox, tidx := g.NodeVertexMailbox(n.Note.SrcId)
+					//pr.MailMerge(Message{Height: v.Property.NewHeight, Pos: myPos}, n.Target, &mailbox.Inbox)
 					sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
 						Target: n.Note.SrcId,
 						Note:   Note{Flow: pos, SrcId: n.Target, SrcPos: myPos, Handshake: true},
-					}, vtm, tidx))
+					}, mailbox, tidx))
 					v.Property.OutQueue = append(v.Property.OutQueue, utils.Pair[int32, int32]{First: pos})
 					alreadySentHeight = true
 				} else {
@@ -227,9 +227,9 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 				v.Property.UnknownPosCount--
 				if !alreadySentHeight {
 					v.Property.OutQueue = append(v.Property.OutQueue, utils.Pair[int32, int32]{First: n.Note.SrcPos})
-					//vtm, tidx := g.NodeVertexMessages(nbr.Didx)
-					//if pr.MessageMerge(Message{Height: v.Property.NewHeight, Pos: myPos}, n.Target, &vtm.Inbox) {
-					//	sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: nbr.Didx}, vtm, tidx))
+					//mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
+					//if pr.MailMerge(Message{Height: v.Property.NewHeight, Pos: myPos}, n.Target, &mailbox.Inbox) {
+					//	sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: nbr.Didx}, mailbox, tidx))
 					//}
 					alreadySentHeight = true
 				}
@@ -271,9 +271,9 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 
 		if !alreadySentHeight && oldResCapIn <= 0 && nbr.ResCapIn > 0 {
 			v.Property.OutQueue = append(v.Property.OutQueue, utils.Pair[int32, int32]{First: n.Note.SrcPos})
-			//vtm, tidx := g.NodeVertexMessages(nbr.Didx)
-			//if pr.MessageMerge(Message{Height: v.Property.NewHeight, Pos: nbr.Pos}, n.Target, &vtm.Inbox) {
-			//	sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: nbr.Didx}, vtm, tidx))
+			//mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
+			//if pr.MailMerge(Message{Height: v.Property.NewHeight, Pos: nbr.Pos}, n.Target, &mailbox.Inbox) {
+			//	sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: nbr.Didx}, mailbox, tidx))
 			//}
 		}
 	}
@@ -331,13 +331,13 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 
 	for _, p := range v.Property.OutQueue {
 		nbr := &v.Property.Nbrs[p.First]
-		vtm, tidx := g.NodeVertexMessages(nbr.Didx)
-		newInfo := pr.MessageMerge(Message{Height: v.Property.NewHeight, Pos: nbr.Pos}, n.Target, &vtm.Inbox)
+		mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
+		newInfo := pr.MailMerge(Message{Height: v.Property.NewHeight, Pos: nbr.Pos}, n.Target, &mailbox.Inbox)
 		if newInfo || p.Second != 0 {
 			sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
 				Target: nbr.Didx,
 				Note:   Note{Flow: p.Second, SrcId: n.Target, SrcPos: nbr.Pos},
-			}, vtm, tidx))
+			}, mailbox, tidx))
 		}
 	}
 	v.Property.OutQueue = v.Property.OutQueue[:0]
@@ -347,9 +347,9 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 		v.Property.Height = v.Property.NewHeight
 		for _, nbr := range v.Property.Nbrs {
 			if nbr.ResCapIn > 0 {
-				vtm, tidx := g.NodeVertexMessages(nbr.Didx)
-				if pr.MessageMerge(Message{Height: v.Property.NewHeight, Pos: nbr.Pos}, n.Target, &vtm.Inbox) {
-					sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: nbr.Didx}, vtm, tidx))
+				mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
+				if pr.MailMerge(Message{Height: v.Property.NewHeight, Pos: nbr.Pos}, n.Target, &mailbox.Inbox) {
+					sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: nbr.Didx}, mailbox, tidx))
 				}
 			}
 		}
@@ -415,12 +415,12 @@ func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart i
 			} else {
 				m.Inbox.HeightCheckList = append(m.Inbox.HeightCheckList, pos)
 			}
-			vtm, tidx := g.NodeVertexMessages(e.Didx)
-			sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[Note]{Target: e.Didx, Note: note}, vtm, tidx))
+			mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+			sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[Note]{Target: e.Didx, Note: note}, mailbox, tidx))
 		}
 	}
-	vtm, _ := g.NodeVertexMessages(sidx)
-	sent += pr.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx, Activity: atomic.LoadInt32(&vtm.Activity)}, m)
+	mailbox, _ := g.NodeVertexMailbox(sidx)
+	sent += pr.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx, Activity: atomic.LoadInt32(&mailbox.Activity)}, m)
 	return
 }
 
@@ -443,13 +443,13 @@ func (*PushRelabel) OnCheckCorrectness(g *Graph) {
 
 	log.Info().Msg("Ensuring all messages are processed")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
-		vtm, _ := g.NodeVertexMessages(internalId)
-		Assert(vtm.Inbox.Init == false, "")
-		Assert(vtm.Inbox.Height == 0, "")
-		Assert(vtm.Inbox.Pos == 0, "")
+		mailbox, _ := g.NodeVertexMailbox(internalId)
+		Assert(mailbox.Inbox.Init == false, "")
+		Assert(mailbox.Inbox.Height == 0, "")
+		Assert(mailbox.Inbox.Pos == 0, "")
 		Assert(v.Property.UnknownPosCount == 0, "")
 		Assert(v.Property.Height == v.Property.NewHeight, "")
-		Assert(len(vtm.Inbox.Inbox.HeightCheckList) == 0, "")
+		Assert(len(mailbox.Inbox.Inbox.HeightCheckList) == 0, "")
 		Assert(len(v.Property.OutQueue) == 0, "")
 	})
 
@@ -533,21 +533,21 @@ func (*PushRelabel) OnCheckCorrectness(g *Graph) {
 
 	log.Info().Msg("Ensuring NbrHeight is accurate")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
-		vtm, _ := g.NodeVertexMessages(internalId)
+		mailbox, _ := g.NodeVertexMailbox(internalId)
 		for i, nbr := range v.Property.Nbrs {
 			if nbr.ResCapOut > 0 {
-				Assert(vtm.Inbox.Inbox.NbrsHeight[i] <= g.NodeVertex(nbr.Didx).Property.Height, "")
+				Assert(mailbox.Inbox.Inbox.NbrsHeight[i] <= g.NodeVertex(nbr.Didx).Property.Height, "")
 			}
 		}
 	})
 
 	log.Info().Msg("Checking height invariants")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
-		vtm, _ := g.NodeVertexMessages(internalId)
+		mailbox, _ := g.NodeVertexMailbox(internalId)
 		h := v.Property.Height
 		for i, nbr := range v.Property.Nbrs {
 			if nbr.ResCapOut > 0 {
-				Assert(h <= vtm.Inbox.Inbox.NbrsHeight[i]+1, "")
+				Assert(h <= mailbox.Inbox.Inbox.NbrsHeight[i]+1, "")
 			}
 		}
 	})
