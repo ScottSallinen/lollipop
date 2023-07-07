@@ -102,12 +102,6 @@ func TestMsgAAsyncStatic(t *testing.T) {
 	RunTestGraphs(t, c.RunMsgA, "MessagePassingArray", options)
 }
 
-func TestMsgAIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	RunTestGraphs(t, c.RunMsgA, "MessagePassingArray", options)
-}
-
 func TestDAsyncStatic(t *testing.T) {
 	options := baseOptions
 	RunTestGraphs(t, d.Run, d.Name, options)

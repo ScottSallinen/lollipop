@@ -8,7 +8,7 @@ import (
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
-func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexProp, EdgeProp, Message, Note], wg *sync.WaitGroup) {
+func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexProp, EdgeProp, Mail, Note], wg *sync.WaitGroup) {
 	var outEntry TsEntry
 	for tse := range entries {
 		// Skip if source or sink are not added yet
