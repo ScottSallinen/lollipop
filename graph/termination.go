@@ -71,17 +71,23 @@ func (g *Graph[V, E, M, N]) CheckTermination(tidx uint16) bool {
 
 	for t := 0; t < int(THREADS); t++ {
 		if g.TerminateVotes[t] < 2 { // Ensure everyone is ready in state 2.
+			if g.TerminateVotes[tidx] == 3 { // Fall back if we were in state 3 and view someone no longer ready. // TODO: Is this needed?
+				if g.TerminateVotes[t] == 0 {
+					g.TerminateVotes[tidx] = 1
+				} else { // g.TerminateVotes[t] == 1
+					g.TerminateVotes[tidx] = 2
+				}
+			}
 			return false // We no longer think everyone is in state 2.
 		}
 	}
 
-	// Should always succeed here? This is just for sanity...?
-
-	// We are now state 3: we think everyone is 2, and we have re-checked our own messages.
+	// We now move to state 3: we previously saw everyone is 2, and we have re-checked our own messages and still believe all are 2.
+	// If we had a new message when we re-checked (or someone else did), we should have already fallen back to 0 and not come back to this spot...
 	g.TerminateVotes[tidx] = 3
 	for t := 0; t < int(THREADS); t++ {
 		if g.TerminateVotes[t] != 3 { // Ensure everyone is in state 3.
-			if g.TerminateVotes[t] < 2 {
+			if g.TerminateVotes[t] < 2 { // TODO: is this possible?
 				log.Warn().Msg("WARNING T[" + utils.F("%02d", tidx) + "] FAILURE at stage 3, observing a stage: " + utils.V(g.TerminateVotes[t]) + ". thread: " + utils.V(t))
 			}
 			return false
