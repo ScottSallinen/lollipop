@@ -38,22 +38,28 @@ func (g *Graph[V, E, M, N]) CheckTermination(tidx uint16) bool {
 	for t := 0; t < int(THREADS); t++ {
 		allActions += g.TerminateData[t]
 	}
+
 	// Report our view.
-	g.TerminateView[tidx] = allActions
+	if g.TerminateView[tidx] != allActions {
+		g.TerminateView[tidx] = allActions
+		g.TerminateVotes[tidx] = 0 // View mismatch; do not attempt. We changed our own view.
+		return false
+	}
 
 	// Check all reported terminate views to see if they match our view of all actions.
 	for t := 0; t < int(THREADS); t++ {
 		if g.TerminateView[t] != allActions {
-			// We do not believe everyone has the same view of all actions; do not attempt.
+			// View mismatch; do not attempt. Someone else does not agree with our view.
 			g.TerminateVotes[tidx] = 0
 			return false
 		}
 	}
-	// We believe everyone else to have the same view of all action count; begin voting procedure.
 
+	// We believe everyone else to have the same view of all action count; begin voting procedure.
 	if g.TerminateVotes[tidx] == 0 { // Do not overwrite state > 0 if not needed.
 		g.TerminateVotes[tidx] = 1 // State 1: We wish to begin termination.
 	}
+
 	// Check our view of other thread states.
 	for t := 0; t < int(THREADS); t++ {
 		if g.TerminateVotes[t] == 0 {
