@@ -95,8 +95,9 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	FromEmitQueue utils.GrowableRingBuff[TopologyEvent[E]]
 	ToRemitQueue  utils.RingBuffSPSC[RawEdgeEvent[E]]
 
-	Response chan Command // Response channel
-	_        [7]uint64
+	Response     chan Command // Response channel
+	EventActions uint64       // Number of event actions (to or from remitter) performed by the thread.
+	_            [6]uint64
 }
 
 // Allocates everything needed for a new graph.

@@ -31,7 +31,7 @@ func (g *Graph[V, E, M, N]) printStatus(prefix string) {
 func (g *Graph[V, E, M, N]) CheckTermination(tidx uint16) bool {
 	THREADS := g.NumThreads
 	// Report all actions we have taken.
-	g.TerminateData[tidx] = (int64(g.GraphThreads[tidx].MsgSend) + int64(g.GraphThreads[tidx].MsgRecv))
+	g.TerminateData[tidx] = (int64(g.GraphThreads[tidx].MsgSend) + int64(g.GraphThreads[tidx].MsgRecv) + int64(g.GraphThreads[tidx].EventActions))
 
 	// Compute our view of all actions, based on whatever was previously reported by others.
 	allActions := int64(0)
@@ -49,8 +49,7 @@ func (g *Graph[V, E, M, N]) CheckTermination(tidx uint16) bool {
 	// Check all reported terminate views to see if they match our view of all actions.
 	for t := 0; t < int(THREADS); t++ {
 		if g.TerminateView[t] != allActions {
-			// View mismatch; do not attempt. Someone else does not agree with our view.
-			g.TerminateVotes[tidx] = 0
+			g.TerminateVotes[tidx] = 0 // View mismatch; do not attempt. Someone else does not agree with our view.
 			return false
 		}
 	}
@@ -63,16 +62,15 @@ func (g *Graph[V, E, M, N]) CheckTermination(tidx uint16) bool {
 	// Check our view of other thread states.
 	for t := 0; t < int(THREADS); t++ {
 		if g.TerminateVotes[t] == 0 {
-			// In case we were ready, we no longer will be, as we no longer view everyone in at least state 1.
-			g.TerminateVotes[tidx] = 1
+			g.TerminateVotes[tidx] = 1 // In case we were ready, we no longer will be, as we no longer view everyone in at least state 1.
 			return false
 		}
 	}
 
 	// We think everyone is voting at least >= 1. Flag to 2 to suggest we view everyone else is voting at least 1.
 	if g.TerminateVotes[tidx] == 1 {
-		g.TerminateVotes[tidx] = 2
-		return false // We are now in state 2, but we need to go check for messages.
+		g.TerminateVotes[tidx] = 2 // We are now in state 2, but we need to go check for messages.
+		return false
 	}
 
 	for t := 0; t < int(THREADS); t++ {

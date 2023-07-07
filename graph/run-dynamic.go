@@ -169,6 +169,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		if !remitClosed && !blockTop {
 			gt.Status = REMIT
 			remitClosed, remitCount = checkToRemit(alg, g, gt)
+			gt.EventActions += remitCount
 			if remitClosed {
 				//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] FromEmitEvents closed")
 				remitCount = 0
@@ -223,6 +224,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 
 			// Apply any topology events that we have pulled.
 			if count != 0 {
+				gt.EventActions += uint64(count)
 				gt.Status = APPLY_TOP
 				topFail = 0
 				addEvents, delEvents := EnactTopologyEvents[EP](alg, g, gt, int(count), insDelOnExpire)
