@@ -2,17 +2,12 @@ package main
 
 import (
 	"fmt"
-
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/b"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/j"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/k"
 )
 
 type testCase struct {
@@ -45,9 +40,11 @@ var (
 		{1, 658312, 33793, GraphPath, GraphSize},
 	}
 	baseOptionsBenchmark = graph.GraphOptions{
-		CheckCorrectness: true,
-		NumThreads:       16,
-		QueueMultiplier:  8,
+		CheckCorrectness:      true,
+		NumThreads:            16,
+		QueueMultiplier:       8,
+		TimestampPos:          1,
+		AllowAsyncVertexProps: false,
 	}
 )
 
@@ -61,6 +58,7 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 		options.Name = tc.Filename
 		SourceRawId = graph.RawType(tc.Source)
 		SinkRawId = graph.RawType(tc.Sink)
+		GlobalRelabelingHelper.UpdateInterval(int64(tc.VertexCount), 0)
 		if options.Dynamic {
 			VertexCountHelper.Reset(1000)
 		} else {
@@ -86,16 +84,23 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 
 func RunBenchmarks() {
 	options := baseOptionsBenchmark
-	//options.Dynamic = true
-	//options.LogTimeseries = true
-	//options.TimeSeriesInterval = 86400 * 8
+
+	options.Dynamic = true
+
+	options.LogTimeseries = true
+	options.TimeSeriesInterval = 86400 * 7
+	//options.OracleCompare = true
 
 	results := make([]benchmarkResult, 0, 4)
-	results = append(results, runBenchmark(a.RunAggH, options, "AggH"))
-	results = append(results, runBenchmark(b.RunMsgH, options, "MsgH"))
-	results = append(results, runBenchmark(h.Run, options, h.Name))
-	results = append(results, runBenchmark(i.Run, options, i.Name))
-	results = append(results, runBenchmark(j.Run, options, j.Name))
+	//results = append(results, runBenchmark(a.RunAggH, options, "AggH"))
+	//results = append(results, runBenchmark(b.RunMsgH, options, "MsgH"))
+	//results = append(results, runBenchmark(h.Run, options, h.Name))
+	//results = append(results, runBenchmark(i.Run, options, i.Name))
+	//results = append(results, runBenchmark(j.Run, options, j.Name))
+	////GlobalRelabelingEnabled = true
+	//results = append(results, runBenchmark(k.Run, options, k.Name))
+	GlobalRelabelingEnabled = false
+	results = append(results, runBenchmark(k.Run, options, k.Name))
 	for _, r := range results {
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm message counts: %v", r.name, r.messages))
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtimes: %v", r.name, r.runtimes))
