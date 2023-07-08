@@ -1,7 +1,6 @@
 package common
 
 import (
-	"math"
 	"sync/atomic"
 )
 
@@ -15,7 +14,7 @@ type VertexCount struct {
 var VertexCountHelper VertexCount
 
 func (vc *VertexCount) Reset(initialEstimatedCount int64) {
-	vc.source = math.MaxUint32
+	vc.source = EmptyValue
 	vc.realCount = 0
 	vc.estimatedCount = initialEstimatedCount
 	vc.alpha = 1.1
@@ -30,7 +29,7 @@ func (vc *VertexCount) NewVertex() (source uint32) {
 			return atomic.LoadUint32(&vc.source)
 		}
 	}
-	return math.MaxUint32
+	return EmptyValue
 }
 
 func (vc *VertexCount) RegisterSource(sourceInternalId uint32) (currentCount int64) {
@@ -40,4 +39,8 @@ func (vc *VertexCount) RegisterSource(sourceInternalId uint32) (currentCount int
 
 func (vc *VertexCount) GetMaxVertexCount() int64 {
 	return atomic.LoadInt64(&vc.estimatedCount)
+}
+
+func (vc *VertexCount) GetSourceId() uint32 {
+	return atomic.LoadUint32(&vc.source)
 }
