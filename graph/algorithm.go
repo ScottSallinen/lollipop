@@ -108,7 +108,7 @@ func Run[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]
 		pprof.StopCPUProfile()
 	}
 
-	algElapsed := g.AlgTimer.Elapsed()
+	algElapsed := g.AlgTimer.Pause()
 	gElapsed := g.Watch.Elapsed()
 	msgSend := uint64(0)
 	for t := 0; t < int(g.NumThreads); t++ {

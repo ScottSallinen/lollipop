@@ -66,3 +66,10 @@ func (w *Watch) UnPause() {
 	}
 	w.mu.Unlock()
 }
+
+func (w *Watch) IsPaused() (paused bool) {
+	w.mu.Lock()
+	paused = w.paused
+	w.mu.Unlock()
+	return paused
+}

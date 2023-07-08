@@ -14,7 +14,10 @@ import (
 // TODO: we shallow copy edges, this would be a problem if the algorithm has edge properties...
 func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], finishOriginal bool, cache bool, broadcast bool, syncWithQuery bool) {
 	g.Watch.Pause()
-	g.AlgTimer.Pause()
+	AlgTimerAlreadyPaused := g.AlgTimer.IsPaused()
+	if !AlgTimerAlreadyPaused {
+		g.AlgTimer.Pause()
+	}
 
 	if syncWithQuery { // Wait for all threads to sync to match the query before comparing to oracle
 		g.Broadcast(BSP_SYNC)
@@ -136,7 +139,9 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		OracleCheckCorrectness(alg, g, oracleGraph)
 	}
 
-	g.AlgTimer.UnPause()
+	if !AlgTimerAlreadyPaused {
+		g.AlgTimer.UnPause()
+	}
 	g.Watch.UnPause()
 	log.Info().Msg("----END_INLINE----")
 	if broadcast {
