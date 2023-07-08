@@ -1,8 +1,11 @@
 package common
 
 import (
-	"github.com/ScottSallinen/lollipop/utils"
 	"sync/atomic"
+
+	"github.com/rs/zerolog/log"
+
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
 type GlobalRelabeling struct {
@@ -23,7 +26,8 @@ const (
 var GlobalRelabelingHelper GlobalRelabeling
 
 func (gr *GlobalRelabeling) Reset() {
-	gr.sinkId.Store(0)
+	gr.sinkId.Store(EmptyValue)
+	gr.sourceId.Store(EmptyValue)
 	gr.grCount.Store(0)
 	gr.nextGrCount.Store(gr.interval.Load())
 }
@@ -49,7 +53,8 @@ func (gr *GlobalRelabeling) OnLift(sendMsg func(sinkId uint32) uint64) (sent uin
 	if newCount >= nextGrCount {
 		swapped := gr.nextGrCount.CompareAndSwap(nextGrCount, newCount+gr.interval.Load())
 		if swapped {
-			//log.Info().Msg("Global Relabeling is triggered")
+			log.Info().Msg("Global Relabeling is triggered")
+			// Source and sink should always be present when lift
 			sent += sendMsg(gr.sinkId.Load())
 			sent += sendMsg(gr.sourceId.Load())
 		}
