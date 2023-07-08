@@ -26,6 +26,7 @@ type GraphOptions struct {
 	OracleCompareSync     bool    // Compares to oracle results on every iteration, when using a synchronous strategy.
 	AllowAsyncVertexProps bool    // If true, a query views vertex properties asynchronously; faster, but may be inconsistent for certain algorithms. For PageRank, this strategy works well. Requires a concurrent finish.
 	NoConvergeForQuery    bool    // If true, will not finish convergence of the algorithm for the query; useful for an algorithm like PageRank.
+	AlgTimeIncludeQuery   bool    // If true, will include time spent on process query in algorithm time
 	ColourOutput          bool    // If true, will colour terminal stdout output. Default enabled; can be disabled not supported.
 	Profile               bool    // If true, will profile the algorithm and create a pprof file.
 	DebugLevel            uint32  // If non-zero, will print extra debug information. 1 for debug, 2 adds extra timing details, 3 adds extra debug behaviour.

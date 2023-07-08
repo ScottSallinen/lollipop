@@ -27,9 +27,12 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 	algTimeLastLog := time.Duration(0)
 	nQueries := uint64(0)
 	allowAsyncProperties := g.Options.AllowAsyncVertexProps
+	algTimeIncludeQuery := g.Options.AlgTimeIncludeQuery
 	timings := g.Options.DebugLevel >= 2
 	logConcChan := make(chan TimeseriesEntry[V, E, M, N])
-	go QueryFinishConcurrent(alg, g, logConcChan, entries)
+	if allowAsyncProperties {
+		go QueryFinishConcurrent(alg, g, logConcChan, entries)
+	}
 	currG := new(Graph[V, E, M, N])
 	nextG := new(Graph[V, E, M, N])
 	THREADS := g.NumThreads
@@ -43,14 +46,19 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 	tse.AlgWaitGroup = new(sync.WaitGroup)
 
 	for entry := range g.LogEntryChan {
+		var algTimeNow time.Duration
 		tse.Name = time.Unix(int64(entry), 0)
-		algTimeNow := g.Watch.Elapsed()
-		tse.CurrentRuntime = algTimeNow
-		if !allowAsyncProperties {
-			algTimeNow = g.AlgTimer.Pause() // To differentiate from time spent on alg, vs on query.
+		tse.CurrentRuntime = g.Watch.Elapsed()
+
+		if !algTimeIncludeQuery {
+			if allowAsyncProperties {
+				algTimeNow = tse.CurrentRuntime
+			} else {
+				algTimeNow = g.AlgTimer.Pause()
+			}
+			tse.AlgTimeSinceLast = algTimeNow - algTimeLastLog
+			algTimeLastLog = algTimeNow
 		}
-		tse.AlgTimeSinceLast = algTimeNow - algTimeLastLog
-		algTimeLastLog = algTimeNow
 
 		// Note since the input stream is waiting for g.QueryWaiter.Done(), no new topology will come (though some may still be in process).
 		if g.Options.AsyncContinuationTime > 0 {
@@ -77,6 +85,16 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 			g.AwaitAck()
 		}
 
+		if algTimeIncludeQuery {
+			if allowAsyncProperties {
+				algTimeNow = tse.CurrentRuntime
+			} else {
+				algTimeNow = g.AlgTimer.Pause()
+			}
+			tse.AlgTimeSinceLast = algTimeNow - algTimeLastLog
+			algTimeLastLog = algTimeNow
+		}
+
 		m1 := time.Now()
 
 		tse.EdgeCount = uint64(currG.NodeParallelFor(func(_, _ uint32, gt *GraphThread[V, E, M, N]) int {
@@ -84,26 +102,45 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 			original.NodeCopyVerticesInto(&gt.Vertices)     // Shallow-ish, full props but shallow edges.
 			gt.VertexStructures = original.VertexStructures // Shallow copy the structure info.
 			gt.NumEdges = original.NumEdges
+			if !allowAsyncProperties {
+				gt.VertexMap = original.VertexMap
+			}
 			return int(gt.NumEdges)
 		}))
+		tse.GraphView = currG
 
 		m2 := time.Now()
-
-		if !allowAsyncProperties {
-			g.AlgTimer.UnPause()
-		}
 
 		// Should be here
 		if g.Options.OracleCompare {
 			CompareToOracle(alg, g, true, false, false, false)
 		}
 
-		g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
+		if allowAsyncProperties {
+			g.ResetTerminationState()
+			g.Broadcast(RESUME)
+			logConcChan <- tse
+		} else {
+			tse.Latency = m1.Sub(m0)
+			if aOF, ok := any(alg).(AlgorithmOnFinish[V, E, M, N]); ok {
+				aOF.OnFinish(tse.GraphView)
+			}
+			if _, ok := any(alg).(AlgorithmOnApplyTimeSeries[V, E, M, N]); ok {
+				tse.AlgWaitGroup.Add(1)
+				entries <- tse
+				tse.AlgWaitGroup.Wait()
+			}
+			g.ResetTerminationState()
+			g.Broadcast(RESUME)
+		}
+
+		if g.AlgTimer.IsPaused() {
+			g.AlgTimer.UnPause()
+		}
+
+		currG, nextG = nextG, currG
 
 		nQueries++
-		tse.GraphView = currG
-		logConcChan <- tse
-		currG, nextG = nextG, currG
 		if timings {
 			log.Trace().Msg(", query, " + utils.V(nQueries) + ", cmd, " + utils.F("%.3f", time.Duration(m1.Sub(m0)).Seconds()*1000) +
 				", cpy, " + utils.F("%.3f", time.Duration(m2.Sub(m1)).Seconds()*1000) + ", chan, " + utils.F("%.3f", time.Since(m2).Seconds()*1000))
@@ -117,6 +154,9 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 		g.QueryWaiter.Done()
 	}
 	close(logConcChan)
+	if !allowAsyncProperties {
+		close(entries)
+	}
 }
 
 // Finishes a graph if needed, then hands it off to the applyTimeSeries func (defined by the algorithm).

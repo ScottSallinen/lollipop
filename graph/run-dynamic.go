@@ -187,7 +187,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		}
 
 		// The main check for updates to topology. This occurs with priority over algorithmic messages.
-		if !strucClosed && !blockTop {
+		if !epoch && !strucClosed && !blockTop {
 			gt.Status = RECV_TOP
 			pullUpTo := pullUpToBase
 
@@ -299,7 +299,6 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			}
 			epoch = false
 			completed = false
-			g.TerminateVotes[tidx] = 0
 		}
 
 		if count == 0 {

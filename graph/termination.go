@@ -100,6 +100,14 @@ func (g *Graph[V, E, M, N]) CheckTermination(tidx uint16) bool {
 	return true
 }
 
+func (g *Graph[V, E, M, N]) ResetTerminationState() {
+	for tidx := 0; tidx < int(g.NumThreads); tidx++ {
+		g.TerminateVotes[tidx] = 0
+		g.TerminateView[tidx] = 0
+		g.TerminateData[tidx] = 0
+	}
+}
+
 // Ensure queues are empty and no messages are inflight.
 func (g *Graph[V, E, M, N]) EnsureCompleteness() {
 	msgSend := uint64(0)

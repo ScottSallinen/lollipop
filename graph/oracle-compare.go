@@ -145,6 +145,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 	g.Watch.UnPause()
 	log.Info().Msg("----END_INLINE----")
 	if broadcast {
+		g.ResetTerminationState()
 		g.Broadcast(RESUME)
 	}
 }
