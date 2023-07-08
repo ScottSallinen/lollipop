@@ -7,6 +7,11 @@ import (
 	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/b"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/j"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/k"
 )
 
@@ -38,6 +43,8 @@ var (
 		{3, 620597, 441410, GraphPath, GraphSize},
 		{0, 573253, 168575, GraphPath, GraphSize},
 		{1, 658312, 33793, GraphPath, GraphSize},
+		// These need Global Relabeling
+		{48, 54646, 266979, GraphPath, GraphSize},
 	}
 	baseOptionsBenchmark = graph.GraphOptions{
 		CheckCorrectness:      true,
@@ -45,6 +52,7 @@ var (
 		QueueMultiplier:       8,
 		TimestampPos:          1,
 		AllowAsyncVertexProps: false,
+		AlgTimeIncludeQuery:   true,
 	}
 )
 
@@ -85,20 +93,20 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 func RunBenchmarks() {
 	options := baseOptionsBenchmark
 
-	options.Dynamic = true
+	//options.Dynamic = true
 
-	options.LogTimeseries = true
-	options.TimeSeriesInterval = 86400 * 7
+	//options.LogTimeseries = true
+	//options.TimeSeriesInterval = 86400 * 7
 	//options.OracleCompare = true
 
 	results := make([]benchmarkResult, 0, 4)
-	//results = append(results, runBenchmark(a.RunAggH, options, "AggH"))
-	//results = append(results, runBenchmark(b.RunMsgH, options, "MsgH"))
-	//results = append(results, runBenchmark(h.Run, options, h.Name))
-	//results = append(results, runBenchmark(i.Run, options, i.Name))
-	//results = append(results, runBenchmark(j.Run, options, j.Name))
-	////GlobalRelabelingEnabled = true
-	//results = append(results, runBenchmark(k.Run, options, k.Name))
+	results = append(results, runBenchmark(a.RunAggH, options, "AggH"))
+	results = append(results, runBenchmark(b.RunMsgH, options, "MsgH"))
+	results = append(results, runBenchmark(h.Run, options, h.Name))
+	results = append(results, runBenchmark(i.Run, options, i.Name))
+	results = append(results, runBenchmark(j.Run, options, j.Name))
+	GlobalRelabelingEnabled = true
+	results = append(results, runBenchmark(k.Run, options, k.Name))
 	GlobalRelabelingEnabled = false
 	results = append(results, runBenchmark(k.Run, options, k.Name))
 	for _, r := range results {
