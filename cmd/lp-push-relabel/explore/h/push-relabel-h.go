@@ -144,7 +144,7 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, inbox *Inbox, myId uint32) (sen
 	Assert(len(v.Property.NbrMap) == 0, "")
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
-		if e.Didx == myId || e.Property.Weight <= 0 { // TODO: also skip if the target is source
+		if e.Didx == myId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
 			continue
 		}
 		if v.Property.Type == Source {
@@ -388,7 +388,7 @@ func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart i
 	if !m.Init {
 		for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
 			e := &src.OutEdges[eidx]
-			if e.Didx == sidx || e.Property.Weight <= 0 { // TODO: also skip if the target is source
+			if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
 				continue
 			}
 			if src.Property.Type == Source {
@@ -502,7 +502,7 @@ func (*PushRelabel) OnCheckCorrectness(g *Graph) {
 		capacityOriginal := int64(0)
 		capacityResidual := int64(0)
 		for _, e := range v.OutEdges {
-			if e.Didx == internalId || e.Property.Weight == 0 { // TODO: also skip if the target is source
+			if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
 				continue
 			}
 			capacityOriginal += int64(e.Property.Weight)

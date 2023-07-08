@@ -83,7 +83,7 @@ func (pr *PushRelabelAgg) BaseVertexMailbox(v *graph.Vertex[VPropAgg, EPropAgg],
 
 	// Iterate over existing edges
 	for _, e := range v.OutEdges {
-		if e.Didx == internalId || e.Property.Weight <= 0 { // TODO: also skip if the target is source
+		if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
 			continue
 		}
 
@@ -281,7 +281,7 @@ func (pr *PushRelabelAgg) OnUpdateVertex(g *graph.Graph[VPropAgg, EPropAgg, Mess
 func (pr *PushRelabelAgg) OnEdgeAdd(g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg], src *graph.Vertex[VPropAgg, EPropAgg], sidx uint32, eidxStart int, m MessageAgg) (sent uint64) {
 	for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
 		e := &src.OutEdges[eidx]
-		if e.Didx == sidx || e.Property.Weight <= 0 { // TODO: also skip if the target is source
+		if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
 			continue
 		}
 
@@ -358,7 +358,7 @@ func (*PushRelabelAgg) OnCheckCorrectness(g *graph.Graph[VPropAgg, EPropAgg, Mes
 		capacityOriginal := int64(0)
 		capacityResidual := int64(0)
 		for _, e := range v.OutEdges {
-			if e.Didx == internalId || e.Property.Weight == 0 { // TODO: also skip if the target is source
+			if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
 				continue
 			}
 			capacityOriginal += int64(e.Property.Weight)

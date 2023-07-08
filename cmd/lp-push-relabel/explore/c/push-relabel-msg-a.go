@@ -110,7 +110,7 @@ func (pr *PushRelabelMsgA) Init(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMs
 	// Iterate over existing edges
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
-		if e.Didx == internalId || e.Property.Weight <= 0 { // TODO: also skip if the target is source
+		if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
 			continue
 		}
 		if v.Property.Type == Source {
@@ -419,7 +419,7 @@ func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA
 		capacityOriginal := int64(0)
 		capacityResidual := int64(0)
 		for _, e := range v.OutEdges {
-			if e.Didx == internalId || e.Property.Weight == 0 { // TODO: also skip if the target is source
+			if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
 				continue
 			}
 			capacityOriginal += int64(e.Property.Weight)
