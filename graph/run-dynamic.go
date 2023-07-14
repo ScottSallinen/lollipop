@@ -271,14 +271,9 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 				doneEvents <- struct{}{}
 			}
 		}
-		if topFailed {
-			topFail++
-		} else {
-			topFail = 0
-		}
 
 		algFailed := false
-		if !(!strucClosed && (TOPOLOGY_FIRST || blockAlgIfTop)) {
+		if (strucClosed || !(TOPOLOGY_FIRST || blockAlgIfTop)) {
 			// Process algorithm messages. Check for algorithm termination if needed.
 			gt.Status = APPLY_MSG
 			checkTerm := (strucClosed && remitClosed) || (epoch && remitCount == 0 && topCount == 0)
@@ -305,8 +300,8 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		}
 
 		// Backoff only when there are no topological events and algorithmic event
-		if topCount == 0 && algCount == 0 {
-			if topFail > 0 {
+		if algFailed && topFailed {
+			if topFailed {
 				gt.Status = BACKOFF_TOP
 				utils.BackOff(topFail)
 				if timeStates && tidx == 0 {
@@ -314,8 +309,12 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 					gt.LoopTimes[5] += curr.Sub(prev)
 					prev = curr
 				}
+				topFail++
+			} else {
+				topFail = 0
 			}
-			if algFail > 0 && algFail%10 == 0 {
+			if algFailed {
+				if algFail%10 == 0 {
 				gt.Status = BACKOFF_ALG
 				utils.BackOff(algFail / 10)
 				if timeStates && tidx == 0 {
