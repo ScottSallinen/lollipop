@@ -59,6 +59,7 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 	windowPtr := flag.Int("w", 0, "Inject to the stream: deletion of edges that are w days behind the current timestamp (ensure pt is set).")
 	pollPtr := flag.Uint("poll", 500, "Polling rate (ms), how often to print status when graph streaming is running.")
 	refinePtr := flag.Int("refine", 0, "When collecting a query, wait to refine by this amount (ms). Only used if logging timeseries.")
+	algIncludeQueryPtr := flag.Bool("tquery", false, "Include the time spent on processing queries in algorithm time.")
 
 	undirectedPtr := flag.Bool("u", false, "Interpret the input graph as undirected (add transpose edges as a mirrored event). \nThis is not optimized -- and some algorithms set this by default.")
 
@@ -149,6 +150,7 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 		OracleCompare:         *oraclePtr,
 		SyncPreviousOnly:      *syncPrevPtr,
 		OracleCompareSync:     *oracleSyncPtr,
+		AlgTimeIncludeQuery:   *algIncludeQueryPtr,
 		PollingRate:           uint32(*pollPtr),
 		Profile:               *profilePtr,
 		LoadThreads:           uint32(loadThreads),
