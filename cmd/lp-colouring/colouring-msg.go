@@ -111,7 +111,7 @@ func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailM
 		ln := uint32(len(prop.NbrScratch))
 		if notif.Note.Pos >= ln {
 			prop.NbrScratch = append(prop.NbrScratch, make([]uint32, ((notif.Note.Pos)-(ln)+1))...)
-			for i := ln; i < notif.Note.Pos; i++ {
+			for i := ln; i < notif.Note.Pos + 1; i++ {
 				prop.NbrScratch[i] = 0
 			}
 			panic(1)
