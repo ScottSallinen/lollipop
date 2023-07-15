@@ -297,8 +297,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		}
 
 		// Backoff only when there are no topological events and algorithmic event
-		//if (topFailed && (!processAlg || algFailed)) || (algFailed && (!processTop || topFailed)) {
-		if (topFailed && (!processAlg || algFailed)) || (algFailed && (topFailed)) {
+		if (!processTop || topFailed) && (!processAlg || algFailed) {
 			if topFailed {
 				gt.Status = BACKOFF_TOP
 				utils.BackOff(topFail)
