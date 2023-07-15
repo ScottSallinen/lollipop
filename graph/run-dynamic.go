@@ -187,8 +187,9 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		}
 
 		// The main check for updates to topology. This occurs with priority over algorithmic messages.
+		processTop := !strucClosed && !blockTop
 		topFailed := false
-		if !strucClosed && !blockTop {
+		if processTop {
 			gt.Status = RECV_TOP
 			pullUpTo := pullUpToBase
 
@@ -272,8 +273,9 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			}
 		}
 
+		processAlg := strucClosed || !(TOPOLOGY_FIRST || blockAlgIfTop)
 		algFailed := false
-		if strucClosed || !(TOPOLOGY_FIRST || blockAlgIfTop) {
+		if processAlg {
 			// Process algorithm messages. Check for algorithm termination if needed.
 			gt.Status = APPLY_MSG
 			checkTerm := (strucClosed && remitClosed) || (epoch && remitCount == 0 && topCount == 0)
@@ -295,7 +297,8 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		}
 
 		// Backoff only when there are no topological events and algorithmic event
-		if algFailed && topFailed {
+		//if (topFailed && (!processAlg || algFailed)) || (algFailed && (!processTop || topFailed)) {
+		if (topFailed && (!processAlg || algFailed)) || (algFailed && (topFailed)) {
 			if topFailed {
 				gt.Status = BACKOFF_TOP
 				utils.BackOff(topFail)
