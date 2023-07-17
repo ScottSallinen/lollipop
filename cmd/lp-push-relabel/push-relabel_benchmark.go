@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/exp/constraints"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
@@ -56,8 +58,8 @@ var (
 	}
 )
 
-func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
-	run func(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[V, E, M, N]),
+func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF constraints.Integer](
+	run func(options graph.GraphOptions) (maxFlow MF, g *graph.Graph[V, E, M, N]),
 	options graph.GraphOptions, name string) (result benchmarkResult) {
 
 	log.Info().Msg(fmt.Sprintf("%s - Start", name))
@@ -66,7 +68,7 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](
 		options.Name = tc.Filename
 		SourceRawId = graph.RawType(tc.Source)
 		SinkRawId = graph.RawType(tc.Sink)
-		GlobalRelabelingHelper.UpdateInterval(int64(tc.VertexCount), 0)
+		GlobalRelabelingHelper.UpdateInterval(int64(tc.VertexCount))
 		if options.Dynamic {
 			VertexCountHelper.Reset(1000)
 		} else {

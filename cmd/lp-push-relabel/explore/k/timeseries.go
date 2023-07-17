@@ -37,8 +37,6 @@ func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[Vert
 				PrintTimeSeries(true, false)
 			}
 		}
-
-		GlobalRelabelingHelper.UpdateInterval(int64(vertexCount), int64(tse.EdgeCount))
 	}
 	PrintTimeSeries(true, true)
 	wg.Done()

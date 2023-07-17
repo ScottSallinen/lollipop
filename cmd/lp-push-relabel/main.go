@@ -2,11 +2,13 @@ package main
 
 import (
 	"flag"
+	"fmt"
 
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/d"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/k"
 )
 
 func main() {
@@ -15,6 +17,7 @@ func main() {
 	initialEstimatedCount := flag.Uint("V", 30, "Initial estimated number of vertices.")
 	//implementation := flag.String("I", "agg", "Implementation. see README.md")
 	benchmark := flag.Bool("B", false, "Run benchmarks")
+	globalRelabeling := flag.Bool("G", false, "Enable global relabeling")
 	graphOptions := graph.FlagsToOptions()
 
 	if *benchmark {
@@ -25,6 +28,7 @@ func main() {
 	InitialHeight = 0
 	SourceRawId = graph.RawType(*sourceId)
 	SinkRawId = graph.RawType(*sinkId)
+	GlobalRelabelingEnabled = *globalRelabeling
 	VertexCountHelper.Reset(int64(*initialEstimatedCount))
 
 	//switch *implementation {
@@ -37,5 +41,6 @@ func main() {
 	//default:
 	//	log.Fatal().Msg("Unknown implementation: " + *implementation)
 	//}
-	d.Run(graphOptions)
+	mf, _ := k.Run(graphOptions)
+	log.Info().Msg(fmt.Sprintf("Maximum flow is %v", mf))
 }

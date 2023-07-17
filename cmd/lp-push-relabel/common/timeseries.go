@@ -1,15 +1,16 @@
 package common
 
 import (
-	"github.com/ScottSallinen/lollipop/utils"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/ScottSallinen/lollipop/utils"
 )
 
 type TsEntry struct {
 	Name             time.Time
-	CurrentMaxFlow   int32
+	CurrentMaxFlow   int64
 	VertexCount      uint64
 	EdgeCount        uint64
 	Latency          time.Duration
