@@ -3,6 +3,7 @@ package k
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/graph"
@@ -16,14 +17,14 @@ type PushRelabel struct{}
 
 type Neighbour struct {
 	Height int64
-	ResCap int32
+	ResCap int64
 	Pos    int32 // Position of me in the neighbour, -1 means unknown
 	Didx   uint32
 }
 
 type VertexProp struct {
 	Type          VertexType
-	Excess        int32
+	Excess        int64
 	Height        int64
 	HeightChanged bool
 
@@ -42,7 +43,7 @@ type Mail struct{}
 type Note struct {
 	Height         int64
 	HeightEpochNum uint32
-	Flow           int32 // Could be used for my position when hand-shaking
+	Flow           int64 // Could be used for my position when hand-shaking
 
 	SrcId  uint32 // FIXME: better if this is given by the framework
 	SrcPos int32  // position of the sender in the receiver's InNbrs or OutEdges, -1 means unknown
@@ -69,7 +70,7 @@ func (Mail) New() (new Mail) {
 	return new
 }
 
-func Run(options graph.GraphOptions) (maxFlow int32, g *Graph) {
+func Run(options graph.GraphOptions) (maxFlow int64, g *Graph) {
 	alg := new(PushRelabel)
 	GlobalRelabelingHelper.Reset()
 	TimeSeriesReset()
@@ -77,7 +78,7 @@ func Run(options graph.GraphOptions) (maxFlow int32, g *Graph) {
 	return alg.GetMaxFlowValue(g), g
 }
 
-func (pr *PushRelabel) GetMaxFlowValue(g *Graph) int32 {
+func (pr *PushRelabel) GetMaxFlowValue(g *Graph) int64 {
 	_, sink := g.NodeVertexFromRaw(SinkRawId)
 	return sink.Property.Excess
 }
@@ -113,11 +114,13 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 	// Iterate over existing edges
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
-		if e.Didx == myId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
+		if e.Didx == myId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() || v.Property.Type == Sink {
 			continue
 		}
+		Assert(e.Property.Weight <= math.MaxInt64, "Cannot handle this weight")
+
 		if v.Property.Type == Source {
-			v.Property.Excess += int32(e.Property.Weight)
+			v.Property.Excess += int64(e.Property.Weight)
 		}
 
 		pos, exist := v.Property.NbrMap[e.Didx]
@@ -128,13 +131,13 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 			v.Property.UnknownPosCount++
 		}
 
-		v.Property.Nbrs[pos].ResCap += int32(e.Property.Weight)
+		v.Property.Nbrs[pos].ResCap += int64(e.Property.Weight)
 	}
 	for i, nbr := range v.Property.Nbrs {
 		mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 		sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 			Target: nbr.Didx,
-			Note:   Note{Height: v.Property.Height, HeightEpochNum: v.Property.HeightEpochNum, Flow: int32(i), SrcId: myId, SrcPos: nbr.Pos, Handshake: true},
+			Note:   Note{Height: v.Property.Height, HeightEpochNum: v.Property.HeightEpochNum, Flow: int64(i), SrcId: myId, SrcPos: nbr.Pos, Handshake: true},
 		}, mailbox, tidx))
 	}
 
@@ -209,6 +212,8 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		Assert(v.Property.Type != Normal, "")
 		if v.Property.Type == Source {
 			v.Property.Height = VertexCountHelper.GetMaxVertexCount()
+		} else {
+			log.Info().Msg("Current sink excess: " + strconv.Itoa(int(v.Property.Excess)))
 		}
 		v.Property.HeightEpochNum += 1
 		v.Property.HeightChanged = true
@@ -233,7 +238,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 	var nbr *Neighbour
 	if n.Note.Handshake {
 		Assert(n.Note.Flow >= 0, "")
-		myPos := n.Note.Flow
+		myPos := int32(n.Note.Flow)
 		n.Note.Flow = 0
 		if n.Note.SrcPos == -1 { // they don't know their position in me
 			// Check if they are a new neighbour
@@ -248,7 +253,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 				mailbox, tidx := g.NodeVertexMailbox(n.Note.SrcId)
 				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
 					Target: n.Note.SrcId,
-					Note:   Note{Height: v.Property.Height, HeightEpochNum: v.Property.HeightEpochNum, Flow: pos, SrcId: n.Target, SrcPos: myPos, Handshake: true},
+					Note:   Note{Height: v.Property.Height, HeightEpochNum: v.Property.HeightEpochNum, Flow: int64(pos), SrcId: n.Target, SrcPos: myPos, Handshake: true},
 				}, mailbox, tidx))
 			} else {
 				// already told them
@@ -355,13 +360,14 @@ func (pr *PushRelabel) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (se
 						Note:   Note{Height: v.Property.Height, HeightEpochNum: v.Property.HeightEpochNum, Flow: amount, SrcId: myId, SrcPos: nbr.Pos},
 					}, mailbox, tidx))
 				}
-			} else {
+			} else if v.Property.Type == Source {
 				// Cannot lift
 				dischargeSent, _, _ := pr.dischargeOnce(g, v, myId)
 				sent += dischargeSent
 			}
 		}
 	} else if v.Property.Excess < 0 && v.Property.Type == Normal && v.Property.Height > 0 {
+		Assert(false, "Excess shouldn't be <0 if there's no deletes. Integer overflow?")
 		v.Property.Height = -VertexCountHelper.GetMaxVertexCount()
 		v.Property.HeightChanged = true
 	}
@@ -387,11 +393,13 @@ func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart i
 	} else {
 		for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
 			e := &src.OutEdges[eidx]
-			if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
+			if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() || src.Property.Type == Sink {
 				continue
 			}
+			Assert(e.Property.Weight <= math.MaxInt64, "Cannot handle this weight")
+
 			if src.Property.Type == Source {
-				src.Property.Excess += int32(e.Property.Weight)
+				src.Property.Excess += int64(e.Property.Weight)
 			}
 
 			pos, exist := src.Property.NbrMap[e.Didx]
@@ -403,12 +411,12 @@ func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart i
 			}
 
 			nbr := &src.Property.Nbrs[pos]
-			nbr.ResCap += int32(e.Property.Weight)
+			nbr.ResCap += int64(e.Property.Weight)
 			if nbr.Pos == -1 {
 				mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 				sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[Note]{
 					Target: nbr.Didx,
-					Note:   Note{Height: src.Property.Height, HeightEpochNum: src.Property.HeightEpochNum, Flow: pos, SrcId: sidx, SrcPos: nbr.Pos, Handshake: true},
+					Note:   Note{Height: src.Property.Height, HeightEpochNum: src.Property.HeightEpochNum, Flow: int64(pos), SrcId: sidx, SrcPos: nbr.Pos, Handshake: true},
 				}, mailbox, tidx))
 			} else {
 				sent += pr.restoreHeightInvariant(g, src, nbr, sidx)

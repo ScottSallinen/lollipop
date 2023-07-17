@@ -18,22 +18,22 @@ type GlobalRelabeling struct {
 }
 
 const (
-	grAlpha       = 6
-	grBeta        = 120_000
+	grAlpha       = float64(1.0)
 	grMinInterval = 100
 )
 
 var GlobalRelabelingHelper GlobalRelabeling
 
 func (gr *GlobalRelabeling) Reset() {
+	gr.interval.Store(grMinInterval)
 	gr.sinkId.Store(EmptyValue)
 	gr.sourceId.Store(EmptyValue)
 	gr.grCount.Store(0)
 	gr.nextGrCount.Store(gr.interval.Load())
 }
 
-func (gr *GlobalRelabeling) UpdateInterval(v, e int64) {
-	gr.interval.Store(utils.Max((grAlpha*v+e/3)/grBeta, grMinInterval))
+func (gr *GlobalRelabeling) UpdateInterval(v int64) {
+	gr.interval.Store(utils.Max(int64(grAlpha*float64(v)), grMinInterval))
 }
 
 func (gr *GlobalRelabeling) RegisterSource(id uint32) {
@@ -51,6 +51,7 @@ func (gr *GlobalRelabeling) OnLift(sendMsg func(sinkId uint32) uint64) (sent uin
 	newCount := gr.grCount.Add(1)
 	nextGrCount := gr.nextGrCount.Load()
 	if newCount >= nextGrCount {
+		gr.UpdateInterval(VertexCountHelper.GetMaxVertexCount())
 		swapped := gr.nextGrCount.CompareAndSwap(nextGrCount, newCount+gr.interval.Load())
 		if swapped {
 			log.Info().Msg("Global Relabeling is triggered")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
+	"golang.org/x/exp/constraints"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
@@ -174,8 +175,9 @@ func TestKIncremental(t *testing.T) {
 	RunTestGraphs(t, k.Run, k.Name, options)
 }
 
-func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *testing.T,
-	run func(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[V, E, M, N]),
+func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF constraints.Integer](
+	t *testing.T,
+	run func(options graph.GraphOptions) (maxFlow MF, g *graph.Graph[V, E, M, N]),
 	prefix string, options graph.GraphOptions) {
 
 	for _, tg := range testGraphs {
@@ -185,7 +187,7 @@ func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any](t *tes
 			InitialHeight = MaxHeight
 			SourceRawId = graph.RawType(tg.Source)
 			SinkRawId = graph.RawType(tg.Sink)
-			GlobalRelabelingHelper.UpdateInterval(int64(tg.VertexCount), 0)
+			GlobalRelabelingHelper.UpdateInterval(int64(tg.VertexCount))
 			if options.Dynamic {
 				VertexCountHelper.Reset(utils.Min(1000, int64(tg.VertexCount)))
 			} else {
