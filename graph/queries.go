@@ -27,6 +27,7 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 	algTimeLastLog := time.Duration(0)
 	nQueries := uint64(0)
 	allowAsyncProperties := g.Options.AllowAsyncVertexProps
+	algTimeIncludeQuery := g.Options.AlgTimeIncludeQuery
 	timings := g.Options.DebugLevel >= 2
 	logConcChan := make(chan TimeseriesEntry[V, E, M, N])
 	go QueryFinishConcurrent(alg, g, logConcChan, entries)
@@ -43,14 +44,19 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 	tse.AlgWaitGroup = new(sync.WaitGroup)
 
 	for entry := range g.LogEntryChan {
+		var algTimeNow time.Duration
 		tse.Name = time.Unix(int64(entry), 0)
-		algTimeNow := g.Watch.Elapsed()
-		tse.CurrentRuntime = algTimeNow
-		if !allowAsyncProperties {
-			algTimeNow = g.AlgTimer.Pause() // To differentiate from time spent on alg, vs on query.
+		tse.CurrentRuntime = g.Watch.Elapsed()
+
+		if !algTimeIncludeQuery {
+			if allowAsyncProperties {
+				algTimeNow = tse.CurrentRuntime
+			} else {
+				algTimeNow = g.AlgTimer.Pause()
+			}
+			tse.AlgTimeSinceLast = algTimeNow - algTimeLastLog
+			algTimeLastLog = algTimeNow
 		}
-		tse.AlgTimeSinceLast = algTimeNow - algTimeLastLog
-		algTimeLastLog = algTimeNow
 
 		// Note since the input stream is waiting for g.QueryWaiter.Done(), no new topology will come (though some may still be in process).
 		if g.Options.AsyncContinuationTime > 0 {
@@ -75,6 +81,16 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 		} else { // Copy the graph with full convergence. Broadcast EPOCH to await convergence.
 			g.Broadcast(EPOCH)
 			g.AwaitAck()
+		}
+
+		if algTimeIncludeQuery {
+			if allowAsyncProperties {
+				algTimeNow = tse.CurrentRuntime
+			} else {
+				algTimeNow = g.AlgTimer.Pause()
+			}
+			tse.AlgTimeSinceLast = algTimeNow - algTimeLastLog
+			algTimeLastLog = algTimeNow
 		}
 
 		m1 := time.Now()
@@ -105,8 +121,8 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 		logConcChan <- tse
 		currG, nextG = nextG, currG
 		if timings {
-			log.Trace().Msg(", query, " + utils.V(nQueries) + ", cmd, " + utils.F("%.3f", time.Duration(m1.Sub(m0)).Seconds()*1000) +
-				", cpy, " + utils.F("%.3f", time.Duration(m2.Sub(m1)).Seconds()*1000) + ", chan, " + utils.F("%.3f", time.Since(m2).Seconds()*1000))
+			log.Trace().Msg(", query, " + utils.V(nQueries) + ", cmd, " + utils.F("%.3f", m1.Sub(m0).Seconds()*1000) +
+				", cpy, " + utils.F("%.3f", m2.Sub(m1).Seconds()*1000) + ", chan, " + utils.F("%.3f", time.Since(m2).Seconds()*1000))
 		}
 
 		// Should be above with no-broadcast?

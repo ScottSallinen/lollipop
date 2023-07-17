@@ -140,7 +140,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 	blockAlgIfTop := false
 	epoch := false
 	var ok bool
-	var count int
+	var topCount, algCount int
 	var remitCount uint64
 	algFail := 0
 	topFail := 0
@@ -187,7 +187,9 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		}
 
 		// The main check for updates to topology. This occurs with priority over algorithmic messages.
-		if !strucClosed && !blockTop {
+		processTop := !strucClosed && !blockTop
+		topFailed := false
+		if processTop {
 			gt.Status = RECV_TOP
 			pullUpTo := pullUpToBase
 
@@ -206,8 +208,8 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 				pullUpTo = utils.Min(incEventCount, pullUpTo)
 			}
 
-			for count = 0; count < pullUpTo; count++ {
-				gt.TopologyEventBuff[count], ok = gt.TopologyQueue.Accept()
+			for topCount = 0; topCount < pullUpTo; topCount++ {
+				gt.TopologyEventBuff[topCount], ok = gt.TopologyQueue.Accept()
 				if !ok {
 					if gt.TopologyQueue.IsClosed() {
 						//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] TopologyQueue closed")
@@ -225,11 +227,10 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			}
 
 			// Apply any topology events that we have pulled.
-			if count != 0 {
-				gt.EventActions += uint64(count)
+			if topCount != 0 {
+				gt.EventActions += uint64(topCount)
 				gt.Status = APPLY_TOP
-				topFail = 0
-				addEvents, delEvents := EnactTopologyEvents[EP](alg, g, gt, int(count), insDelOnExpire)
+				addEvents, delEvents := EnactTopologyEvents[EP](alg, g, gt, int(topCount), insDelOnExpire)
 				gt.NumOutAdds += addEvents
 				gt.NumOutDels += delEvents
 				gt.NumEdges += addEvents - delEvents
@@ -241,7 +242,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 				}
 
 				// If we filled bundle then we loop back to ingest more events, rather than process algorithm messages, as the thread is behind.
-				if (count == pullUpToBase) || bspSync {
+				if (topCount == pullUpToBase) || bspSync {
 					if int(gt.NumEdges)/(64) > pullUpToBase {
 						pullUpToBase = pullUpToBase * 2
 						if len(gt.TopologyEventBuff) < int(pullUpToBase) {
@@ -263,9 +264,41 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 				// There is a request for synchronously syncing topology (blocking), acknowledge here as we have no more topology events to process.
 				bspSync = false
 				gt.Response <- ACK
-			} else if remitCount == 0 {
-				// Want topology events, but none found -- we should relax.
-				topFail++
+			} else if remitCount == 0 && !epoch {
+				topFailed = true
+			}
+
+			if strucClosed {
+				doneEvents <- struct{}{}
+			}
+		}
+
+		processAlg := strucClosed || !(TOPOLOGY_FIRST || blockAlgIfTop)
+		algFailed := false
+		if processAlg {
+			// Process algorithm messages. Check for algorithm termination if needed.
+			gt.Status = APPLY_MSG
+			checkTerm := (strucClosed && remitClosed) || (epoch && remitCount == 0 && topCount == 0)
+			completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, checkTerm)
+			if completed && epoch {
+				//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] completed epoch")
+				gt.Status = DONE
+				gt.Response <- ACK
+
+				resp := <-gt.Command // BLOCK and wait for resume
+				if resp != RESUME {
+					log.Panic().Msg("Expected to resume after blocked")
+				}
+				epoch = false
+				completed = false
+			} else if algCount == 0 {
+				algFailed = true
+			}
+		}
+
+		// Backoff only when there are no topological events and algorithmic event
+		if (!processTop || topFailed) && (!processAlg || algFailed) {
+			if topFailed {
 				gt.Status = BACKOFF_TOP
 				utils.BackOff(topFail)
 				if timeStates && tidx == 0 {
@@ -273,49 +306,28 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 					gt.LoopTimes[5] += curr.Sub(prev)
 					prev = curr
 				}
+				topFail++
 			} else {
 				topFail = 0
 			}
-
-			if strucClosed {
-				doneEvents <- struct{}{}
-			} else if TOPOLOGY_FIRST || blockAlgIfTop {
-				continue
-			}
-		}
-
-		// Process algorithm messages. Check for algorithm termination if needed.
-		gt.Status = APPLY_MSG
-		checkTerm := (strucClosed && remitClosed) || (epoch && remitCount == 0 && count == 0)
-		completed, count = ProcessMessages[V, E, M, N](alg, g, gt, checkTerm)
-		if completed && epoch {
-			//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] completed epoch")
-			gt.Status = DONE
-			gt.Response <- ACK
-
-			resp := <-gt.Command // BLOCK and wait for resume
-			if resp != RESUME {
-				log.Panic().Msg("Expected to resume after blocked")
-			}
-			epoch = false
-			completed = false
-			g.TerminateVotes[tidx] = 0
-		}
-
-		if count == 0 {
-			algFail++
-			if algFail%10 == 0 {
-				gt.Status = BACKOFF_ALG
-				utils.BackOff(algFail / 10)
-				if timeStates && tidx == 0 {
-					curr = time.Now()
-					gt.LoopTimes[6] += curr.Sub(prev)
-					prev = curr
+			if algFailed {
+				if algFail%10 == 0 {
+					gt.Status = BACKOFF_ALG
+					utils.BackOff(algFail / 10)
+					if timeStates && tidx == 0 {
+						curr = time.Now()
+						gt.LoopTimes[6] += curr.Sub(prev)
+						prev = curr
+					}
 				}
+				algFail++
+			} else {
+				algFail = 0
 			}
 		} else {
-			algFail = 0
+			topFail, algFail = 0, 0
 		}
+
 		if timeStates && tidx == 0 {
 			curr = time.Now()
 			gt.LoopTimes[4] += curr.Sub(prev)
