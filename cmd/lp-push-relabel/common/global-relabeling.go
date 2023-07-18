@@ -18,7 +18,7 @@ type GlobalRelabeling struct {
 }
 
 const (
-	grAlpha       = float64(1.0)
+	grAlpha       = float64(5.0)
 	grMinInterval = 100
 )
 
