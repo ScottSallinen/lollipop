@@ -162,7 +162,6 @@ func (gt *GraphThread[V, E, M, N]) checkCommandsAsync(epoch *bool) {
 func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], tidx uint32, wg *sync.WaitGroup) {
 	runtime.LockOSThread()
 	gt := &g.GraphThreads[tidx]
-	gt.Status = APPLY_MSG
 	algCount := 0
 	algNoCountTimes := 0
 	epoch := false
@@ -175,17 +174,16 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 
 		gt.Status = APPLY_MSG
 		completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, true)
-		if completed {
-			if epoch {
-				gt.Status = DONE
-				gt.Response <- ACK
-				resp := <-gt.Command // BLOCK and wait for resume
-				if resp != RESUME {
-					log.Panic().Msg("Expected to resume after blocked")
-				}
-				epoch = false
-				completed = false
+		if epoch && completed {
+			gt.Status = DONE
+			gt.Response <- ACK
+			resp := <-gt.Command // BLOCK and wait for resume
+			if resp != RESUME {
+				log.Panic().Msg("Expected to resume after blocked")
 			}
+			epoch = false
+			completed = false
+			algNoCountTimes = 0
 		} else if algCount == 0 { // Minor back off if we didn't get, and keep getting, no messages.
 			algNoCountTimes++
 			if algNoCountTimes%100 == 0 {
