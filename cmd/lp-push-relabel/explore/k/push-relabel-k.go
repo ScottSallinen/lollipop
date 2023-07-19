@@ -75,11 +75,14 @@ func (Mail) New() (new Mail) {
 }
 
 func Run(options graph.GraphOptions) (maxFlow int64, g *Graph) {
+	done := false
 	SourceSupply = 0
 	alg := new(PushRelabel)
 	GlobalRelabelingHelper.Reset()
 	TimeSeriesReset()
+	GoLogMsgCount(&done)
 	g = graph.LaunchGraphExecution[*EdgeProp, VertexProp, EdgeProp, Mail, Note](alg, options)
+	done = true
 	return alg.GetMaxFlowValue(g), g
 }
 
@@ -216,11 +219,13 @@ func (pr *PushRelabel) dischargeOnce(g *Graph, v *Vertex, myId uint32) (sent uin
 }
 
 func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[Note]) (sent uint64) {
+	_, tidx := graph.InternalExpand(n.Target)
 	// Special message?
 	if n.Note.NewMaxVertexCount {
 		Assert(v.Property.Type == Source, "Non-source received NewMaxVertexCount")
 		v.Property.Height = VertexCountHelper.GetMaxVertexCount()
 		v.Property.HeightChanged = true
+		IncrementMsgCount(tidx, 0, true)
 		return
 	} else if n.Note.NewHeightEpoch {
 		Assert(v.Property.Type != Normal, "")
@@ -232,6 +237,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		}
 		v.Property.HeightEpochNum += 1
 		v.Property.HeightChanged = true
+		IncrementMsgCount(tidx, 0, true)
 		return
 	}
 
@@ -278,8 +284,10 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 			nbr.Pos = myPos
 			v.Property.UnknownPosCount--
 		}
+		IncrementMsgCount(tidx, 0, true)
 	} else {
 		nbr = &v.Property.Nbrs[n.Note.SrcPos]
+		IncrementMsgCount(tidx, n.Note.Flow, false)
 	}
 	Assert(n.Note.SrcId == nbr.Didx, "")
 

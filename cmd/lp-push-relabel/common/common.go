@@ -1,9 +1,10 @@
 package common
 
 import (
+	"math"
+
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/rs/zerolog/log"
-	"math"
 )
 
 func Assert(cond bool, msg string) {

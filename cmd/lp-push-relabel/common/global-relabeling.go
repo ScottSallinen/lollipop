@@ -18,8 +18,10 @@ type GlobalRelabeling struct {
 }
 
 const (
-	grAlpha       = float64(5.0)
+	grAlpha       = float64(10.0)
 	grMinInterval = 100
+
+	SynchronousGlobalRelabeling = false
 )
 
 var GlobalRelabelingHelper GlobalRelabeling
@@ -55,9 +57,13 @@ func (gr *GlobalRelabeling) OnLift(sendMsg func(sinkId uint32) uint64) (sent uin
 		swapped := gr.nextGrCount.CompareAndSwap(nextGrCount, newCount+gr.interval.Load())
 		if swapped {
 			log.Info().Msg("Global Relabeling is triggered")
-			// Source and sink should always be present when lift
-			sent += sendMsg(gr.sinkId.Load())
-			sent += sendMsg(gr.sourceId.Load())
+			if SynchronousGlobalRelabeling {
+
+			} else {
+				// Source and sink should always be present when lift
+				sent += sendMsg(gr.sinkId.Load())
+				sent += sendMsg(gr.sourceId.Load())
+			}
 		}
 	}
 	return
