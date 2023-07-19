@@ -97,6 +97,15 @@ func (g *Graph[V, E, M, N]) NodeVertex(internalId uint32) *Vertex[V, E] {
 	return &g.GraphThreads[tidx].Vertices[id]
 }
 
+// Node level, vertex reference from internal index. Returns nil of the vertex does not exist.
+func (g *Graph[V, E, M, N]) NodeVertexOrNil(internalId uint32) *Vertex[V, E] {
+	id, tidx := InternalExpand(internalId)
+	if int(id) >= len(g.GraphThreads[tidx].Vertices) {
+		return nil
+	}
+	return &g.GraphThreads[tidx].Vertices[id]
+}
+
 // Node level, gives a reference to the vertex mailbox, and the thread index.
 func (g *Graph[V, E, M, N]) NodeVertexMailbox(internalId uint32) (*VertexMailbox[M], uint32) {
 	idx, tidx := InternalExpand(internalId)

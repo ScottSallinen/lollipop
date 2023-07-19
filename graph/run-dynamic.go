@@ -132,6 +132,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 	if targetRate == 0 {
 		targetRate = 1e16
 	}
+	_, checkSuperStep := any(alg).(AlgorithmOnSuperStepConverged[V, E, M, N])
 	makeTimeseries := (g.Options.LogTimeseries)
 	insDelOnExpire := g.Options.InsertDeleteOnExpire
 	pullUpToBase := BASE_SIZE
@@ -280,17 +281,22 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			gt.Status = APPLY_MSG
 			checkTerm := (strucClosed && remitClosed) || (epoch && remitCount == 0 && topCount == 0)
 			completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, checkTerm)
-			if completed && epoch {
-				//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] completed epoch")
-				gt.Status = DONE
-				gt.Response <- ACK
-
-				resp := <-gt.Command // BLOCK and wait for resume
-				if resp != RESUME {
-					log.Panic().Msg("Expected to resume after blocked")
+			if completed { // no backoff when completed is true
+				if checkSuperStep {
+					completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)
 				}
-				epoch = false
-				completed = false
+				if epoch {
+					//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] completed epoch")
+					gt.Status = DONE
+					gt.Response <- ACK
+
+					resp := <-gt.Command // BLOCK and wait for resume
+					if resp != RESUME {
+						log.Panic().Msg("Expected to resume after blocked")
+					}
+					epoch = false
+					completed = false
+				}
 			} else if algCount == 0 {
 				algFailed = true
 			}

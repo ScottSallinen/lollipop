@@ -35,6 +35,10 @@ type AlgorithmOnFinish[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 	OnFinish(*Graph[V, E, M, N])
 }
 
+type AlgorithmOnSuperStepConverged[V VPI[V], E EPI[E], M MVI[M], N any] interface {
+	OnSuperStepConverged(*Graph[V, E, M, N]) (sent uint64)
+}
+
 type AlgorithmOnCheckCorrectness[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 	OnCheckCorrectness(*Graph[V, E, M, N])
 }
