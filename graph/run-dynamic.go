@@ -95,7 +95,7 @@ func (g *Graph[V, E, M, N]) PrintEventRate(exit *bool) {
 	}
 }
 
-func (gt *GraphThread[V, E, M, N]) checkCommands(blockTop, bspSync, blockAlgIfTop, epoch *bool) {
+func (gt *GraphThread[V, E, M, N]) checkCommandsDynamic(blockTop, bspSync, blockAlgIfTop, epoch *bool) {
 	switch <-gt.Command {
 	case BLOCK_ALL:
 		gt.Response <- ACK
@@ -158,7 +158,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		}
 		if len(gt.Command) > 0 {
 			gt.Status = RECV_CMD
-			gt.checkCommands(&blockTop, &bspSync, &blockAlgIfTop, &epoch)
+			gt.checkCommandsDynamic(&blockTop, &bspSync, &blockAlgIfTop, &epoch)
 		}
 		if timeStates && tidx == 0 {
 			curr = time.Now()

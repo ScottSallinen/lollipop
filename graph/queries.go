@@ -114,6 +114,7 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 			CompareToOracle(alg, g, true, false, false, false)
 		}
 
+		g.ResetTerminationState()
 		g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
 
 		nQueries++
