@@ -171,6 +171,7 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 		if len(gt.Command) > 0 {
 			gt.Status = RECV_CMD
 			gt.checkCommandsAsync(&epoch)
+			gt.Status = APPLY_MSG
 		}
 
 		completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, true)
