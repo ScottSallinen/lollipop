@@ -82,9 +82,9 @@ func main() {
 		if options.Sync {
 			log.Panic().Msg("Cannot use a messaging strategy with synchronous iterations.")
 		}
-		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MailMsg, NoteMsg](new(ColouringMsg), options)
+		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MailMsg, NoteMsg](new(ColouringMsg), options, nil, nil)
 	} else {
-		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), options)
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), options, nil, nil)
 	}
 
 }

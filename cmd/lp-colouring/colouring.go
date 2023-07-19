@@ -60,7 +60,7 @@ func comparePriority(p1, p2 uint32, id1, id2 uint32) bool {
 	return p1 < p2 || (p1 == p2 && id1 < id2)
 }
 
-func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) (m Mail) {
+func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, s *graph.VertexStructure) (m Mail) {
 	m.Mutex = new(sync.RWMutex)
 	m.Pos = internalId // This is the vertex ID, set for the base mailbox of the vertex.
 	m.Colour = 0       // Used as wait count (if enabled) for the base mailbox of the vertex.
@@ -75,7 +75,7 @@ func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgePro
 		}
 	}
 
-	edgeAmount := len(vertex.OutEdges)        // Note: will be zero for dynamic graphs.
+	edgeAmount := int(s.InEventPos)           // Note: this will be zero for dynamic graphs. For static, this should be equal to len(src.InEdges), as the graph is undirected.
 	m.NbrScratch = make([]uint32, edgeAmount) // This is for a thread unsafe view // m.NbrScratch.Store(ns)
 
 	for i := 0; i < edgeAmount; i++ { // Note: does nothing for dynamic graphs.

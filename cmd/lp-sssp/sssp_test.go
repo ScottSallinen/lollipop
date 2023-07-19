@@ -35,7 +35,7 @@ func TestAsyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = false
 		myOpts.Dynamic = false
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs, nil)
 		testGraphExpect(g, t)
 	}
 }
@@ -45,7 +45,7 @@ func TestSyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = true
 		myOpts.Dynamic = false
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs, nil)
 		testGraphExpect(g, t)
 	}
 }
@@ -55,7 +55,7 @@ func TestDynamic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = false
 		myOpts.Dynamic = true
-		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs)
+		g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs, nil)
 		testGraphExpect(g, t)
 	}
 }
@@ -90,14 +90,14 @@ func TestDynamicCreation(t *testing.T) {
 			CheckCorrectness: true,
 			Dynamic:          true,
 		}
-		gDyn.InitMail = testInitMsgs
+		gDyn.InitMails = testInitMsgs
 
 		graph.DynamicGraphExecutionFromTestEvents(new(SSSP), gDyn, rawTestGraph)
 
 		myOpts := baseOptions
 		myOpts.NumThreads = THREADS
 
-		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs)
+		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), myOpts, testInitMsgs, nil)
 
 		graph.CheckGraphStructureEquality(gDyn, gStatic)
 

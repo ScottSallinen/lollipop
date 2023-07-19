@@ -33,9 +33,12 @@ func main() {
 
 	// Some potential extra defines here, e.g. if the algorithm has a "point" initialization, or is instead initialized by default behaviour (where every vertex is visited initially).
 	// See SSSP for a good example of this "point" initialization.
-	var initMail map[graph.RawType]Mail // Default is nil.
+	var initMails map[graph.RawType]Mail // Default is nil.
 	// Example: Only send an initial value of 1 to vertex with the given raw ID, rather than starting with information that goes to all vertices.
-	// initMail[graph.AsRawTypeString(*sourceInit)] = 1
+	// initMails[graph.AsRawTypeString(*sourceInit)] = 1
 
-	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Template), graphOptions, initMail)
+	// Same thing as above, but with a Notification rather than Mail (depending on strategy used).
+	var initNotes map[graph.RawType]Note // Default is nil.
+
+	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Template), graphOptions, initMails, initNotes)
 }

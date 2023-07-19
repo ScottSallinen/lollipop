@@ -38,7 +38,7 @@ func main() {
 		defer oracleFile.Close()
 	}
 
-	g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), graphOptions, initMsgs)
+	g := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), graphOptions, initMsgs, nil)
 
 	if graphOptions.LogTimeseries {
 		PrintTimeSeries(true, false)

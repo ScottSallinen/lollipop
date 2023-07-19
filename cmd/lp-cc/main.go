@@ -40,5 +40,5 @@ func (*CC) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, No
 func main() {
 	graphOptions := graph.FlagsToOptions()
 	graphOptions.Undirected = true // undirected should always be true.
-	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(CC), graphOptions)
+	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(CC), graphOptions, nil, nil)
 }
