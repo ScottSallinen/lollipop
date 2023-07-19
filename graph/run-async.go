@@ -191,6 +191,7 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 			if algNoCountTimes%100 == 0 {
 				gt.Status = BACKOFF_ALG
 				utils.BackOff(algNoCountTimes / 100)
+				gt.Status = APPLY_MSG
 			}
 		} else {
 			algNoCountTimes = 0
