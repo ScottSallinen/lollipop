@@ -29,6 +29,7 @@ type GraphOptions struct {
 	AlgTimeIncludeQuery   bool    // If true, will include time spent on process query in algorithm time
 	ColourOutput          bool    // If true, will colour terminal stdout output. Default enabled; can be disabled not supported.
 	Profile               bool    // If true, will profile the algorithm and create a pprof file.
+	TimeRange             bool    // If true, use timestamp edges with time *ranges* rather than "deletion" of events. In this case edges represent an event that can begin at one time and may end at a future time.
 	DebugLevel            uint32  // If non-zero, will print extra debug information. 1 for debug, 2 adds extra timing details, 3 adds extra debug behaviour.
 	PollingRate           uint32  // How often to print status (in milliseconds) when dynamic graph streaming is running
 	QueueMultiplier       uint32  // 2^n Multiplier for the notification queue size.

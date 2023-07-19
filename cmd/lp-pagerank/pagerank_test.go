@@ -20,7 +20,7 @@ func TestDynamic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = false
 		myOpts.Dynamic = true
-		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), myOpts)
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), myOpts, nil, nil)
 	}
 }
 func TestAsyncStatic(t *testing.T) {
@@ -29,7 +29,7 @@ func TestAsyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = false
 		myOpts.Dynamic = false
-		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), myOpts)
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), myOpts, nil, nil)
 	}
 }
 func TestSyncStatic(t *testing.T) {
@@ -38,7 +38,7 @@ func TestSyncStatic(t *testing.T) {
 		myOpts.NumThreads = uint32(rand.Intn(8-1) + 1)
 		myOpts.Sync = true
 		myOpts.Dynamic = false
-		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), myOpts)
+		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), myOpts, nil, nil)
 	}
 }
 
@@ -83,7 +83,7 @@ func DynamicCreation(undirected bool, t *testing.T) {
 		myOpts := baseOptions
 		myOpts.NumThreads = THREADS
 		myOpts.Undirected = undirected
-		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), myOpts)
+		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), myOpts, nil, nil)
 
 		graph.CheckGraphStructureEquality(gDyn, gStatic)
 
@@ -144,7 +144,7 @@ func DynamicWithDelete(undirected bool, t *testing.T) {
 			Dynamic:          true,
 			CheckCorrectness: true,
 		}
-		gDyn.InitMail = nil
+		gDyn.InitMails = nil
 		graph.DynamicGraphExecutionFromTestEvents(new(PageRank), gDyn, adjustedGraph)
 
 		mGraphOptions := graph.GraphOptions{
@@ -154,7 +154,7 @@ func DynamicWithDelete(undirected bool, t *testing.T) {
 			CheckCorrectness: true,
 		}
 
-		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), mGraphOptions)
+		gStatic := graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(PageRank), mGraphOptions, nil, nil)
 
 		graph.CheckGraphStructureEquality(gDyn, gStatic)
 

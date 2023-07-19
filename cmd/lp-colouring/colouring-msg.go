@@ -32,9 +32,7 @@ type EPropMsg struct {
 	Priority bool
 }
 
-type MailMsg struct {
-	Init bool
-}
+type MailMsg struct{}
 
 type NoteMsg struct {
 	Pos      uint32
@@ -49,18 +47,17 @@ func (VPropMsg) New() (vp VPropMsg) {
 }
 
 func (MailMsg) New() (m MailMsg) {
-	m.Init = false
-	return m
+	return m // Unused with this strategy.
 }
 
-func (*ColouringMsg) BaseVertexMailbox(src *graph.Vertex[VPropMsg, EPropMsg], internalId uint32, rawId graph.RawType) (m MailMsg) {
-	edgeAmount := len(src.OutEdges)                      // NoteMsg: will be zero for dynamic graphs.
-	src.Property.NbrScratch = make([]uint32, edgeAmount) // Make either way.
+func (*ColouringMsg) BaseVertexMailbox(src *graph.Vertex[VPropMsg, EPropMsg], internalId uint32, s *graph.VertexStructure) (m MailMsg) {
+	inEdgeAmount := int(s.InEventPos)                      // Note: this will be zero for dynamic graphs. For static, this should be equal to len(src.InEdges), as the graph is undirected.
+	src.Property.NbrScratch = make([]uint32, inEdgeAmount) // Make either way.
 	src.Property.Colour = EMPTY_VAL_MSG
 
-	if edgeAmount > 0 {
+	if inEdgeAmount > 0 {
 		myPriority := hash(internalId)
-		for i := 0; i < edgeAmount; i++ {
+		for i := 0; i < inEdgeAmount; i++ {
 			didx := src.OutEdges[i].Didx
 			if comparePriority(hash(didx), myPriority, didx, internalId) {
 				src.OutEdges[i].Property.Priority = true
@@ -79,31 +76,23 @@ func (*ColouringMsg) BaseVertexMailbox(src *graph.Vertex[VPropMsg, EPropMsg], in
 	return m
 }
 
-// Self mail (init).
-func (*ColouringMsg) InitAllMail(src *graph.Vertex[VPropMsg, EPropMsg], internalId uint32, rawId graph.RawType) (m MailMsg) {
-	m.Init = true
-	return m
+// Self notification (init).
+func (*ColouringMsg) InitAllNote(src *graph.Vertex[VPropMsg, EPropMsg], internalId uint32, rawId graph.RawType) (n NoteMsg) {
+	n.Pos = EMPTY_VAL_MSG
+	return n
 }
 
 func (*ColouringMsg) MailMerge(incoming MailMsg, sidx uint32, existing *MailMsg) (newInfo bool) {
-	if incoming.Init {
-		*existing = incoming
-	}
-	return true
+	return true // For a pure-message-passing algorithm, tell the framework we always want to update.
+}
+func (*ColouringMsg) MailRetrieve(existing *MailMsg, src *graph.Vertex[VPropMsg, EPropMsg]) (m MailMsg) {
+	return m // Unused with this strategy.
 }
 
-func (*ColouringMsg) MailRetrieve(existing *MailMsg, src *graph.Vertex[VPropMsg, EPropMsg]) (outgoing MailMsg) {
-	if existing.Init {
-		existing.Init = false
-		return MailMsg{true}
-	}
-	return outgoing
-}
-
-func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], notif graph.Notification[NoteMsg], m MailMsg) (sent uint64) {
+func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], notif graph.Notification[NoteMsg], _ MailMsg) (sent uint64) {
 	prop := &src.Property
 
-	if m.Init { // Init mail, do not apply to neighbour.
+	if notif.Note.Pos == EMPTY_VAL_MSG { // Initialization notification, not from an inbound edge.
 		//if USE_WAIT_COUNT_MSG {
 		//	prop.WaitCount-- // Done waiting for self.
 		//}
@@ -111,7 +100,7 @@ func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailM
 		ln := uint32(len(prop.NbrScratch))
 		if notif.Note.Pos >= ln {
 			prop.NbrScratch = append(prop.NbrScratch, make([]uint32, ((notif.Note.Pos)-(ln)+1))...)
-			for i := ln; i < notif.Note.Pos + 1; i++ {
+			for i := ln; i < notif.Note.Pos+1; i++ {
 				prop.NbrScratch[i] = 0
 			}
 			panic(1)

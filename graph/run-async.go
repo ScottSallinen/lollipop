@@ -18,7 +18,7 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		g.NodeParallelFor(func(_, threadOffset uint32, gt *GraphThread[V, E, M, N]) int {
 			for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 				vertex, mailbox := gt.VertexAndMailbox(i)
-				mailbox.Inbox = aBVM.BaseVertexMailbox(vertex, (threadOffset | i), gt.VertexRawID(i))
+				mailbox.Inbox = aBVM.BaseVertexMailbox(vertex, (threadOffset | i), gt.VertexStructure(i))
 			}
 			return 0
 		})
@@ -26,9 +26,8 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 	}
 
 	now := g.AlgTimer.Elapsed()
-	if g.InitMail == nil {
-		if aIAM, ok := any(alg).(AlgorithmInitAllMail[V, E, M, N]); ok {
-			// Target all vertices: send the algorithm defined initial value as mail.
+	if g.InitMails == nil {
+		if aIAM, ok := any(alg).(AlgorithmInitAllMail[V, E, M, N]); ok { // Target all vertices: send the algorithm defined initial value as mail.
 			g.NodeParallelFor(func(_, threadOffset uint32, gt *GraphThread[V, E, M, N]) int {
 				sent := uint64(0)
 				for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
@@ -47,12 +46,42 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 				gt.MsgSend += sent
 				return 0
 			})
+		} else if g.InitNotes == nil {
+			if aIAM, ok := any(alg).(AlgorithmInitAllNote[V, E, M, N]); ok { // Target all vertices: send the algorithm defined initial notification.
+				g.NodeParallelFor(func(_, threadOffset uint32, gt *GraphThread[V, E, M, N]) int {
+					sent := uint64(0)
+					for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
+						vertex, mailbox := gt.VertexAndMailbox(i)
+						rawId := gt.VertexRawID(i)
+						vidx := (threadOffset | i)
+
+						note := aIAM.InitAllNote(vertex, vidx, rawId)
+
+						n := Notification[N]{Target: vidx, Note: note}
+						sent += g.EnsureSend(g.ActiveNotification(vidx, n, mailbox, uint32(gt.Tidx)))
+					}
+					gt.MsgSend += sent
+					return 0
+				})
+			} else {
+				log.Warn().Msg("WARNING: No initial data defined for algorithm? InitMails/Notes are nil and algorithm does not implement InitAllMail/Note.")
+			}
 		} else {
-			log.Warn().Msg("WARNING: No initial data defined for algorithm? InitMail is nil and algorithm does not implement InitAllMail.")
+			// Target specific vertices: send the algorithm defined initial notification.
+			for vRawId, note := range g.InitNotes {
+				vidx, vertex := g.NodeVertexFromRaw(vRawId)
+				if vertex == nil {
+					log.Warn().Msg("WARNING: Target source init vertex not found: " + utils.V(vRawId))
+					continue
+				}
+				n := Notification[N]{Target: vidx, Note: note}
+				mailbox, tidx := g.NodeVertexMailbox(vidx)
+				sent := g.EnsureSend(g.ActiveNotification(vidx, n, mailbox, tidx))
+				g.GraphThreads[tidx].MsgSend += sent
+			}
 		}
-	} else {
-		// Target specific vertices: send the algorithm defined initial value as mail.
-		for vRawId, mail := range g.InitMail {
+	} else { // Target specific vertices: send the algorithm defined initial value as mail.
+		for vRawId, mail := range g.InitMails {
 			vidx, vertex := g.NodeVertexFromRaw(vRawId)
 			if vertex == nil {
 				log.Warn().Msg("WARNING: Target source init vertex not found: " + utils.V(vRawId))
@@ -68,7 +97,7 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			}
 		}
 	}
-	log.Trace().Msg(", init_mail, " + utils.F("%.3f", (g.AlgTimer.Elapsed()-now).Seconds()*1000))
+	log.Trace().Msg(", init_send, " + utils.F("%.3f", (g.AlgTimer.Elapsed()-now).Seconds()*1000))
 }
 
 // Will pull a bundle of notifications targeting this thread, and then process them all.

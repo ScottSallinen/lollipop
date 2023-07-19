@@ -23,8 +23,12 @@ type AlgorithmInitAllMail[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 	InitAllMail(v *Vertex[V, E], internalId uint32, rawId RawType) (initialMail M)
 }
 
+type AlgorithmInitAllNote[V VPI[V], E EPI[E], M MVI[M], N any] interface {
+	InitAllNote(v *Vertex[V, E], internalId uint32, rawId RawType) (initialNote N)
+}
+
 type AlgorithmBaseVertexMailbox[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	BaseVertexMailbox(v *Vertex[V, E], internalId uint32, rawId RawType) (baseMail M)
+	BaseVertexMailbox(v *Vertex[V, E], internalId uint32, s *VertexStructure) (baseMail M)
 }
 
 type AlgorithmOnFinish[V VPI[V], E EPI[E], M MVI[M], N any] interface {
@@ -141,13 +145,13 @@ func Run[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]
 }
 
 // Helper function to launch a graph execution.
-func LaunchGraphExecution[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](a Algorithm[V, E, M, N], options GraphOptions, initMail ...map[RawType]M) *Graph[V, E, M, N] {
+func LaunchGraphExecution[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](a Algorithm[V, E, M, N], options GraphOptions, initMails map[RawType]M, initNotes map[RawType]N) *Graph[V, E, M, N] {
 	g := new(Graph[V, E, M, N])
 	g.Options = options
-	if len(initMail) > 0 {
-		g.InitMail = initMail[0]
-	} else {
-		g.InitMail = nil
+	if len(initMails) > 0 {
+		g.InitMails = initMails
+	} else if len(initNotes) > 0 {
+		g.InitNotes = initNotes
 	}
 
 	Launch[EP](a, g)
@@ -158,6 +162,12 @@ func LaunchGraphExecution[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](a Algo
 func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N]) {
 	g.Init()
 	CheckAssumptions[EP](alg, g)
+	g.SourceInit = (g.InitMails != nil || g.InitNotes != nil)
+	g.NoteInit = (g.InitNotes != nil)
+	if _, ok := any(alg).(AlgorithmInitAllNote[V, E, M, N]); ok {
+		g.NoteInit = true
+	}
+
 	feederWg := new(sync.WaitGroup)
 	feederWg.Add(1)
 
@@ -217,6 +227,11 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 func DynamicGraphExecutionFromTestEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], scs []TopologyEvent[E]) {
 	g.Init()
 	CheckAssumptions[EP](alg, g)
+	g.SourceInit = (g.InitMails != nil || g.InitNotes != nil)
+	g.NoteInit = (g.InitNotes != nil)
+	if _, ok := any(alg).(AlgorithmInitAllNote[V, E, M, N]); ok {
+		g.NoteInit = true
+	}
 
 	feederWg := new(sync.WaitGroup)
 	feederWg.Add(1)
@@ -258,6 +273,12 @@ func CheckAssumptions[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorith
 		EP(&event.EdgeProperty).ReplaceTimestamp(123)
 		if event.EdgeProperty.GetTimestamp() != 123 {
 			log.Panic().Msg("Failure: we are using a timestamp strategy, but I could not replace a timestamp in an edge property.")
+		}
+	}
+	if g.Options.TimeRange {
+		EP(&event.EdgeProperty).ReplaceEndTime(1234)
+		if event.EdgeProperty.GetEndTime() != 1234 {
+			log.Panic().Msg("Failure: we are using a time range strategy, but I could not replace an end time in an edge property.")
 		}
 	}
 }

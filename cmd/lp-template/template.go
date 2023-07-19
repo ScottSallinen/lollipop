@@ -70,7 +70,7 @@ func (*Template) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty],
 // This is generally not a good idea to declare if it can be avoided, as it requires a full loop over vertices,
 // before any real algorithmic processing occurs for static graphs.
 // The returned mail will overwrite the "default constructor" mailbox for that vertex.
-func (*Template) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) Mail {
+func (*Template) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, s *graph.VertexStructure) Mail {
 	return Mail{EMPTY_VAL}
 }
 

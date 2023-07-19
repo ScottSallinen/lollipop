@@ -46,8 +46,11 @@ type Graph[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	_                   [0]atomic.Int64                     // Alignment for the GraphThreads.
 	GraphThreads        [THREAD_MAX]GraphThread[V, E, M, N] // Graph threads. NOTE: do not len(GraphThreads)! Use g.NumThreads instead. (it is a fixed size for offset purposes).
 	NumThreads          uint32                              // Number of threads.
+	SourceInit          bool                                // Set true if detected that source vertices are targeted for initialization (rather than by All).
+	NoteInit            bool                                // Set true if detected that notifications are used for initialization (rather than mail).
 	Options             GraphOptions                        // Graph options.
-	InitMail            map[RawType]M                       // Note: takes priority over InitAllMail! If used, this is the mapping from raw vertex ID to the initial mail they receive.
+	InitMails           map[RawType]M                       // If used, takes priority over InitAllMail -- if set, will not use InitAllMail! A map from raw vertex ID to an initial Mail they receive.
+	InitNotes           map[RawType]N                       // If used, takes priority over InitAllNote, but not either Mail type. A map from raw vertex ID to an initial Notification they receive.
 	TerminateData       []int64                             // Value for each thread to share their (sent - received) messages.
 	TerminateView       []int64                             // Thread view to terminate.
 	TerminateVotes      []int64                             // Vote to terminate.

@@ -44,7 +44,8 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		oracleGraph.Options.OracleCompareSync = false
 		oracleGraph.Options.LogTimeseries = false
 		oracleGraph.Options.TimeseriesEdgeCount = false
-		oracleGraph.InitMail = g.InitMail
+		oracleGraph.InitMails = g.InitMails
+		oracleGraph.InitNotes = g.InitNotes
 		oracleGraph.Init()
 
 		log.Debug().Msg("Copying vertices: " + utils.V(numVertices))
