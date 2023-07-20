@@ -50,9 +50,11 @@ func (*PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
 		SkipPush.Store(false)
 		sent += sendMsgToActiveVertices(g)
 
+		totalRuntime := t3.Sub(t0)
 		log.Info().Msg(fmt.Sprintf("SyncGlobalRelabel done. "+
 			"Draining Messages took %.2fs, Resetting heights took %.2fs, Global Relabeling took %.2fs. Total took %.2fs",
-			t1.Sub(t0).Seconds(), t2.Sub(t1).Seconds(), t3.Sub(t2).Seconds(), t3.Sub(t0).Seconds()))
+			t1.Sub(t0).Seconds(), t2.Sub(t1).Seconds(), t3.Sub(t2).Seconds(), totalRuntime.Seconds()))
+		GlobalRelabelingHelper.GlobalRelabelingDone(totalRuntime.Milliseconds())
 	}
 	return sent
 }
