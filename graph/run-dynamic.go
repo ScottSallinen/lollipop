@@ -284,11 +284,8 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			if completed { // no backoff when completed is true
 				if checkSuperStep {
 					completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)
-					if !completed {
-						continue
-					}
 				}
-				if epoch {
+				if completed && epoch {
 					//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] completed epoch")
 					gt.Status = DONE
 					gt.Response <- ACK

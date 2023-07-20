@@ -208,11 +208,8 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 		if completed {
 			if checkSuperStep {
 				completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)
-				if !completed {
-					continue
-				}
 			}
-			if epoch {
+			if completed && epoch {
 				gt.Status = DONE
 				gt.Response <- ACK
 				resp := <-gt.Command // BLOCK and wait for resume
