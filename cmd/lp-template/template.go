@@ -133,7 +133,15 @@ func (*Template) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, No
 }
 
 // Optional to declare.
-// If declared, this function is called after the processing is complete; in case any finalization step (e.g. normalization) is needed.
+// If declared, this function is called after the processing has completed (i.e. no algorithmic message exists).
+// It can perform additional processing and send messages to resume processing.
+// If this function does not produce any new message, the algorithm is completed.
+func (*Template) OnSuperStepConverged(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) (sent uint64) {
+	return 0
+}
+
+// Optional to declare.
+// If declared, this function is called after the algorithm is complete; in case any finalization step (e.g. normalization) is needed.
 // Otherwise, no need to declare.
 func (*Template) OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 

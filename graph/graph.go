@@ -58,6 +58,7 @@ type Graph[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	AlgTimer            utils.Watch                         // Timer for the algorithm, to sometimes determine algorithm-specific performance (e.g., derive query interruption compared to wall clock).
 	LogEntryChan        chan uint64                         // Channel for logging timeseries data.
 	QueryWaiter         sync.WaitGroup                      // Wait group for queries, if queries are blocking.
+	SuperStepWaiter     SuperStepWaiter                     // Synchronize threads for algorithmic super steps.
 	OracleCache         *Graph[V, E, M, N]                  // For debugging: if non-nil, will use this graph as the oracle instead of (re)-computing it.
 	warnOutOfOrderInput uint64                              // Detection of out of order input, during streaming; used for a unique notification.
 	warnSelectDelete    uint64                              // Detection of deletions that are selective; used for a unique notification.
@@ -116,6 +117,8 @@ func (g *Graph[V, E, M, N]) Init() {
 	if g.Options.LoadThreads == 0 {
 		g.Options.LoadThreads = 1
 	}
+
+	g.SuperStepWaiter.Init(int(g.NumThreads))
 
 	notifQueueSize := BASE_SIZE
 	if g.Options.QueueMultiplier > 0 {
