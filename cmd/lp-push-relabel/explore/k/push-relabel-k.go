@@ -103,13 +103,13 @@ func (pr *PushRelabel) InitAllMail(_ *Vertex, _ uint32, _ graph.RawType) Mail {
 	return Mail{}
 }
 
-func (pr *PushRelabel) BaseVertexMailbox(v *Vertex, internalId uint32, rawId graph.RawType) (m Mail) {
+func (pr *PushRelabel) BaseVertexMailbox(v *Vertex, internalId uint32, s *graph.VertexStructure) (m Mail) {
 	v.Property.Height = InitialHeight
-	if rawId == SourceRawId {
+	if s.RawId == SourceRawId {
 		v.Property.Type = Source
 		v.Property.Height = VertexCountHelper.RegisterSource(internalId)
 		GlobalRelabelingHelper.RegisterSource(internalId)
-	} else if rawId == SinkRawId {
+	} else if s.RawId == SinkRawId {
 		v.Property.Type = Sink
 		v.Property.Height = 0
 		GlobalRelabelingHelper.RegisterSink(internalId)

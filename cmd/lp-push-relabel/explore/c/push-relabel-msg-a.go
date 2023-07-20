@@ -2,6 +2,7 @@ package c
 
 import (
 	"fmt"
+
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
@@ -60,7 +61,7 @@ func (MessageMsgA) New() (new MessageMsgA) {
 
 func RunMsgA(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA]) {
 	alg := new(PushRelabelMsgA)
-	g = graph.LaunchGraphExecution[*EdgePMsgA, VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA](alg, options)
+	g = graph.LaunchGraphExecution[*EdgePMsgA, VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA](alg, options, nil, nil)
 	return alg.GetMaxFlowValue(g), g
 }
 
@@ -73,12 +74,12 @@ func (pr *PushRelabelMsgA) InitAllMail(vertex *graph.Vertex[VertexPMsgA, EdgePMs
 	return MessageMsgA{Init: true}
 }
 
-func (pr *PushRelabelMsgA) BaseVertexMailbox(v *graph.Vertex[VertexPMsgA, EdgePMsgA], internalId uint32, rawId graph.RawType) (m MessageMsgA) {
+func (pr *PushRelabelMsgA) BaseVertexMailbox(v *graph.Vertex[VertexPMsgA, EdgePMsgA], internalId uint32, s *graph.VertexStructure) (m MessageMsgA) {
 	v.Property.Height = InitialHeight
-	if rawId == SourceRawId {
+	if s.RawId == SourceRawId {
 		v.Property.Type = Source
 		v.Property.Height = VertexCountHelper.RegisterSource(internalId)
-	} else if rawId == SinkRawId {
+	} else if s.RawId == SinkRawId {
 		v.Property.Type = Sink
 		v.Property.Height = 0
 	}

@@ -53,7 +53,7 @@ func (MessageAgg) New() (new MessageAgg) {
 
 func RunAggH(options graph.GraphOptions) (maxFlow int32, g *graph.Graph[VPropAgg, EPropAgg, MessageAgg, NoteAgg]) {
 	alg := new(PushRelabelAgg)
-	g = graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options)
+	g = graph.LaunchGraphExecution[*EPropAgg, VPropAgg, EPropAgg, MessageAgg, NoteAgg](alg, options, nil, nil)
 	return alg.GetMaxFlowValue(g), g
 }
 
@@ -66,17 +66,17 @@ func (pr *PushRelabelAgg) InitAllMail(vertex *graph.Vertex[VPropAgg, EPropAgg], 
 	return MessageAgg{Init: true}
 }
 
-func (pr *PushRelabelAgg) BaseVertexMailbox(v *graph.Vertex[VPropAgg, EPropAgg], internalId uint32, rawId graph.RawType) (m MessageAgg) {
+func (pr *PushRelabelAgg) BaseVertexMailbox(v *graph.Vertex[VPropAgg, EPropAgg], internalId uint32, s *graph.VertexStructure) (m MessageAgg) {
 	m.Mutex = &sync.Mutex{}
 	m.NbrHeights = make(map[uint32]int64)
 
 	v.Property.Height = InitialHeight
 	v.Property.ResCap = make(map[uint32]int32)
 
-	if rawId == SourceRawId {
+	if s.RawId == SourceRawId {
 		v.Property.Type = Source
 		v.Property.Height = VertexCountHelper.RegisterSource(internalId)
-	} else if rawId == SinkRawId {
+	} else if s.RawId == SinkRawId {
 		v.Property.Type = Sink
 		v.Property.Height = 0
 	}
