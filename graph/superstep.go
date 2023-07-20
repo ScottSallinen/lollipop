@@ -18,7 +18,7 @@ func AwaitSuperStepConvergence[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorith
 			<-ss.doneEvents
 		}
 
-		if aOSC, ok := alg.(AlgorithmOnSuperStepConverged[V, E, M, N]); ok {
+		aOSC, _ := alg.(AlgorithmOnSuperStepConverged[V, E, M, N])
 			sent := aOSC.OnSuperStepConverged(g)
 			if sent > 0 {
 				g.GraphThreads[tidx].MsgSend += sent
