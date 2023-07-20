@@ -118,7 +118,7 @@ func (g *Graph[V, E, M, N]) Init() {
 		g.Options.LoadThreads = 1
 	}
 
-	g.SuperStepWaiter.Init()
+	g.SuperStepWaiter.Init(int(g.NumThreads))
 
 	notifQueueSize := BASE_SIZE
 	if g.Options.QueueMultiplier > 0 {
