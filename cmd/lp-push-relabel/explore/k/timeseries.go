@@ -11,16 +11,16 @@ import (
 func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexProp, EdgeProp, Mail, Note], wg *sync.WaitGroup) {
 	var outEntry TsEntry
 	for tse := range entries {
-		vertexCount := tse.GraphView.NodeVertexCount()
-		_, source := tse.GraphView.NodeVertexFromRaw(SourceRawId)
-		_, sink := tse.GraphView.NodeVertexFromRaw(SinkRawId)
+		sourceId, sinkId := GlobalRelabelingHelper.GetSourceAndSinkInternalIds()
+		source, sink := tse.GraphView.NodeVertexOrNil(sourceId), tse.GraphView.NodeVertexOrNil(sinkId)
 		skip := source == nil || sink == nil
+
 		if !skip {
-			maxFlow := pr.GetMaxFlowValue(tse.GraphView)
+			maxFlow := sink.Property.Excess
 			outEntry = TsEntry{
 				Name:             tse.Name,
 				CurrentMaxFlow:   maxFlow,
-				VertexCount:      uint64(vertexCount),
+				VertexCount:      uint64(tse.GraphView.NodeVertexCount()),
 				EdgeCount:        tse.EdgeCount,
 				Latency:          tse.Latency,
 				CurrentRuntime:   tse.CurrentRuntime,

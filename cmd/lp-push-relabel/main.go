@@ -25,7 +25,7 @@ func main() {
 		return
 	}
 
-	InitialHeight = 0
+	InitialHeight = MaxHeight
 	SourceRawId = graph.RawType(*sourceId)
 	SinkRawId = graph.RawType(*sinkId)
 	GlobalRelabelingEnabled = *globalRelabeling
