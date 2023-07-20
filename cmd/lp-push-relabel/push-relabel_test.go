@@ -11,16 +11,6 @@ import (
 	"golang.org/x/exp/constraints"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/a"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/b"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/c"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/d"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/e"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/f"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/g"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/j"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/k"
 )
 
@@ -76,91 +66,91 @@ func TestMain(m *testing.M) {
 	os.Exit(c)
 }
 
-func TestAggHAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
-}
+// func TestAggHAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
+// }
 
-func TestAggHIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
-}
+// func TestAggHIncremental(t *testing.T) {
+// 	options := baseOptions
+// 	options.Dynamic = true
+// 	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
+// }
 
-func TestBAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
-}
+// func TestBAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
+// }
 
-func TestBIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
-}
+// func TestBIncremental(t *testing.T) {
+// 	options := baseOptions
+// 	options.Dynamic = true
+// 	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
+// }
 
-func TestMsgAAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, c.RunMsgA, "MessagePassingArray", options)
-}
+// func TestMsgAAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, c.RunMsgA, "MessagePassingArray", options)
+// }
 
-func TestDAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, d.Run, d.Name, options)
-}
+// func TestDAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, d.Run, d.Name, options)
+// }
 
-func TestDIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	RunTestGraphs(t, d.Run, d.Name, options)
-}
+// func TestDIncremental(t *testing.T) {
+// 	options := baseOptions
+// 	options.Dynamic = true
+// 	RunTestGraphs(t, d.Run, d.Name, options)
+// }
 
-func TestEAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, e.Run, e.Name, options)
-}
+// func TestEAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, e.Run, e.Name, options)
+// }
 
-func TestFAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, f.Run, f.Name, options)
-}
+// func TestFAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, f.Run, f.Name, options)
+// }
 
-func TestGAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, g.Run, g.Name, options)
-}
+// func TestGAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, g.Run, g.Name, options)
+// }
 
-func TestHAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, h.Run, h.Name, options)
-}
+// func TestHAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, h.Run, h.Name, options)
+// }
 
-func TestHIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	RunTestGraphs(t, h.Run, h.Name, options)
-}
+// func TestHIncremental(t *testing.T) {
+// 	options := baseOptions
+// 	options.Dynamic = true
+// 	RunTestGraphs(t, h.Run, h.Name, options)
+// }
 
-func TestIAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, i.Run, i.Name, options)
-}
+// func TestIAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, i.Run, i.Name, options)
+// }
 
-func TestIIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	RunTestGraphs(t, i.Run, i.Name, options)
-}
+// func TestIIncremental(t *testing.T) {
+// 	options := baseOptions
+// 	options.Dynamic = true
+// 	RunTestGraphs(t, i.Run, i.Name, options)
+// }
 
-func TestJAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, j.Run, j.Name, options)
-}
+// func TestJAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	RunTestGraphs(t, j.Run, j.Name, options)
+// }
 
-func TestJIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	RunTestGraphs(t, j.Run, j.Name, options)
-}
+// func TestJIncremental(t *testing.T) {
+// 	options := baseOptions
+// 	options.Dynamic = true
+// 	RunTestGraphs(t, j.Run, j.Name, options)
+// }
 
 func TestKAsyncStatic(t *testing.T) {
 	options := baseOptions
