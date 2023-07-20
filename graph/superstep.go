@@ -1,27 +1,23 @@
 package graph
 
-import (
-	"sync"
-)
-
 type SuperStepWaiter struct {
-	lock      sync.Mutex
-	cond      sync.Cond
-	doneCount int
+	doneEvents   chan struct{}
+	resumeEvents chan struct{}
 }
 
 func (ss *SuperStepWaiter) Init() {
-	ss.cond.L = &ss.lock
+	ss.doneEvents = make(chan struct{})
+	ss.resumeEvents = make(chan struct{})
 }
 
 func AwaitSuperStepConvergence[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], tidx uint32) (completed bool) {
 	ss := &g.SuperStepWaiter
-	ss.lock.Lock()
 
-	ss.doneCount++
-	if ss.doneCount != int(g.NumThreads) {
-		ss.cond.Wait()
-	} else {
+	if tidx == 0 {
+		for i := 1; i < int(g.NumThreads); i++ {
+			<-ss.doneEvents
+		}
+
 		if aOSC, ok := alg.(AlgorithmOnSuperStepConverged[V, E, M, N]); ok {
 			sent := aOSC.OnSuperStepConverged(g)
 			if sent > 0 {
@@ -29,10 +25,14 @@ func AwaitSuperStepConvergence[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorith
 				g.ResetTerminationState()
 			}
 		}
-		ss.doneCount = 0
-		ss.cond.Broadcast()
+
+		for i := 1; i < int(g.NumThreads); i++ {
+			ss.resumeEvents <- struct{}{}
+		}
+	} else {
+		ss.doneEvents <- struct{}{}
+		<-ss.resumeEvents
 	}
 
-	ss.lock.Unlock()
 	return g.CheckTermination(uint16(tidx))
 }
