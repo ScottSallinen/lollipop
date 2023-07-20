@@ -2,6 +2,7 @@ package e
 
 import (
 	"fmt"
+
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
@@ -69,7 +70,7 @@ func (Message) New() (new Message) {
 
 func Run(options graph.GraphOptions) (maxFlow int32, g *Graph) {
 	alg := new(PushRelabel)
-	g = graph.LaunchGraphExecution[*EdgeProp, VertexProp, EdgeProp, Message, Note](alg, options)
+	g = graph.LaunchGraphExecution[*EdgeProp, VertexProp, EdgeProp, Message, Note](alg, options, nil, nil)
 	return alg.GetMaxFlowValue(g), g
 }
 
@@ -82,12 +83,12 @@ func (pr *PushRelabel) InitAllMail(vertex *Vertex, internalId uint32, rawId grap
 	return Message{Init: true}
 }
 
-func (pr *PushRelabel) BaseVertexMailbox(v *Vertex, internalId uint32, rawId graph.RawType) (m Message) {
+func (pr *PushRelabel) BaseVertexMailbox(v *Vertex, internalId uint32, s *graph.VertexStructure) (m Message) {
 	v.Property.Height = InitialHeight
-	if rawId == SourceRawId {
+	if s.RawId == SourceRawId {
 		v.Property.Type = Source
 		v.Property.Height = VertexCountHelper.RegisterSource(internalId)
-	} else if rawId == SinkRawId {
+	} else if s.RawId == SinkRawId {
 		v.Property.Type = Sink
 		v.Property.Height = 0
 	}
