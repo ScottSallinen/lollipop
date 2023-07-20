@@ -208,6 +208,9 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 		if completed {
 			if checkSuperStep {
 				completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)
+				if !completed {
+					continue
+				}
 			}
 			if epoch {
 				gt.Status = DONE
