@@ -205,23 +205,7 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 		}
 
 		completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, true)
-		if completed {
-			if checkSuperStep {
-				completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)
-			}
-			if completed && epoch {
-				gt.Status = DONE
-				gt.Response <- ACK
-				resp := <-gt.Command // BLOCK and wait for resume
-				if resp != RESUME {
-					log.Panic().Msg("Expected to resume after blocked")
-				}
-				epoch = false
-				completed = false
-				algNoCountTimes = 0
-				gt.Status = APPLY_MSG
-			}
-		} else if algCount == 0 { // Minor back off if we didn't get, and keep getting, no messages.
+		if !completed && algCount == 0 { // Minor back off if we didn't get, and keep getting, no messages.
 			algNoCountTimes++
 			if algNoCountTimes%100 == 0 {
 				gt.Status = BACKOFF_ALG
@@ -230,6 +214,22 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 			}
 		} else {
 			algNoCountTimes = 0
+		}
+
+		if completed && checkSuperStep {
+			completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)
+		}
+		if completed && epoch {
+			gt.Status = DONE
+			gt.Response <- ACK
+			resp := <-gt.Command // BLOCK and wait for resume
+			if resp != RESUME {
+				log.Panic().Msg("Expected to resume after blocked")
+			}
+			epoch = false
+			completed = false
+			algNoCountTimes = 0
+			gt.Status = APPLY_MSG
 		}
 	}
 	gt.Status = DONE
