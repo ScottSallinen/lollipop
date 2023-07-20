@@ -281,13 +281,12 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			gt.Status = APPLY_MSG
 			checkTerm := (strucClosed && remitClosed) || (epoch && remitCount == 0 && topCount == 0)
 			completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, checkTerm)
-			if completed { // no backoff when completed is true
-				if checkSuperStep {
-					completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)
-					if !completed {
-						continue
-					}
-				}
+			if completed && checkSuperStep { // Check super step to see if still completed
+			  if completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx); !completed {
+				  continue  // no backoff when completed was true
+			  }
+		  }
+    	if completed && epoch {
 				if epoch {
 					//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] completed epoch")
 					gt.Status = DONE
