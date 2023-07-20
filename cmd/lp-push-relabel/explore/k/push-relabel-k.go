@@ -30,7 +30,7 @@ type VertexProp struct {
 
 	Nbrs            []Neighbour
 	NbrMap          map[uint32]int32 // Id -> Pos
-	UnknownPosCount uint32           // shouldn't do anything if it's not 0, max means init, max-1 means resume
+	UnknownPosCount uint32           // shouldn't do anything if it's not 0, max means init
 	HeightEpochNum  uint32
 }
 
@@ -83,9 +83,7 @@ func Run(options graph.GraphOptions) (maxFlow int64, g *Graph) {
 	alg := new(PushRelabel)
 
 	SourceSupply = 0
-	RunSynchronousGlobalRelabel = func() {
-		go SyncGlobalRelabel[VertexProp, EdgeProp, Mail, Note](g, resetHeights, sendMsgToActiveVertices)
-	}
+	RunSynchronousGlobalRelabel = SyncGlobalRelabel
 	GlobalRelabelingHelper.Reset()
 	TimeSeriesReset()
 	GoLogMsgCount(&done)
@@ -133,13 +131,14 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 	sourceOutCap := 0
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
-		if v.Property.Type == Source {
-			sourceOutCap += int(e.Property.Weight)
-		}
 		if e.Didx == myId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() || v.Property.Type == Sink {
 			continue
 		}
 		Assert(e.Property.Weight <= math.MaxInt32, "Cannot handle this weight")
+
+		if v.Property.Type == Source {
+			sourceOutCap += int(e.Property.Weight)
+		}
 
 		if v.Property.Type == Source {
 			v.Property.Excess += int64(e.Property.Weight)
@@ -183,12 +182,8 @@ func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[
 	if v.Property.UnknownPosCount == math.MaxUint32 {
 		v.Property.UnknownPosCount = 0
 		sent += pr.Init(g, v, n.Target)
-		if n.Note != (Note{}) { // FIXME: could be a real useful message
-			sent += pr.processMessage(g, v, n)
-		}
-	} else if v.Property.UnknownPosCount == math.MaxUint32-1 {
-		v.Property.UnknownPosCount = 0
-	} else {
+	}
+	if n.Note != (Note{}) { // FIXME: might be a real message?
 		sent += pr.processMessage(g, v, n)
 	}
 
@@ -363,9 +358,12 @@ func (pr *PushRelabel) restoreHeightInvariant(g *Graph, v *Vertex, nbr *Neighbou
 			}, mailbox, tidx))
 		}
 		if nbr.ResCap > 0 {
-			Assert(!canPush || v.Property.Type != Source, "")
-			v.Property.Height = nbr.Height + 1
-			v.Property.HeightChanged = true
+			if v.Property.Type == Source {
+				Assert(!canPush, "")
+			} else {
+				v.Property.Height = nbr.Height + 1
+				v.Property.HeightChanged = true
+			}
 		}
 	}
 	return sent
