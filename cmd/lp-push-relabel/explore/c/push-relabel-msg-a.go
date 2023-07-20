@@ -2,6 +2,7 @@ package c
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
@@ -89,6 +90,7 @@ func (pr *PushRelabelMsgA) BaseVertexMailbox(v *graph.Vertex[VertexPMsgA, EdgePM
 		v.OutEdges[i].Property.Height = InitialHeight
 	}
 
+	v.Property.Excess = math.MaxInt32 // mark as uninitialized
 	return m
 }
 
@@ -111,9 +113,7 @@ func (pr *PushRelabelMsgA) Init(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMs
 	// Iterate over existing edges
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
-		if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
-			continue
-		}
+		// Cannot Skip edges
 		if v.Property.Type == Source {
 			v.Property.Excess += int32(e.Property.Weight)
 		}
@@ -142,10 +142,10 @@ func (pr *PushRelabelMsgA) Init(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMs
 }
 
 func (pr *PushRelabelMsgA) OnUpdateVertex(g *graph.Graph[VertexPMsgA, EdgePMsgA, MessageMsgA, NoteMsgA], v *graph.Vertex[VertexPMsgA, EdgePMsgA], n graph.Notification[NoteMsgA], m MessageMsgA) (sent uint64) {
-	if m.Init {
+	if v.Property.Excess == math.MaxInt32 {
+		v.Property.Excess = 0
 		sent += pr.Init(g, v, n.Target)
-		var empty NoteMsgA
-		if n.Note == empty { // FIXME: could be a real useful message
+		if n.Note == (NoteMsgA{}) { // FIXME: could be a real useful message
 			return
 		}
 	}
@@ -420,9 +420,6 @@ func (*PushRelabelMsgA) OnCheckCorrectness(g *graph.Graph[VertexPMsgA, EdgePMsgA
 		capacityOriginal := int64(0)
 		capacityResidual := int64(0)
 		for _, e := range v.OutEdges {
-			if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() {
-				continue
-			}
 			capacityOriginal += int64(e.Property.Weight)
 		}
 
