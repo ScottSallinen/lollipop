@@ -16,7 +16,7 @@ func main() {
 	sinkId := flag.Int("T", -1, "Sink vertex (raw id).")
 	initialEstimatedCount := flag.Uint("V", 30, "Initial estimated number of vertices.")
 	benchmark := flag.Bool("B", false, "Run benchmarks")
-	globalRelabeling := flag.Bool("G", false, "Enable global relabeling")
+	disableGlobalRelabeling := flag.Bool("DG", false, "Disable global relabeling")
 	graphOptions := graph.FlagsToOptions()
 
 	if *benchmark {
@@ -27,7 +27,7 @@ func main() {
 	InitialHeight = MaxHeight
 	SourceRawId = graph.RawType(*sourceId)
 	SinkRawId = graph.RawType(*sinkId)
-	GlobalRelabelingEnabled = *globalRelabeling
+	GlobalRelabelingEnabled = !*disableGlobalRelabeling
 	VertexCountHelper.Reset(int64(*initialEstimatedCount))
 
 	mf, _ := l.Run(graphOptions)
