@@ -11,7 +11,7 @@ import (
 	"golang.org/x/exp/constraints"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/k"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/l"
 )
 
 type TestGraph struct {
@@ -152,17 +152,30 @@ func TestMain(m *testing.M) {
 // 	RunTestGraphs(t, j.Run, j.Name, options)
 // }
 
-func TestKAsyncStatic(t *testing.T) {
+// func TestKAsyncStatic(t *testing.T) {
+// 	options := baseOptions
+// 	GlobalRelabelingEnabled = true
+// 	RunTestGraphs(t, k.Run, k.Name, options)
+// }
+
+// func TestKIncremental(t *testing.T) {
+// 	options := baseOptions
+// 	options.Dynamic = true
+// 	GlobalRelabelingEnabled = true
+// 	RunTestGraphs(t, k.Run, k.Name, options)
+// }
+
+func TestLAsyncStatic(t *testing.T) {
 	options := baseOptions
 	GlobalRelabelingEnabled = true
-	RunTestGraphs(t, k.Run, k.Name, options)
+	RunTestGraphs(t, l.Run, l.Name, options)
 }
 
-func TestKIncremental(t *testing.T) {
+func TestLIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
 	GlobalRelabelingEnabled = true
-	RunTestGraphs(t, k.Run, k.Name, options)
+	RunTestGraphs(t, l.Run, l.Name, options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF constraints.Integer](
