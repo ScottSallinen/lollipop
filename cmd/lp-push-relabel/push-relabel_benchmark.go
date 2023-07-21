@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
@@ -15,70 +16,107 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/j"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/k"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/l"
 )
 
-type testCase struct {
-	MaxFlow     int64
-	Source      uint32
-	Sink        uint32
-	Filename    string
-	VertexCount uint32
+type benchmarkGraph struct {
+	Path         string
+	VertexCount  uint64
+	TimestampPos int32
+	WeightPos    int32
+}
+
+type benchmarkTestCase struct {
+	MaxFlow int64
+	Source  uint32
+	Sink    uint32
+	Graph   benchmarkGraph
 }
 
 type benchmarkResult struct {
-	name     string
-	runtimes []int64
-	messages []uint64
+	name      string
+	runtimes  []int64
+	latencies []int64
+	messages  []uint64
 }
 
-const (
-	GraphPath = "D:\\common\\hive-comments.txt"
-	GraphSize = 671295
+var (
+	HiveComments = benchmarkGraph{
+		Path:         "/home/luuo/hive-comments.txt",
+		VertexCount:  671295,
+		TimestampPos: 1,
+	}
+
+	Ethereum = benchmarkGraph{
+		Path:        "/home/luuo/eth-transfers-t200m.txt.p",
+		VertexCount: 5672202,
+		WeightPos:   1,
+	}
 )
 
 var (
-	testCasesBenchmark = [...]testCase{
+	benchmarkOneTestCases = []benchmarkTestCase{
 		// These don't need Global Relabeling
-		{3, 23505, 18965, GraphPath, GraphSize},
-		{1, 629280, 367395, GraphPath, GraphSize},
-		{0, 163178, 652920, GraphPath, GraphSize},
-		{3, 620597, 441410, GraphPath, GraphSize},
-		{0, 573253, 168575, GraphPath, GraphSize},
-		{1, 658312, 33793, GraphPath, GraphSize},
+		{3, 23505, 18965, HiveComments},
+		{1, 629280, 367395, HiveComments},
+		{0, 163178, 652920, HiveComments},
+		{3, 620597, 441410, HiveComments},
+		{0, 573253, 168575, HiveComments},
+		{1, 658312, 33793, HiveComments},
 		// These need Global Relabeling
-		{48, 54646, 266979, GraphPath, GraphSize},
+		// {48, 54646, 266979, HiveComments},
 	}
-	baseOptionsBenchmark = graph.GraphOptions{
-		CheckCorrectness:      true,
-		NumThreads:            16,
-		QueueMultiplier:       8,
-		TimestampPos:          1,
-		AllowAsyncVertexProps: false,
-		AlgTimeIncludeQuery:   true,
+	benchmarkDynamicCases = []benchmarkTestCase{
+		{98018, 5880, 38806, HiveComments},
+		{98018, 5880, 38806, HiveComments},
+		{98018, 5880, 38806, HiveComments},
+		{98018, 5880, 38806, HiveComments},
+		{98018, 5880, 38806, HiveComments},
+
+		{2299228, 492, 60, Ethereum},
+		{2299228, 492, 60, Ethereum},
+		{2299228, 492, 60, Ethereum},
+		{2299228, 492, 60, Ethereum},
+		{2299228, 492, 60, Ethereum},
+	}
+	benchmarkCasesTimeseries = []benchmarkTestCase{
+		{98018, 5880, 38806, HiveComments},
+		{98018, 5880, 38806, HiveComments},
+		{98018, 5880, 38806, HiveComments},
+	}
+	benchmarkBaseOptions = graph.GraphOptions{
+		CheckCorrectness:    true,
+		AlgTimeIncludeQuery: true,
+		QueueMultiplier:     8,
+		NumThreads:          uint32(runtime.NumCPU()),
 	}
 )
 
 func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF constraints.Integer](
 	run func(options graph.GraphOptions) (maxFlow MF, g *graph.Graph[V, E, M, N]),
-	options graph.GraphOptions, name string) (result benchmarkResult) {
+	options graph.GraphOptions,
+	name string,
+	testCases []benchmarkTestCase,
+) (result benchmarkResult) {
 
 	log.Info().Msg(fmt.Sprintf("%s - Start", name))
 	result.name = name
-	for _, tc := range testCasesBenchmark {
-		options.Name = tc.Filename
+	for _, tc := range testCases {
+		options.Name = tc.Graph.Path
+		options.TimestampPos = tc.Graph.TimestampPos
+		options.WeightPos = tc.Graph.WeightPos
+
 		SourceRawId = graph.RawType(tc.Source)
 		SinkRawId = graph.RawType(tc.Sink)
-		GlobalRelabelingHelper.UpdateInterval(int64(tc.VertexCount))
-		if options.Dynamic {
-			VertexCountHelper.Reset(1000)
-		} else {
-			VertexCountHelper.Reset(int64(tc.VertexCount))
-		}
+		VertexCountHelper.Reset(1000)
+		GlobalRelabelingHelper.Reset()
+		TimeSeriesReset()
 
 		InitialHeight = MaxHeight
-		//options.Profile = true
 
+		runtime.GC()
 		maxFlow, g := run(options)
+		runtime.GC()
 		Assert(tc.MaxFlow == int64(maxFlow), "")
 
 		msgSend := uint64(0)
@@ -86,34 +124,92 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF cons
 			msgSend += g.GraphThreads[t].MsgSend
 		}
 
+		latency := int64(0)
+		if len(TsDB) > 0 {
+			for _, ts := range TsDB {
+				latency += ts.Latency.Milliseconds()
+			}
+			latency = latency / int64(len(TsDB))
+		}
+
 		result.runtimes = append(result.runtimes, int64(g.AlgTimer.Elapsed()/1_000_000))
 		result.messages = append(result.messages, msgSend)
+		result.latencies = append(result.latencies, latency)
 	}
 	return result
 }
 
 func RunBenchmarks() {
-	options := baseOptionsBenchmark
+	BenchmarkKLTimeseries()
+}
 
-	//options.Dynamic = true
+// Static, Old
+func BenchmarkOne() {
+	options := benchmarkBaseOptions
 
-	//options.LogTimeseries = true
-	//options.TimeSeriesInterval = 86400 * 7
-	//options.OracleCompare = true
+	results := make([]benchmarkResult, 0)
+	results = append(results, runBenchmark(a.RunAggH, options, "AggH", benchmarkOneTestCases))
+	results = append(results, runBenchmark(b.RunMsgH, options, "MsgH", benchmarkOneTestCases))
+	results = append(results, runBenchmark(h.Run, options, h.Name, benchmarkOneTestCases))
+	results = append(results, runBenchmark(i.Run, options, i.Name, benchmarkOneTestCases))
+	results = append(results, runBenchmark(j.Run, options, j.Name, benchmarkOneTestCases))
 
-	results := make([]benchmarkResult, 0, 4)
-	results = append(results, runBenchmark(a.RunAggH, options, "AggH"))
-	results = append(results, runBenchmark(b.RunMsgH, options, "MsgH"))
-	results = append(results, runBenchmark(h.Run, options, h.Name))
-	results = append(results, runBenchmark(i.Run, options, i.Name))
-	results = append(results, runBenchmark(j.Run, options, j.Name))
+	originalGre := GlobalRelabelingEnabled
 	GlobalRelabelingEnabled = true
-	results = append(results, runBenchmark(k.Run, options, k.Name))
+	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkOneTestCases))
 	GlobalRelabelingEnabled = false
-	results = append(results, runBenchmark(k.Run, options, k.Name))
+	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkOneTestCases))
+	GlobalRelabelingEnabled = originalGre
+
+	printResults(results)
+}
+
+func BenchmarkKLStatic() {
+	options := benchmarkBaseOptions
+
+	results := make([]benchmarkResult, 0)
+
+	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkDynamicCases))
+	results = append(results, runBenchmark(l.Run, options, l.Name, benchmarkDynamicCases))
+
+	printResults(results)
+}
+
+func BenchmarkKLDynamic() {
+	options := benchmarkBaseOptions
+	options.Dynamic = true
+
+	results := make([]benchmarkResult, 0)
+
+	GlobalRelabelingEnabled = true
+	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkDynamicCases))
+	results = append(results, runBenchmark(l.Run, options, l.Name, benchmarkDynamicCases))
+
+	printResults(results)
+}
+
+func BenchmarkKLTimeseries() {
+	options := benchmarkBaseOptions
+	options.Dynamic = true
+	options.LogTimeseries = true
+	options.TimeSeriesInterval = 86400 * 30
+
+	results := make([]benchmarkResult, 0)
+
+	GlobalRelabelingEnabled = true
+	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkCasesTimeseries))
+	results = append(results, runBenchmark(l.Run, options, l.Name, benchmarkCasesTimeseries))
+
+	printResults(results)
+}
+
+func printResults(results []benchmarkResult) {
 	for _, r := range results {
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm message counts: %v", r.name, r.messages))
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtimes: %v", r.name, r.runtimes))
+		log.Info().Msg(fmt.Sprintf("%s - Algorithm latencies: %v", r.name, r.latencies))
+		log.Info().Msg(fmt.Sprintf("%s - Algorithm message count average: %v", r.name, utils.Sum(r.messages)/uint64(len(r.messages))))
 		log.Info().Msg(fmt.Sprintf("%s - Algorithm runtime average: %v", r.name, utils.Sum(r.runtimes)/int64(len(r.runtimes))))
+		log.Info().Msg(fmt.Sprintf("%s - Algorithm latencies average: %v", r.name, utils.Sum(r.latencies)/int64(len(r.latencies))))
 	}
 }
