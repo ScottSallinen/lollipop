@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
@@ -81,8 +82,8 @@ var (
 	}
 	benchmarkCasesTimeseries = []benchmarkTestCase{
 		{98018, 5880, 38806, HiveComments},
-		{98018, 5880, 38806, HiveComments},
-		{98018, 5880, 38806, HiveComments},
+		// {98018, 5880, 38806, HiveComments},
+		// {98018, 5880, 38806, HiveComments},
 	}
 	benchmarkBaseOptions = graph.GraphOptions{
 		CheckCorrectness:    true,
@@ -140,7 +141,7 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF cons
 }
 
 func RunBenchmarks() {
-	BenchmarkKLTimeseries()
+	BenchmarkLRateLimit()
 }
 
 // Static, Old
@@ -199,6 +200,22 @@ func BenchmarkKLTimeseries() {
 	GlobalRelabelingEnabled = true
 	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkCasesTimeseries))
 	results = append(results, runBenchmark(l.Run, options, l.Name, benchmarkCasesTimeseries))
+
+	printResults(results)
+}
+
+func BenchmarkLRateLimit() {
+	options := benchmarkBaseOptions
+	results := make([]benchmarkResult, 0)
+	options.Dynamic = true
+	options.LogTimeseries = true
+	options.TimeSeriesInterval = 86400 * 512
+
+	baseRate := 100_000
+	for rateMultiplier := 1; rateMultiplier <= 10; rateMultiplier++ {
+		options.TargetRate = float64(baseRate * rateMultiplier)
+		results = append(results, runBenchmark(l.Run, options, l.Name+" with rate "+strconv.Itoa(int(options.TargetRate)), benchmarkCasesTimeseries))
+	}
 
 	printResults(results)
 }

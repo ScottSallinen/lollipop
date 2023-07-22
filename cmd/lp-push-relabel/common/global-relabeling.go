@@ -26,9 +26,9 @@ type GlobalRelabeling struct {
 }
 
 const (
-	grAlpha       = float64(2.0)
-	grAlphaTime   = float64(5.0)
-	grMinInterval = 128
+	grAlphaLiftCount = float64(2.0)
+	grAlphaTime      = float64(5.0)
+	grMinInterval    = 128
 
 	SynchronousGlobalRelabeling = true
 )
@@ -54,7 +54,7 @@ func (gr *GlobalRelabeling) Reset() {
 }
 
 func (gr *GlobalRelabeling) UpdateInterval(v int64) {
-	gr.LiftCountInterval.Store(utils.Max(int64(grAlpha*float64(v)), grMinInterval))
+	gr.LiftCountInterval.Store(utils.Max(int64(grAlphaLiftCount*float64(v)), grMinInterval))
 }
 
 func (gr *GlobalRelabeling) UpdateTimeInterval(lastGrRuntimeMilli int64) {
