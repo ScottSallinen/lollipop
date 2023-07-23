@@ -22,13 +22,16 @@ const (
 var CurrentPhase = RESUME
 var t0, t1, t2, t3 time.Time
 
-func SyncGlobalRelabel() {
+func SyncGlobalRelabel(g *Graph) {
 	log.Info().Msg("SyncGlobalRelabel starts.")
 
 	t0 = time.Now()
 	CurrentPhase = DRAIN_MSG
 	SkipPush.Store(true)
 	SkipRestoreHeightInvar.Store(true)
+	if g.Options.Dynamic {
+		g.Broadcast(graph.BLOCK_TOP_ASYNC)
+	}
 }
 
 func (*PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
@@ -55,6 +58,7 @@ func (*PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
 			"Draining Messages took %.2fs, Resetting heights took %.2fs, Global Relabeling took %.2fs. Total took %.2fs",
 			t1.Sub(t0).Seconds(), t2.Sub(t1).Seconds(), t3.Sub(t2).Seconds(), totalRuntime.Seconds()))
 		GlobalRelabelingHelper.GlobalRelabelingDone(totalRuntime.Milliseconds())
+		g.Broadcast(graph.RESUME)
 	}
 	return sent
 }
