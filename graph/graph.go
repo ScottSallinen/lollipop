@@ -182,6 +182,7 @@ const (
 	ACK Command = iota
 	RESUME
 	BLOCK_TOP
+	BLOCK_TOP_ASYNC // Similar to BLOCK_TOP but does not wait for an ACK
 	BLOCK_ALL
 	BLOCK_ALG_IF_TOP // Init command, no ack
 	BSP_SYNC

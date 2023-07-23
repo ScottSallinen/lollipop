@@ -106,6 +106,9 @@ func (gt *GraphThread[V, E, M, N]) checkCommandsDynamic(blockTop, bspSync, block
 	case BLOCK_TOP:
 		*blockTop = true
 		gt.Response <- ACK
+	case BLOCK_TOP_ASYNC:
+		*blockTop = true
+		// No ack needed.
 	case RESUME:
 		*blockTop = false
 		// No ack needed.
