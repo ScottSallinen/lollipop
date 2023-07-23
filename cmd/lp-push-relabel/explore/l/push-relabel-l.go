@@ -83,7 +83,7 @@ func Run(options graph.GraphOptions) (maxFlow int64, g *Graph) {
 	alg := new(PushRelabel)
 
 	SourceSupply = 0
-	RunSynchronousGlobalRelabel = SyncGlobalRelabel
+	RunSynchronousGlobalRelabel = func() { go SyncGlobalRelabel(g) }
 	GlobalRelabelingHelper.Reset()
 	TimeSeriesReset()
 	GoLogMsgCount(&done)
