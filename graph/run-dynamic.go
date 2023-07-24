@@ -286,7 +286,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			}
 			if completed && blockTop {
 				completed = false
-				panic("Algorithm terminated when topology events are blocked")
+				log.Panic().Msg("Algorithm terminated when topology events are blocked")
 			}
 		}
 
