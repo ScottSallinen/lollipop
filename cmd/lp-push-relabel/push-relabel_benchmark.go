@@ -85,6 +85,11 @@ var (
 		// {98018, 5880, 38806, HiveComments},
 		// {98018, 5880, 38806, HiveComments},
 	}
+	benchmarkCasesScalability = []benchmarkTestCase{
+		{2299228, 492, 60, Ethereum},
+		{2299228, 492, 60, Ethereum},
+		{2299228, 492, 60, Ethereum},
+	}
 	benchmarkBaseOptions = graph.GraphOptions{
 		CheckCorrectness:    true,
 		AlgTimeIncludeQuery: true,
@@ -141,7 +146,8 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF cons
 }
 
 func RunBenchmarks() {
-	BenchmarkLRateLimit()
+	utils.SetLevel(0)
+	BenchmarkLScalability()
 }
 
 // Static, Old
@@ -211,10 +217,24 @@ func BenchmarkLRateLimit() {
 	options.LogTimeseries = true
 	options.TimeSeriesInterval = 86400 * 512
 
-	baseRate := 100_000
-	for rateMultiplier := 1; rateMultiplier <= 10; rateMultiplier++ {
+	baseRate := 50_000
+	for rateMultiplier := 1; rateMultiplier <= 5; rateMultiplier += 1 {
 		options.TargetRate = float64(baseRate * rateMultiplier)
 		results = append(results, runBenchmark(l.Run, options, l.Name+" with rate "+strconv.Itoa(int(options.TargetRate)), benchmarkCasesTimeseries))
+	}
+
+	printResults(results)
+}
+
+func BenchmarkLScalability() {
+	options := benchmarkBaseOptions
+	GlobalRelabelingEnabled = true
+
+	results := make([]benchmarkResult, 0)
+
+	for t := 4; t <= 16; t += 4 {
+		options.NumThreads = uint32(t)
+		results = append(results, runBenchmark(l.Run, options, l.Name+" with t="+strconv.Itoa(t)+" rate="+strconv.Itoa(int(options.TargetRate)), benchmarkCasesScalability))
 	}
 
 	printResults(results)
