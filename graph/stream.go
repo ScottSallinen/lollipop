@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -20,6 +21,7 @@ const (
 
 const EVENT_TYPE_BITS = 2
 const EVENT_TYPE_MASK = (1 << EVENT_TYPE_BITS) - 1
+const REMITTER_MIN_SLEEP_TIME_NANO = 10_000_000 // 10ms
 
 // TypeAndEventIdx & EVENT_TYPE_MASK
 func (t TopologyEvent[E]) EventType() EventType {
@@ -83,12 +85,14 @@ func (e RawEdgeEvent[E]) String() string {
 func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (remitted uint64) {
 	runtime.LockOSThread()
 	nextTarget := g.Options.TimeSeriesInterval
+	targetRate := g.Options.TargetRate // events per second
 	queryByEventCount := g.Options.LogTimeseries && g.Options.TimeseriesEdgeCount
 	queryByTimeStamp := g.Options.LogTimeseries && !g.Options.TimeseriesEdgeCount
 	retried := 0
 	totalRetriedOrder := 0
 	totalRetriedThreads := 0
 	totalPutFails := 0
+	targetEventCount := uint64(0)
 	var event RawEdgeEvent[E]
 	var target uint32
 	var ok bool
@@ -125,6 +129,17 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 			if thisTimestamp >= nextTarget {
 				nextTarget = thisTimestamp + g.Options.TimeSeriesInterval
 				g.ExecuteQuery(thisTimestamp)
+			}
+		}
+
+		if targetRate != 0 && remitted > targetEventCount {
+			targetEventCount = uint64(g.Watch.Elapsed().Seconds() * targetRate)
+			if remitted > targetEventCount { // Going too fast
+				extraEventCount := remitted - targetEventCount
+				sleepTime := float64(extraEventCount) / targetRate * float64(time.Nanosecond)
+				sleepTime = utils.Max(REMITTER_MIN_SLEEP_TIME_NANO, sleepTime)
+				time.Sleep(time.Duration(sleepTime))
+				targetEventCount = uint64(g.Watch.Elapsed().Seconds() * targetRate)
 			}
 		}
 	}

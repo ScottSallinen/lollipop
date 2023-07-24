@@ -106,6 +106,9 @@ func (gt *GraphThread[V, E, M, N]) checkCommandsDynamic(blockTop, bspSync, block
 	case BLOCK_TOP:
 		*blockTop = true
 		gt.Response <- ACK
+	case BLOCK_TOP_ASYNC:
+		*blockTop = true
+		// No ack needed.
 	case RESUME:
 		*blockTop = false
 		// No ack needed.
@@ -128,10 +131,6 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 	remitClosed := false // True indicates the Remitter StructureChanges channel is closed
 	gt := &g.GraphThreads[tidx]
 
-	targetRate := float64(g.Options.TargetRate)
-	if targetRate == 0 {
-		targetRate = 1e16
-	}
 	_, checkSuperStep := any(alg).(AlgorithmOnSuperStepConverged[V, E, M, N])
 	makeTimeseries := (g.Options.LogTimeseries)
 	insDelOnExpire := g.Options.InsertDeleteOnExpire
@@ -192,24 +191,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		topFailed := false
 		if processTop {
 			gt.Status = RECV_TOP
-			pullUpTo := pullUpToBase
-
-			if targetRate != 1e16 {
-				allAdds := 0
-				allDels := 0
-				for t := 0; t < int(g.NumThreads); t++ { // No need to lock, as we do not care for a consistent view, only approximate
-					allAdds += int(g.GraphThreads[t].NumOutAdds)
-					allDels += int(g.GraphThreads[t].NumOutDels)
-				}
-				allEventCount := allAdds + allDels
-				timeNow := g.Watch.Elapsed().Seconds()
-				targetEventCount := float64(timeNow * targetRate)
-				incEventCount := int((targetEventCount - float64(allEventCount)) / float64(g.NumThreads))
-				// Target number of events for this thread to process in this round
-				pullUpTo = utils.Min(incEventCount, pullUpTo)
-			}
-
-			for topCount = 0; topCount < pullUpTo; topCount++ {
+			for topCount = 0; topCount < pullUpToBase; topCount++ {
 				gt.TopologyEventBuff[topCount], ok = gt.TopologyQueue.Accept()
 				if !ok {
 					if gt.TopologyQueue.IsClosed() {
@@ -279,7 +261,9 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		if processAlg {
 			// Process algorithm messages. Check for algorithm termination if needed.
 			gt.Status = APPLY_MSG
-			checkTerm := (strucClosed && remitClosed) || (epoch && remitCount == 0 && topCount == 0)
+			checkTerm := (strucClosed && remitClosed) || // all topology events are done, or
+				(blockTop) || // topology events are currently blocked, or
+				(epoch && topCount == 0) // no more topology events in this epoch (assuming the remitter does not produce new events after it starts an epoch)
 			completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, checkTerm)
 			if !completed && algCount == 0 {
 				algFailed = true
@@ -299,6 +283,10 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 				}
 				epoch = false
 				completed = false
+			}
+			if completed && blockTop {
+				completed = false
+				log.Panic().Msg("Algorithm terminated when topology events are blocked")
 			}
 		}
 
