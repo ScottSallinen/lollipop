@@ -129,6 +129,6 @@ This proof by counterexample of implementing "easy" delete events show how care 
 - Making a graph undirected is not very performant, and could well be improved. I do have some ideas for this.. but directed graphs represent real-world "event" based systems better anyways (with some action having a cause and effect: source and destination...)
 - Modifying an edge's property (e.g. weight) is not yet well supported. Mostly as this has some important considerations for multi-graphs. We could easily perform an update if the user provides the original timestamp of the target edge.. but only if that was given (and the stream is orderly).
 - Deletes could be improved; they are not optimized well. Similarly, it may be interesting to allow more specificity in deletes for multi-graphs (right now the unspecific "delete the edge between A and B" deletes the first instance, and order is preserved).
-- Moving deleted edges to a tertiary data structure would be very simple and enable complete historical analysis with temporal data, since all temporal ordering is preserved.
+- Should finish optimizations with temporal edge ranges (e.g. select to delete).
 - Some constants defined in graph.go. I do miss CPP templates...
 - Much more..

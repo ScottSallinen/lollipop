@@ -67,7 +67,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			mailbox.Inbox = mailbox.Inbox.New()
 		})
 
-		log.Debug().Msg("Creating result for graph with " + utils.V(numVertices) + " vertices and " + utils.V(numEdges) + " edges")
+		log.Info().Msg("Creating result for graph with " + utils.V(numVertices) + " vertices and " + utils.V(numEdges) + " edges")
 		oracleGraph.AlgTimer.Start()
 		ConvergeAsync(alg, oracleGraph, new(sync.WaitGroup))
 		if aOF, ok := any(alg).(AlgorithmOnFinish[V, E, M, N]); ok {
@@ -77,7 +77,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		for t := 0; t < int(oracleGraph.NumThreads); t++ {
 			msgSend += oracleGraph.GraphThreads[t].MsgSend
 		}
-		log.Debug().Msg("Termination(ms) " + utils.V(oracleGraph.AlgTimer.Elapsed().Milliseconds()) +
+		log.Info().Msg("Oracle Termination(ms) " + utils.V(oracleGraph.AlgTimer.Elapsed().Milliseconds()) +
 			" Total(ms) " + utils.V(oracleGraph.Watch.Elapsed().Milliseconds()) + " Messages " + utils.V(msgSend))
 
 		if cache {
@@ -88,7 +88,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		for t := 0; t < int(g.NumThreads); t++ {
 			numEdges += int(g.GraphThreads[t].NumEdges)
 		}
-		log.Debug().Msg("Using cached result for graph with " + utils.V(numVertices) + " vertices and " + utils.V(numEdges) + " edges")
+		log.Info().Msg("Using cached result for graph with " + utils.V(numVertices) + " vertices and " + utils.V(numEdges) + " edges")
 		oracleGraph = g.OracleCache
 	}
 

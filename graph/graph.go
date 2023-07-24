@@ -283,7 +283,7 @@ func (g *Graph[V, E, M, N]) ComputeGraphStats() {
 			if numOutEdges == 0 {
 				numSinks[gt.Tidx]++
 			}
-			if numDels == 0 {
+			if numDels == 0 || g.Options.TimeRange { // TimeRange edges aren't real deletions, so they always count as an in-edge.
 				maxInDegree[gt.Tidx] = utils.Max(maxInDegree[gt.Tidx], vs.InEventPos)
 				listInDegree[ordinalStart+i] = vs.InEventPos
 				if vs.InEventPos == 0 {
@@ -301,7 +301,7 @@ func (g *Graph[V, E, M, N]) ComputeGraphStats() {
 	log.Info().Msg("Sinks (no out):  " + utils.V(utils.Sum(numSinks)) + "\t    pct: " + utils.F("%6.3f", float64(utils.Sum(numSinks))*100.0/float64(g.NodeVertexCount())))
 	log.Info().Msg("MaxOutDeg:       " + utils.V(utils.MaxSlice(maxOutDegree)))
 	log.Info().Msg("MedianOutDeg:    " + utils.V(utils.Median(listOutDegree)))
-	if numDels == 0 {
+	if numDels == 0 || g.Options.TimeRange {
 		log.Info().Msg("Heads (no in):   " + utils.V(utils.Sum(numHeads)) + "\t    pct: " + utils.F("%6.3f", float64(utils.Sum(numHeads))*100.0/float64(g.NodeVertexCount())))
 		log.Info().Msg("MaxInDeg:        " + utils.V(utils.MaxSlice(maxInDegree)))
 		log.Info().Msg("MedianInDeg:     " + utils.V(utils.Median(listInDegree)))

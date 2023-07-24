@@ -216,11 +216,11 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 		Run[EP](alg, g, feederWg, g.Options.Sync, g.Options.Dynamic)
 	}
 
+	g.ComputeGraphStats()
+
 	if g.Options.OracleCompare { // Graph is finished.
 		CompareToOracle(alg, g, false, true, false, false)
 	}
-
-	g.ComputeGraphStats()
 
 	if g.Options.WriteVertexProps {
 		g.WriteVertexProps(g.Options.Dynamic)

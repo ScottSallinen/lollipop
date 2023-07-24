@@ -115,7 +115,7 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 }
 
 // Injects expired edges into the topology event buffer. To be done after the topology event buffer has been remapped with internal source ids.
-func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount int, uniqueCount uint64, delOnExpire uint64) (numInjected int, newUniqueCount uint64) {
+func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount int, uniqueCount uint64, delOnExpire uint64) (newUniqueCount uint64) {
 	latestTime := gt.TopologyEventBuff[changeCount-1].Edge.Property.GetTimestamp() // Unless there are out of order events...?
 
 	if latestTime == 0 && g.warnZeroTimestamp == 0 && atomic.CompareAndSwapUint64(&g.warnZeroTimestamp, 0, 1) {
@@ -126,6 +126,11 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		if gt.TopologyEventBuff[i].EventType() != ADD {
 			continue
 		}
+		// TODO: Could randomize if edges are deleted. Though, if we randomize the end time, note we would need to sort the expired edges (or use heap/pq).
+		//if rand.Float64() > 0.5 {
+		//	continue
+		//}
+
 		// Adjust the copied edge.
 		futureDelete := &(gt.ExpiredEdges[len(gt.ExpiredEdges)-changeCount+i].Second)
 		// TODO: this expiry copies the event idx of the original. Perhaps this whole process should be move to the emitter...
@@ -150,11 +155,12 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		})
 	}
 
-	for ; ; numInjected++ { // Check if we need to inject expired edges, and inject all that are expired
-		if len(gt.ExpiredEdges) == numInjected {
-			break
+	expiredIndex := 0
+	for ; expiredIndex < len(gt.ExpiredEdges); expiredIndex++ { // Check if we need to inject expired edges, and inject all that are expired
+		nextDelete := &gt.ExpiredEdges[expiredIndex]
+		if (nextDelete.Second.TypeAndEventIdx & EVENT_TYPE_MASK) != uint64(DEL) {
+			continue // Must have decided not to change it to a delete.
 		}
-		nextDelete := gt.ExpiredEdges[numInjected]
 		ts := nextDelete.Second.Edge.Property.GetTimestamp()
 		if ts > latestTime {
 			break
@@ -163,15 +169,16 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		// This will need more consideration if/when we wish to target edges more specifically / efficiently.
 		EP(&nextDelete.Second.Edge.Property).ReplaceTimestamp(ts - delOnExpire)
 
-		uniqueCount = gt.checkInsertPending(nextDelete.First, uint32(changeCount+numInjected), uniqueCount)
+		uniqueCount = gt.checkInsertPending(nextDelete.First, uint32(changeCount+expiredIndex), uniqueCount)
 
-		if (changeCount + numInjected) >= len(gt.TopologyEventBuff) {
+		if (changeCount + expiredIndex) >= len(gt.TopologyEventBuff) {
 			gt.TopologyEventBuff = append(gt.TopologyEventBuff, nextDelete.Second)
 		} else {
-			gt.TopologyEventBuff[changeCount+numInjected] = nextDelete.Second
+			gt.TopologyEventBuff[changeCount+expiredIndex] = nextDelete.Second
 		}
 	}
-	return numInjected, uniqueCount
+	gt.ExpiredEdges = gt.ExpiredEdges[expiredIndex:] // Deque might be better, but would be harder to sort.
+	return uniqueCount
 }
 
 // Handles the (unique) insertion of the indices into the pending buffer.
@@ -198,7 +205,6 @@ func (gt *GraphThread[V, E, M, N]) checkInsertPending(sidx uint32, pending uint3
 
 // Main function to enact topology events. Will look through the topology event buffer and apply changes to the graph.
 func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount int, delOnExpire uint64) (addEvents uint32, delEvents uint32) {
-	numInjected := 0
 	uniqueCount := uint64(0)
 	canCheckTimestamp := (g.Options.TimestampPos != 0) || FAKE_TIMESTAMP
 	var ok bool
@@ -219,7 +225,7 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 	}
 
 	if delOnExpire > 0 { // (These are now checked after the first look through)
-		numInjected, uniqueCount = InjectExpired[EP](g, gt, changeCount, uniqueCount, delOnExpire)
+		uniqueCount = InjectExpired[EP](g, gt, changeCount, uniqueCount, delOnExpire)
 	}
 
 	gt.NumUnique += uniqueCount
@@ -351,11 +357,28 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 								// Edges are ordered by start time, so fast if its an expiry or otherwise targets oldest (time window).
 								EP(&src.OutEdges[deleteIdx].Property).ReplaceEndTime(change.Edge.Property.GetEndTime())
 								deletedEdges = append(deletedEdges, src.OutEdges[deleteIdx])
+								deleteIdx++
 							} else {
-								// TODO: Select delete -- will be a binary search for the timestamp.
-								log.Panic().Msg("Not implemented yet.")
+								// TODO: Select delete -- should be a binary search for the timestamp.
+								// But I'm lazy... so for now do a linear search to find the matching edge.
+								if g.warnSelectDelete == 0 && atomic.CompareAndSwapUint64(&g.warnSelectDelete, 0, 1) {
+									log.Warn().Msg("WARNING: Detected a targeted/direct deletion. This isn't optimized yet!! It should be a binary search.")
+								}
+								found := false
+								for eidx := range src.OutEdges {
+									if src.OutEdges[eidx].Didx == didx && src.OutEdges[eidx].Property.GetEndTime() == 0 && src.OutEdges[eidx].Property.GetTimestamp() == change.Edge.Property.GetTimestamp() {
+										EP(&src.OutEdges[eidx].Property).ReplaceEndTime(change.Edge.Property.GetEndTime())
+										deletedEdges = append(deletedEdges, src.OutEdges[eidx])
+										found = true
+										break
+									}
+								}
+								if !found {
+									log.Error().Msg("Edge list: " + utils.V(src.OutEdges))
+									idx, t := InternalExpand(sidx)
+									log.Panic().Msg("T[" + utils.F("%02d", t) + "] Cannot delete an edge for idx " + utils.V(idx) + " that was not found: " + change.String())
+								}
 							}
-							deleteIdx++
 						} else {
 							break // Out of consecutive deletes, so break the for, and process them.
 						}
@@ -371,9 +394,6 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 		gt.VertexPendingBuff[u] = gt.VertexPendingBuff[u][:0]
 	}
 
-	if numInjected > 0 {
-		gt.ExpiredEdges = gt.ExpiredEdges[numInjected:] // Deque might be better, but would be harder to sort.
-	}
 	gt.MsgSend += sent
 	return addEvents, delEvents
 }

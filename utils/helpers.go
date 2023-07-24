@@ -71,6 +71,14 @@ func MaxSlice[T constraints.Ordered](slice []T) T {
 	return max
 }
 
+func MinSlice[T constraints.Ordered](slice []T) T {
+	min := slice[0]
+	for i := range slice {
+		min = Min(min, slice[i])
+	}
+	return min
+}
+
 func Sum[T constraints.Integer | constraints.Float](slice []T) (sum T) {
 	for i := range slice {
 		sum += slice[i]
@@ -102,6 +110,8 @@ func Percentile[T constraints.Integer | constraints.Float](n []T, percentile int
 	idx := int(((float64(percentile) / 100.0) * float64(len(copyN))))
 	if len(copyN)%2 == 0 || idx == 0 { // even number of elements, or the we are targeting the first element
 		return copyN[idx]
+	} else if copyN[idx-1] == copyN[idx] {
+		return copyN[idx] // Just for the silly case where value is two max ints, don't add... TODO: overflow check.
 	}
 	return (copyN[idx-1] + copyN[idx]) / 2
 }

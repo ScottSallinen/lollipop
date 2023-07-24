@@ -10,8 +10,8 @@ type Vertex[V VPI[V], E any] struct {
 // Vertex structural properties. Handled and used by the construction process.
 type VertexStructure struct {
 	PendingIdx uint64  // Used as offset data for dynamic construction.
-	InEventPos uint32  // Used to calculate Pos for new in edges.
-	RawId      RawType // Raw (external) ID of the vertex.
+	InEventPos uint32  // Used to calculate Pos for new in edges. Pro tip: this position is constant across executions (for the pos of the raw vertex that has an event to me), however note said vertex may have a different internal ID across executions.
+	RawId      RawType // Raw (external) ID of the vertex. Pro tip: this is constant across executions. Internal IDs that graph threads choose for a given raw is NOT.
 }
 
 // Vertex Property Interface.

@@ -13,6 +13,7 @@ import (
 type TimeseriesEntry[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	Name             time.Time
 	EdgeCount        uint64
+	EdgeDeletes      uint64
 	GraphView        *Graph[V, E, M, N]
 	Latency          time.Duration
 	CurrentRuntime   time.Duration
@@ -102,6 +103,10 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 			gt.NumEdges = original.NumEdges
 			return int(gt.NumEdges)
 		}))
+		tse.EdgeDeletes = 0
+		for t := 0; t < int(THREADS); t++ {
+			tse.EdgeDeletes += uint64(g.GraphThreads[t].NumOutDels)
+		}
 
 		m2 := time.Now()
 
