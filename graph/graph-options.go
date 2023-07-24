@@ -15,6 +15,7 @@ type GraphOptions struct {
 	NumThreads            uint32  // Number of threads to use for parallelism.
 	LoadThreads           uint32  // Number of threads to use for loading the graph.
 	Undirected            bool    // Declares if the graph should be treated as undirected (e.g. for construction)
+	Transpose             bool    // Declares if the graph should transposed during construction (reverses src/dst of edges).
 	Dynamic               bool    // Declares if attached algorithms will be treated as dynamic.
 	Sync                  bool    // Declares if attached algorithms will be treated as synchronous (iterations), instead of default async.
 	SyncPreviousOnly      bool    // For comparative purposes, this would set sync mode to only access state from the previous iteration (and not view any updated state from the current iteration).
@@ -63,6 +64,7 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 	algIncludeQueryPtr := flag.Bool("tquery", false, "Include the time spent on processing queries in algorithm time.")
 
 	undirectedPtr := flag.Bool("u", false, "Interpret the input graph as undirected (add transpose edges as a mirrored event). \nThis is not optimized -- and some algorithms set this by default.")
+	transposePtr := flag.Bool("tr", false, "Interpret the input graph events in reverse (flip src and dst). This transposes the resultant graph.")
 
 	oraclePtr := flag.Bool("o", false, "Compare to oracle results (computed via async) upon finishing the algorithm. \nIf timeseries enabled, will run on each logging of data.\n TODO: timers become inaccurate?")
 	oracleSyncPtr := flag.Bool("osync", false, "Compare to oracle results for each sync iteration.")
@@ -139,6 +141,7 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 		Sync:                  useSync,
 		QueueMultiplier:       uint32(*mqPtr),
 		Undirected:            *undirectedPtr,
+		Transpose:             *transposePtr,
 		WriteVertexProps:      *propPtr,
 		TargetRate:            *dRatePtr,
 		CheckCorrectness:      *checkPtr,

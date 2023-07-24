@@ -236,7 +236,7 @@ outer:
 	runtime.UnlockOSThread()
 }
 
-func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqCount uint64, edgeQueue *utils.RingBuffSPSC[TopologyEvent[E]], wPos int32, tPos int32) {
+func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqCount uint64, edgeQueue *utils.RingBuffSPSC[TopologyEvent[E]], wPos int32, tPos int32, transpose bool) {
 	runtime.LockOSThread()
 	file := utils.OpenFile(name)
 	fieldsBuff := [MAX_ELEMS_PER_EDGE]string{}
@@ -271,6 +271,9 @@ func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqC
 			if FAKE_TIMESTAMP {
 				EP(&event.EdgeProperty).ReplaceTimestamp(lines)
 			}
+			if transpose {
+				event.SrcRaw, event.DstRaw = event.DstRaw, event.SrcRaw
+			}
 			if pos, ok := edgeQueue.PutFast(event); !ok {
 				edgeQueue.PutSlow(event, pos)
 			}
@@ -296,7 +299,7 @@ func LoadGraphStream[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V,
 	edgeQueues := make([]utils.RingBuffSPSC[TopologyEvent[E]], loadThreads)
 	for i := uint64(0); i < loadThreads; i++ {
 		edgeQueues[i].Init(BASE_SIZE * 8) // Small seems fine
-		go EdgeEnqueueToEmitter[EP](g.Options.Name, i, loadThreads, &edgeQueues[i], (g.Options.WeightPos - 1), (g.Options.TimestampPos - 1))
+		go EdgeEnqueueToEmitter[EP](g.Options.Name, i, loadThreads, &edgeQueues[i], (g.Options.WeightPos - 1), (g.Options.TimestampPos - 1), g.Options.Transpose)
 	}
 
 	// Launch the Emitter thread.
