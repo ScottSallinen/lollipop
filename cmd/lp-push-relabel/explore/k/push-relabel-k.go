@@ -134,7 +134,7 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 		if e.Didx == myId || e.Property.Weight <= 0 || e.Didx == VertexCountHelper.GetSourceId() || v.Property.Type == Sink {
 			continue
 		}
-		Assert(e.Property.Weight <= math.MaxInt32, "Cannot handle this weight")
+		Assert(e.Property.Weight <= math.MaxInt64, "Cannot handle this weight")
 
 		if v.Property.Type == Source {
 			sourceOutCap += int(e.Property.Weight)
