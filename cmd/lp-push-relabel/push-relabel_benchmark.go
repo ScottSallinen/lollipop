@@ -171,30 +171,6 @@ func BenchmarkOne() {
 	printResults(results)
 }
 
-func BenchmarkKLStatic() {
-	options := benchmarkBaseOptions
-
-	results := make([]benchmarkResult, 0)
-
-	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkDynamicCases))
-	results = append(results, runBenchmark(l.Run, options, l.Name, benchmarkDynamicCases))
-
-	printResults(results)
-}
-
-func BenchmarkKLDynamic() {
-	options := benchmarkBaseOptions
-	options.Dynamic = true
-
-	results := make([]benchmarkResult, 0)
-
-	GlobalRelabelingEnabled = true
-	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkDynamicCases))
-	results = append(results, runBenchmark(l.Run, options, l.Name, benchmarkDynamicCases))
-
-	printResults(results)
-}
-
 func BenchmarkKLTimeseries() {
 	options := benchmarkBaseOptions
 	options.Dynamic = true
