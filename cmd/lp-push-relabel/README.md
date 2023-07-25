@@ -13,7 +13,8 @@
   - Best in terms of performance on static graphs
   - Potential reasons why the performance on dynamic graphs is worse than A:
     - On static graphs, access to the hashtable (mapping from ID to index in array) has better temporal locality
-- **J**: Based on D, tracks index of the next push target in discharge
+- J: Based on D, tracks index of the next push target in discharge
   - Best when considering the following aspects together: (i) performance on static graphs, (ii) performance on dynamic graphs, and (iii) simplicity
-- **K**: J with global relabeling (async/sync)
-- **L**: K with tracks incoming residual capacities and skips sending heights if ResCapIn == 0
+- K: J with global relabeling (async/sync)
+- L: K with tracks incoming residual capacities and skips sending heights if ResCapIn == 0
+- M: Based on L, reduced Note size, use InitAllNote instead of InitAllMail, better code

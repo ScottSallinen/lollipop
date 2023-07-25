@@ -11,7 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/l"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
 )
 
 func main() {
@@ -33,6 +33,6 @@ func main() {
 	GlobalRelabelingEnabled = !*disableGlobalRelabeling
 	VertexCountHelper.Reset(int64(*initialEstimatedCount))
 
-	mf, _ := l.Run(graphOptions)
+	mf, _ := m.Run(graphOptions)
 	log.Info().Msg(fmt.Sprintf("Maximum flow is %v", mf))
 }
