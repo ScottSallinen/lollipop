@@ -12,7 +12,7 @@ import (
 var oracleFile *os.File // File for oracle results
 
 // PrintTopN: Prints the top N vertices and their scores.
-func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], size uint32) {
+func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], size uint32, interestArray bool) {
 	data := make([]float64, g.NodeVertexCount())
 	vIds := make([]uint32, g.NodeVertexCount())
 	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
@@ -24,10 +24,22 @@ func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], size ui
 		topN = uint32(len(data))
 	}
 	res := utils.FindTopNInArray(data, topN)
-	log.Info().Msg("Top N:")
-	log.Info().Msg("pos,   rawId,           score")
-	for i := uint32(0); i < topN; i++ {
-		log.Info().Msg(utils.V(i) + "," + utils.F("%10s", g.NodeVertexRawID(vIds[res[i].First]).String()) + "," + utils.F("%16.6f", res[i].Second))
+
+	if interestArray {
+		interestStr := "Top N of interest:\n"
+		for i := uint32(0); i < topN; i++ {
+			interestStr += g.NodeVertexRawID(vIds[res[i].First]).String()
+			if i != topN-1 {
+				interestStr += ", "
+			}
+		}
+		log.Info().Msg(interestStr)
+	} else {
+		log.Info().Msg("Top N:")
+		log.Info().Msg("pos,   rawId,           score")
+		for i := uint32(0); i < topN; i++ {
+			log.Info().Msg(utils.V(i) + "," + utils.F("%10s", g.NodeVertexRawID(vIds[res[i].First]).String()) + "," + utils.F("%16.6f", res[i].Second))
+		}
 	}
 }
 
@@ -127,7 +139,7 @@ func (*PageRank) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Ma
 	oracleFile.WriteString(wStr + "\n")
 
 	log.Info().Msg("Given:")
-	PrintTopN(g, 10)
+	PrintTopN(g, 10, false)
 	log.Info().Msg("Oracle:")
-	PrintTopN(oracle, 10)
+	PrintTopN(oracle, 10, false)
 }

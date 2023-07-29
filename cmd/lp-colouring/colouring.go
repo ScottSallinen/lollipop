@@ -13,7 +13,7 @@ type Colouring struct{}
 
 // A strategy (for static graphs) is to use wait count to have each vertex pick a colour "in order".
 // Note that the Base mail for a dynamic graph would have no beginning edges, so wait count would be zero -- thus this strategy is only useful for static graphs.
-const USE_WAIT_COUNT = false
+const USE_WAIT_COUNT = false // Don't enable this for dynamic graphs.
 
 const EMPTY_VAL = (math.MaxUint32) >> 1
 const MSB_MASK = (1 << 31) - 1
@@ -89,22 +89,6 @@ func (*Colouring) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty]
 	return m
 }
 
-// Dynamic: need to reallocate. Expand the size of existing.NbrScratch. New size must fit NbrScratch[ln], so we expect after that len(NbrScratch) == ln + 1.
-func mExpand(ln int, existing *Mail, colour uint32) {
-	existing.Mutex.Lock()
-	ns := existing.NbrScratch
-	prevLen := len(ns)
-	if prevLen <= ln { // check again
-		ns = append(ns, make([]uint32, (ln+1-prevLen))...)
-		for i := prevLen; i < len(ns); i++ {
-			ns[i] = EMPTY_VAL
-		}
-		existing.NbrScratch = ns
-	}
-	ns[ln] = colour
-	existing.Mutex.Unlock()
-}
-
 func (*Colouring) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo bool) {
 	didx := existing.Pos
 	if sidx == didx { // Self mail (init)
@@ -120,14 +104,24 @@ func (*Colouring) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo
 		colour = colour | MSB // If we have priority, set MSB
 	}
 
-	existing.Mutex.RLock()
-	ns := existing.NbrScratch
-	if len(ns) <= int(incoming.Pos) {
+	if len(existing.NbrScratch) <= int(incoming.Pos) {
+		// Dynamic: need to reallocate. Expand the size of existing.NbrScratch. New size must fit NbrScratch[ln], so we expect after that len(NbrScratch) == ln + 1.
+		existing.Mutex.Lock()
+		prevLen := uint32(len(existing.NbrScratch))
+		if prevLen <= incoming.Pos { // check again
+			existing.NbrScratch = append(existing.NbrScratch, make([]uint32, ((incoming.Pos+1)-prevLen))...)
+			for i := int(prevLen); i < len(existing.NbrScratch); i++ {
+				existing.NbrScratch[i] = EMPTY_VAL
+			}
+		}
+		existing.NbrScratch[incoming.Pos] = colour
+		existing.Mutex.Unlock()
+	} else if existing.NbrScratch[incoming.Pos] != colour {
+		existing.Mutex.RLock()
+		atomic.StoreUint32(&existing.NbrScratch[incoming.Pos], colour)
 		existing.Mutex.RUnlock()
-		mExpand(int(incoming.Pos), existing, colour)
-	} else {
-		atomic.StoreUint32(&ns[incoming.Pos], colour)
-		existing.Mutex.RUnlock()
+	} else if !USE_WAIT_COUNT {
+		return false // No change
 	}
 
 	if targetPriority {
@@ -136,10 +130,7 @@ func (*Colouring) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo
 
 	if !USE_WAIT_COUNT {
 		return true // Not using wait count, need to ensure update when a priority neighbour tells us their colour
-	}
-
-	// Check wait count.
-	if atomic.LoadUint32(&existing.Colour) > 0 {
+	} else if atomic.LoadUint32(&existing.Colour) > 0 { // Check wait count.
 		newWaitCount := atomic.AddUint32(&existing.Colour, ^uint32(0)) // Subtract 1
 		if newWaitCount == 0 {
 			atomic.StoreUint32(&existing.Colour, ^uint32(0)) // Likely to prevent second update cycle
@@ -154,7 +145,7 @@ func (*Colouring) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProper
 	ourColour := prop.Colour
 	prop.coloursIndexed.Zeroes()
 
-	existing.Mutex.RLock()
+	existing.Mutex.RLock() // Here we can rlock instead of lock, since we can atomic load the entries.
 	ns := existing.NbrScratch
 	for i := range ns {
 		nsc := atomic.LoadUint32(&ns[i])

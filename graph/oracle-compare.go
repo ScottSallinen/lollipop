@@ -58,6 +58,8 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			g.GraphThreads[t].NodeCopyVerticesInto(&oracleGraph.GraphThreads[t].Vertices)
 			oracleGraph.GraphThreads[t].VertexMailboxes = g.GraphThreads[t].NodeCopyVertexMailboxes()
 			oracleGraph.GraphThreads[t].NumEdges = g.GraphThreads[t].NumEdges
+			oracleGraph.GraphThreads[t].NumOutDels = g.GraphThreads[t].NumOutDels
+			oracleGraph.GraphThreads[t].AtEvent = g.GraphThreads[t].AtEvent
 			numEdges += int(oracleGraph.GraphThreads[t].NumEdges)
 		}
 

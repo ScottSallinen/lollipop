@@ -70,8 +70,46 @@ func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty
 }
 
 // Note OnOracleCompare doesn't make much sense for this algorithm, since it is approximate.
-// Though it may be interesting to see how values change over time.
-// (dynamic is likely to be more stable and have less variance between points in time compared to snap-shotting).
+// Instead, we will use this as a way to generate entries for a timeseries of the static solution at each point in time.
+func (*Colouring) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
+	var entry []utils.Pair[graph.RawType, uint32]
+	var entryAll map[graph.RawType]uint32
+	if USE_INTEREST {
+		entry = make([]utils.Pair[graph.RawType, uint32], len(INTEREST_ARRAY))
+		for i := range INTEREST_ARRAY {
+			entry[i] = utils.Pair[graph.RawType, uint32]{
+				First:  graph.AsRawType(INTEREST_ARRAY[i]),
+				Second: EMPTY_VAL,
+			}
+		}
+	} else {
+		entryAll = make(map[graph.RawType]uint32)
+	}
+
+	AtEventIndex := uint64(0)
+	for t := 0; t < int(g.NumThreads); t++ {
+		AtEventIndex = utils.Max(AtEventIndex, g.GraphThreads[t].AtEvent)
+	}
+
+	oracle.NodeForEachVertex(func(o, internalId uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+		vertexStructure := g.NodeVertexStructure(internalId)
+		if vertexStructure.CreateEvent <= AtEventIndex {
+			if USE_INTEREST {
+				if raw, ok := INTEREST_MAP[vertexStructure.RawId]; ok {
+					entry[raw].Second = vertex.Property.Colour
+				}
+			} else {
+				entryAll[vertexStructure.RawId] = vertex.Property.Colour
+			}
+		}
+	})
+
+	if USE_INTEREST {
+		snapshotDB = append(snapshotDB, entry)
+	} else {
+		snapshotDBAll = append(snapshotDBAll, entryAll)
+	}
+}
 
 // Launch point. Parses command line arguments, and launches the graph execution.
 func main() {
@@ -87,4 +125,7 @@ func main() {
 		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), options, nil, nil)
 	}
 
+	if options.LogTimeseries {
+		PrintTimeSeries(true, false)
+	}
 }

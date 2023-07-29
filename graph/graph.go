@@ -101,7 +101,8 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 
 	Response     chan Command // Response channel
 	EventActions uint64       // Number of event actions (to or from remitter) performed by the thread.
-	_            [6]uint64
+	AtEvent      uint64       // Max event index a thread is at.
+	_            [5]uint64
 }
 
 // Allocates everything needed for a new graph.

@@ -68,7 +68,7 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 
 	oraclePtr := flag.Bool("o", false, "Compare to oracle results (computed via async) upon finishing the algorithm. \nIf timeseries enabled, will run on each logging of data.\n TODO: timers become inaccurate?")
 	oracleSyncPtr := flag.Bool("osync", false, "Compare to oracle results for each sync iteration.")
-	checkPtr := flag.Bool("c", false, "Check correctness after execution.")
+	checkPtr := flag.Bool("c", false, "Check correctness after execution, and in some cases calculate and print interesting information about the result.")
 	propPtr := flag.Bool("p", false, "Save vertex properties to disk at the end. Not optimized (warning: old code).")
 
 	profilePtr := flag.Bool("profile", false, "Profile the stream and algorithm, print memory stats, and creates pprof files.")

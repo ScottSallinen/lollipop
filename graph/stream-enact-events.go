@@ -12,7 +12,7 @@ import (
 )
 
 // New vertex handler during graph construction. Hooks algorithm events (default constructors).
-func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], rawId RawType) (vidx uint32) {
+func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], rawId RawType, eventIdx uint64) (vidx uint32) {
 	idx := uint32(len(gt.Vertices))
 	vidx = (uint32(gt.Tidx) << THREAD_SHIFT) + idx
 
@@ -29,9 +29,10 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 	gt.Vertices[idx].Property = gt.Vertices[idx].Property.New()
 
 	gt.VertexStructures[bucket][pos] = VertexStructure{
-		RawId:      rawId,
-		InEventPos: 0,
-		PendingIdx: 0,
+		PendingIdx:  0,
+		CreateEvent: eventIdx,
+		InEventPos:  0,
+		RawId:       rawId,
 	}
 
 	v := &gt.Vertices[idx]
@@ -92,7 +93,7 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 			break
 		}
 		if didx, ok = gt.VertexMap[event.DstRaw]; !ok {
-			didx = NewVertex(alg, g, gt, event.DstRaw)
+			didx = NewVertex(alg, g, gt, event.DstRaw, event.EventIdx())
 		}
 
 		pos := ^uint32(0)
@@ -102,8 +103,6 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 			vs.InEventPos++
 			gt.NumInEvents++ // Thread total; unused.
 		}
-
-		// event.EventIdx() // Unused. Could view the global event count here.
 
 		// Will always succeed (range check is lte current space)
 		gt.ToRemitQueue.Offer(RawEdgeEvent[E]{TypeAndEventIdx: event.TypeAndEventIdx, SrcRaw: event.SrcRaw, DstRaw: event.DstRaw, Edge: Edge[E]{Property: event.EdgeProperty, Didx: didx, Pos: pos}})
@@ -212,7 +211,7 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 
 	for i := 0; i < changeCount; i++ {
 		if sidx, ok = gt.VertexMap[gt.TopologyEventBuff[i].SrcRaw]; !ok {
-			sidx = NewVertex(alg, g, gt, gt.TopologyEventBuff[i].SrcRaw)
+			sidx = NewVertex(alg, g, gt, gt.TopologyEventBuff[i].SrcRaw, gt.TopologyEventBuff[i].EventIdx())
 		}
 
 		uniqueCount = gt.checkInsertPending(sidx, uint32(i), uniqueCount)
@@ -220,9 +219,8 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 		if delOnExpire > 0 && gt.TopologyEventBuff[i].EventType() == ADD {
 			gt.ExpiredEdges = append(gt.ExpiredEdges, utils.Pair[uint32, RawEdgeEvent[E]]{First: sidx, Second: gt.TopologyEventBuff[i]})
 		}
-
-		// gt.TopologyEventBuff[i].EventIdx() // Unused. Could view the global event count here.
 	}
+	gt.AtEvent = gt.TopologyEventBuff[changeCount-1].EventIdx()
 
 	if delOnExpire > 0 { // (These are now checked after the first look through)
 		uniqueCount = InjectExpired[EP](g, gt, changeCount, uniqueCount, delOnExpire)

@@ -262,7 +262,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			// Process algorithm messages. Check for algorithm termination if needed.
 			gt.Status = APPLY_MSG
 			checkTerm := (strucClosed && remitClosed) || // all topology events are done, or
-				(blockTop) || // topology events are currently blocked, or
+				(blockTop && checkSuperStep) || // topology events are currently blocked and we may super-step, (NoConvergeForQuery blocks top, would not have super-steps, but might complete)
 				(epoch && topCount == 0) // no more topology events in this epoch (assuming the remitter does not produce new events after it starts an epoch)
 			completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, checkTerm)
 			if !completed && algCount == 0 {

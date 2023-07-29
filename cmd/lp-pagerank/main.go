@@ -11,6 +11,7 @@ import (
 func main() {
 	plotPtr := flag.Bool("plot", false, "Provide the timeseries the top N vertices at a query, and provide everything to plot a top-N-vertex-over-time graph. \n(Note this adds un-optimized logging overhead.)")
 	plotdtPtr := flag.Bool("plotdt", false, "Provide the timeseries the top N vertices at a query, which will provide a derivative: rate-of-change in top-N-vertex-over-time. \n(Note this adds un-optimized logging overhead.)")
+	interestArray := flag.Int("ia", 0, "Generates output of an interest array: the list of the final top N vertices.")
 	graphOptions := graph.FlagsToOptions()
 
 	logWaterfall = *plotPtr || *plotdtPtr
@@ -43,5 +44,8 @@ func main() {
 	if graphOptions.LogTimeseries {
 		PrintTimeSeries(true, false)
 	}
-	PrintTopN(g, 10)
+	PrintTopN(g, 10, false)
+	if *interestArray > 0 {
+		PrintTopN(g, uint32(*interestArray), true)
+	}
 }

@@ -94,15 +94,15 @@ func DynamicCreation(undirected bool, t *testing.T) {
 			if !utils.FloatEquals(vertex.Property.Mass, g2values.Property.Mass, allowedVariance) {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
-				PrintTopN(gStatic, 10)
-				PrintTopN(gDyn, 10)
+				PrintTopN(gStatic, 10, false)
+				PrintTopN(gDyn, 10, false)
 				t.Fatal("Value not equal", g1raw, vertex.Property.Mass, g2values.Property.Mass, "iteration", tCount)
 			}
 			if !utils.FloatEquals(vertex.Property.InFlow, g2values.Property.InFlow, allowedVariance) {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
-				PrintTopN(gStatic, 10)
-				PrintTopN(gDyn, 10)
+				PrintTopN(gStatic, 10, false)
+				PrintTopN(gDyn, 10, false)
 				t.Fatal("InFlow not equal", g1raw, vertex.Property.InFlow, g2values.Property.InFlow, "iteration", tCount)
 			}
 		})
@@ -165,15 +165,15 @@ func DynamicWithDelete(undirected bool, t *testing.T) {
 			if !utils.FloatEquals(vertex.Property.Mass, g2values.Property.Mass, allowedVariance) {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
-				PrintTopN(gStatic, 10)
-				PrintTopN(gDyn, 10)
+				PrintTopN(gStatic, 10, false)
+				PrintTopN(gDyn, 10, false)
 				t.Fatal("Value not equal", g1raw, vertex.Property.Mass, g2values.Property.Mass, "iteration", tCount)
 			}
 			if !utils.FloatEquals(vertex.Property.InFlow, g2values.Property.InFlow, allowedVariance) {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
-				PrintTopN(gStatic, 10)
-				PrintTopN(gDyn, 10)
+				PrintTopN(gStatic, 10, false)
+				PrintTopN(gDyn, 10, false)
 				t.Fatal("InFlow not equal", g1raw, vertex.Property.InFlow, g2values.Property.InFlow, "iteration", tCount)
 			}
 		})
