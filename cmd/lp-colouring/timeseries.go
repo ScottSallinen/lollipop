@@ -26,9 +26,10 @@ type NamedEntry struct {
 
 const WRITE_EVERY_UPDATE = false // Writes the timeseries file every single time it updates (instead of just at the end).
 
-const USE_INTEREST = true // Of interest, array for wikipedia-growth.
-var INTEREST_MAP = make(map[graph.RawType]int)
+// Top 50 vertices (by PageRank score) in the wikipedia-growth graph
 var INTEREST_ARRAY = []int{73, 259, 9479, 6276, 1710, 864, 2169, 110, 10312, 69, 425, 611, 1566, 11297, 1916, 1002, 975, 6413, 526, 5079, 1915, 11956, 2034, 956, 208, 15, 77041, 652, 20, 1352, 1918, 388, 1806, 1920, 3517, 863, 1594, 24772, 2008, 78349, 397, 1923, 1105, 8707, 7, 4336, 1753, 205, 17, 984, 5732, 983, 70, 1924, 111, 51076, 6903, 4083, 1936, 1115, 154942, 1550, 2266, 179, 1933, 37976, 2844, 1934, 57028, 1932, 84204, 1931, 490, 1935, 2312, 1925, 1846, 5081, 1930, 4378, 1917, 68, 3080, 2734, 435, 1482, 1929, 1922, 4104, 2814, 1926, 1919, 1164, 1110, 1928, 2843, 4364, 1921, 4148, 2041}
+var INTEREST_MAP = make(map[graph.RawType]int)
+var USE_INTEREST = false // Of interest, array for wikipedia-growth.
 
 func init() {
 	if USE_INTEREST {
@@ -175,7 +176,7 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 			}
 			dfLine += "," + strconv.FormatFloat(float64(same)*100.0/float64(same+different), 'f', 3, 64) + "," + strconv.FormatUint(uint64(same+different), 10) + "," + strconv.FormatUint(uint64(same), 10) + "," + strconv.FormatUint(uint64(different), 10)
 
-			if snapshotDB != nil {
+			if snapshotDBAll != nil {
 				same := 0
 				different := 0
 				if i == 0 {

@@ -2,12 +2,15 @@ package main
 
 import (
 	"flag"
+	"runtime"
 
 	"github.com/rs/zerolog/log"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 )
+
+var SNAPSHOT_ORACLE = false
 
 func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	maxColour := uint32(0)
@@ -91,7 +94,10 @@ func (*Colouring) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, M
 		AtEventIndex = utils.Max(AtEventIndex, g.GraphThreads[t].AtEvent)
 	}
 
-	oracle.NodeForEachVertex(func(o, internalId uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+	if SNAPSHOT_ORACLE {
+		g = oracle
+	}
+	g.NodeForEachVertex(func(o, internalId uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
 		vertexStructure := g.NodeVertexStructure(internalId)
 		if vertexStructure.CreateEvent <= AtEventIndex {
 			if USE_INTEREST {
@@ -109,17 +115,26 @@ func (*Colouring) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, M
 	} else {
 		snapshotDBAll = append(snapshotDBAll, entryAll)
 	}
+	runtime.GC()
 }
 
 // Launch point. Parses command line arguments, and launches the graph execution.
 func main() {
 	useMsgStrategy := flag.Bool("msg", false, "Use direct messaging strategy instead of mailbox and merging.")
+	useInterest := flag.Bool("UseInterest", false, "Use the interest array when capturing a snapshot")
+	useWaitCount := flag.Bool("WaitCount", false, "Use wait count (does not work with dynamic mode)")
+	snapshotOracle := flag.Bool("SnapshotOracle", false, "Capture snapshots of the oracle rather than the original graph")
 	options := graph.FlagsToOptions()
 	options.Undirected = true // undirected should always be true.
+	USE_INTEREST = *useInterest
+	SNAPSHOT_ORACLE = *snapshotOracle
+	USE_WAIT_COUNT_MSG = *useWaitCount
+	USE_WAIT_COUNT = *useWaitCount
 	if *useMsgStrategy {
 		if options.Sync {
 			log.Panic().Msg("Cannot use a messaging strategy with synchronous iterations.")
 		}
+
 		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MailMsg, NoteMsg](new(ColouringMsg), options, nil, nil)
 	} else {
 		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), options, nil, nil)

@@ -15,7 +15,7 @@ type ColouringMsg struct{}
 
 // A strategy (for static graphs) is to use wait count to have each vertex pick a colour "in order".
 // Note that the Base MailMsg for a dynamic graph would have no beginning edges, so wait count would be zero.
-const USE_WAIT_COUNT_MSG = false
+var USE_WAIT_COUNT_MSG = false
 
 const MAGIC_VAL_MSG = math.MaxUint32 - 1
 const EMPTY_VAL_MSG = math.MaxUint32

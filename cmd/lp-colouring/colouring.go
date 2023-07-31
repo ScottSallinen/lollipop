@@ -13,7 +13,7 @@ type Colouring struct{}
 
 // A strategy (for static graphs) is to use wait count to have each vertex pick a colour "in order".
 // Note that the Base mail for a dynamic graph would have no beginning edges, so wait count would be zero -- thus this strategy is only useful for static graphs.
-const USE_WAIT_COUNT = false // Don't enable this for dynamic graphs.
+var USE_WAIT_COUNT = false // Don't enable this for dynamic graphs.
 
 const EMPTY_VAL = (math.MaxUint32) >> 1
 const MSB_MASK = (1 << 31) - 1
