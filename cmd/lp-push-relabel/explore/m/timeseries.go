@@ -11,7 +11,7 @@ import (
 func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexProp, EdgeProp, Mail, Note], wg *sync.WaitGroup) {
 	var outEntry TsEntry
 	for tse := range entries {
-		sourceId, sinkId := GlobalRelabelingHelper.GetSourceAndSinkInternalIds()
+		sourceId, sinkId := pr.GlobalRelabeling.GetSourceAndSinkInternalIds()
 		source, sink := tse.GraphView.NodeVertexOrNil(sourceId), tse.GraphView.NodeVertexOrNil(sinkId)
 		skip := source == nil || sink == nil
 

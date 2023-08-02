@@ -24,8 +24,8 @@ func (pr *PushRelabel) SyncGlobalRelabel(g *Graph) {
 
 	pr.t0 = time.Now()
 	pr.CurrentPhase = DRAIN_MSG
-	SkipPush.Store(true)
-	SkipRestoreHeightInvar.Store(true)
+	pr.SkipPush.Store(true)
+	pr.SkipRestoreHeightInvar.Store(true)
 	if g.Options.Dynamic {
 		g.Broadcast(graph.BLOCK_TOP_ASYNC)
 	}
@@ -39,22 +39,22 @@ func (pr *PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
 	case DRAIN_MSG:
 		pr.t1 = time.Now()
 		pr.CurrentPhase = RELABEL
-		SkipRestoreHeightInvar.Store(false)
+		pr.SkipRestoreHeightInvar.Store(false)
 		resetHeights(g)
-		sent += sendMsgToSpecialHeightVertices(g)
+		sent += sendMsgToSpecialHeightVertices(g, pr.VertexCount.GetMaxVertexCount())
 		pr.t2 = time.Now()
 
 	case RELABEL:
 		pr.t3 = time.Now()
 		pr.CurrentPhase = RESUME
-		SkipPush.Store(false)
+		pr.SkipPush.Store(false)
 		sent += sendMsgToActiveVertices(g)
 
 		totalRuntime := pr.t3.Sub(pr.t0)
 		log.Info().Msg(fmt.Sprintf("SyncGlobalRelabel done. "+
 			"Draining Messages took %.2fs, Resetting heights took %.2fs, Global Relabeling took %.2fs. Total took %.2fs",
 			pr.t1.Sub(pr.t0).Seconds(), pr.t2.Sub(pr.t1).Seconds(), pr.t3.Sub(pr.t2).Seconds(), totalRuntime.Seconds()))
-		GlobalRelabelingHelper.GlobalRelabelingDone(totalRuntime.Milliseconds())
+		pr.GlobalRelabeling.GlobalRelabelingDone(totalRuntime.Milliseconds())
 		g.Broadcast(graph.RESUME)
 	}
 	return sent
@@ -73,10 +73,10 @@ func resetHeights(g *Graph) {
 	})
 }
 
-func sendMsgToSpecialHeightVertices(g *Graph) (sent uint64) {
+func sendMsgToSpecialHeightVertices(g *Graph, vertexCount int64) (sent uint64) {
 	_, source := g.NodeVertexFromRaw(SourceRawId)
 	sourceInternalId, _ := g.NodeVertexFromRaw(SourceRawId)
-	source.Property.Height = VertexCountHelper.GetMaxVertexCount()
+	source.Property.Height = vertexCount
 	source.Property.HeightChanged = true
 	sMailbox, sTidx := g.NodeVertexMailbox(sourceInternalId)
 	sent += g.EnsureSend(g.ActiveNotification(sourceInternalId, graph.Notification[Note]{Target: sourceInternalId, Note: Note{PosType: EmptyValue}}, sMailbox, sTidx))

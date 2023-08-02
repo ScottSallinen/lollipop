@@ -23,42 +23,40 @@ type ThreadMsgCount struct {
 	Last    MsgCount
 }
 
-var (
-	ThreadMsgCounts = make([]ThreadMsgCount, graph.THREAD_MAX)
-)
-
-func ResetMsgCounts() {
-	for i := range ThreadMsgCounts {
-		ThreadMsgCounts[i] = ThreadMsgCount{}
-	}
+type ThreadMsgCounter[N constraints.Integer] struct {
+	Counters []ThreadMsgCount
 }
 
-func IncrementMsgCount[N constraints.Integer](tidx uint32, flow N, special bool) {
+func (tmc *ThreadMsgCounter[N]) Reset() {
+	tmc.Counters = make([]ThreadMsgCount, graph.THREAD_MAX)
+}
+
+func (tmc *ThreadMsgCounter[N]) IncrementMsgCount(tidx uint32, flow N, special bool) {
 	if special {
-		ThreadMsgCounts[tidx].Current.Special++
+		tmc.Counters[tidx].Current.Special++
 	} else if flow > 0 {
-		ThreadMsgCounts[tidx].Current.PositiveFlow++
+		tmc.Counters[tidx].Current.PositiveFlow++
 	} else if flow == 0 {
-		ThreadMsgCounts[tidx].Current.ZeroFlow++
+		tmc.Counters[tidx].Current.ZeroFlow++
 	} else {
-		ThreadMsgCounts[tidx].Current.NegativeFlow++
+		tmc.Counters[tidx].Current.NegativeFlow++
 	}
 }
 
-func LogMsgCount() {
+func (tmc *ThreadMsgCounter[N]) LogMsgCount() {
 	totals, deltas := MsgCount{}, MsgCount{}
-	for i := range ThreadMsgCounts {
-		totals.PositiveFlow += ThreadMsgCounts[i].Current.PositiveFlow
-		totals.NegativeFlow += ThreadMsgCounts[i].Current.NegativeFlow
-		totals.ZeroFlow += ThreadMsgCounts[i].Current.ZeroFlow
-		totals.Special += ThreadMsgCounts[i].Current.Special
+	for i := range tmc.Counters {
+		totals.PositiveFlow += tmc.Counters[i].Current.PositiveFlow
+		totals.NegativeFlow += tmc.Counters[i].Current.NegativeFlow
+		totals.ZeroFlow += tmc.Counters[i].Current.ZeroFlow
+		totals.Special += tmc.Counters[i].Current.Special
 
-		deltas.PositiveFlow += ThreadMsgCounts[i].Last.PositiveFlow
-		deltas.NegativeFlow += ThreadMsgCounts[i].Last.NegativeFlow
-		deltas.ZeroFlow += ThreadMsgCounts[i].Last.ZeroFlow
-		deltas.Special += ThreadMsgCounts[i].Last.Special
+		deltas.PositiveFlow += tmc.Counters[i].Last.PositiveFlow
+		deltas.NegativeFlow += tmc.Counters[i].Last.NegativeFlow
+		deltas.ZeroFlow += tmc.Counters[i].Last.ZeroFlow
+		deltas.Special += tmc.Counters[i].Last.Special
 
-		ThreadMsgCounts[i].Last = ThreadMsgCounts[i].Current
+		tmc.Counters[i].Last = tmc.Counters[i].Current
 	}
 
 	deltas.PositiveFlow = totals.PositiveFlow - deltas.PositiveFlow
@@ -73,11 +71,11 @@ func LogMsgCount() {
 	log.Info().Msg(fmt.Sprintf("Special:       %13d %10d", totals.Special, deltas.Special))
 }
 
-func GoLogMsgCount(exit *bool) {
+func (tmc *ThreadMsgCounter[N]) GoLogMsgCount(exit *bool) {
 	go func() {
 		for !*exit {
 			time.Sleep(5 * time.Second)
-			LogMsgCount()
+			tmc.LogMsgCount()
 		}
 	}()
 }

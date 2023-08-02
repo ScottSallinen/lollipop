@@ -22,7 +22,6 @@ func main() {
 
 	sourceId := flag.Int("S", -1, "Source vertex (raw id).")
 	sinkId := flag.Int("T", -1, "Sink vertex (raw id).")
-	initialEstimatedCount := flag.Uint("V", 30, "Initial estimated number of vertices.")
 	disableGlobalRelabeling := flag.Bool("DG", false, "Disable global relabeling")
 	flag.Bool("B", false, "Run benchmarks")
 	graphOptions := graph.FlagsToOptions()
@@ -31,7 +30,6 @@ func main() {
 	SourceRawId = graph.RawType(*sourceId)
 	SinkRawId = graph.RawType(*sinkId)
 	GlobalRelabelingEnabled = !*disableGlobalRelabeling
-	VertexCountHelper.Reset(int64(*initialEstimatedCount))
 
 	mf, _ := m.Run(graphOptions)
 	log.Info().Msg(fmt.Sprintf("Maximum flow is %v", mf))
