@@ -19,14 +19,11 @@ const (
 	RELABEL
 )
 
-var CurrentPhase = RESUME
-var t0, t1, t2, t3 time.Time
-
-func SyncGlobalRelabel(g *Graph) {
+func (pr *PushRelabel) SyncGlobalRelabel(g *Graph) {
 	log.Info().Msg("SyncGlobalRelabel starts.")
 
-	t0 = time.Now()
-	CurrentPhase = DRAIN_MSG
+	pr.t0 = time.Now()
+	pr.CurrentPhase = DRAIN_MSG
 	SkipPush.Store(true)
 	SkipRestoreHeightInvar.Store(true)
 	if g.Options.Dynamic {
@@ -34,29 +31,29 @@ func SyncGlobalRelabel(g *Graph) {
 	}
 }
 
-func (*PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
-	switch CurrentPhase {
+func (pr *PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
+	switch pr.CurrentPhase {
 	case RESUME:
 		return
 
 	case DRAIN_MSG:
-		t1 = time.Now()
-		CurrentPhase = RELABEL
+		pr.t1 = time.Now()
+		pr.CurrentPhase = RELABEL
 		SkipRestoreHeightInvar.Store(false)
 		resetHeights(g)
 		sent += sendMsgToSpecialHeightVertices(g)
-		t2 = time.Now()
+		pr.t2 = time.Now()
 
 	case RELABEL:
-		t3 = time.Now()
-		CurrentPhase = RESUME
+		pr.t3 = time.Now()
+		pr.CurrentPhase = RESUME
 		SkipPush.Store(false)
 		sent += sendMsgToActiveVertices(g)
 
-		totalRuntime := t3.Sub(t0)
+		totalRuntime := pr.t3.Sub(pr.t0)
 		log.Info().Msg(fmt.Sprintf("SyncGlobalRelabel done. "+
 			"Draining Messages took %.2fs, Resetting heights took %.2fs, Global Relabeling took %.2fs. Total took %.2fs",
-			t1.Sub(t0).Seconds(), t2.Sub(t1).Seconds(), t3.Sub(t2).Seconds(), totalRuntime.Seconds()))
+			pr.t1.Sub(pr.t0).Seconds(), pr.t2.Sub(pr.t1).Seconds(), pr.t3.Sub(pr.t2).Seconds(), totalRuntime.Seconds()))
 		GlobalRelabelingHelper.GlobalRelabelingDone(totalRuntime.Milliseconds())
 		g.Broadcast(graph.RESUME)
 	}
