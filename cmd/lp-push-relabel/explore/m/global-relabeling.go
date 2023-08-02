@@ -1,4 +1,4 @@
-package common
+package m
 
 import (
 	"fmt"
@@ -8,6 +8,8 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/ScottSallinen/lollipop/utils"
+
+	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type GlobalRelabeling struct {
@@ -23,6 +25,10 @@ type GlobalRelabeling struct {
 	SourceId atomic.Uint32
 
 	Triggered atomic.Bool
+
+	runSyncGlobalRelabel func(g *Graph)
+	sendMsg              func(g *Graph, sourceId, targetId uint32) uint64
+	getVertexCount       func() uint64
 }
 
 const (
@@ -33,16 +39,7 @@ const (
 	SynchronousGlobalRelabeling = true
 )
 
-var (
-	GlobalRelabelingHelper GlobalRelabeling
-
-	RunSynchronousGlobalRelabel func()
-
-	SkipPush               = atomic.Bool{}
-	SkipRestoreHeightInvar = atomic.Bool{}
-)
-
-func (gr *GlobalRelabeling) Reset() {
+func (gr *GlobalRelabeling) Reset(runSyncGlobalRelabel func(g *Graph), sendMsg func(g *Graph, sourceId, targetId uint32) uint64, getVertexCount func() uint64) {
 	gr.LiftCountInterval.Store(grMinInterval)
 	gr.TimeInterval.Store(time.Second.Milliseconds())
 	gr.NextGrLiftCount.Store(gr.LiftCountInterval.Load())
@@ -51,9 +48,12 @@ func (gr *GlobalRelabeling) Reset() {
 	gr.SinkId.Store(EmptyValue)
 	gr.SourceId.Store(EmptyValue)
 	gr.Triggered.Store(false)
+	gr.runSyncGlobalRelabel = runSyncGlobalRelabel
+	gr.sendMsg = sendMsg
+	gr.getVertexCount = getVertexCount
 }
 
-func (gr *GlobalRelabeling) UpdateInterval(v int64) {
+func (gr *GlobalRelabeling) UpdateInterval(v uint64) {
 	gr.LiftCountInterval.Store(utils.Max(int64(grAlphaLiftCount*float64(v)), grMinInterval))
 }
 
@@ -71,7 +71,7 @@ func (gr *GlobalRelabeling) RegisterSink(id uint32) {
 	Assert(gr.LiftCountInterval.Load() > 0, "Invalid Global Relabeling interval")
 }
 
-func (gr *GlobalRelabeling) OnLift(sendMsg func(sinkId uint32) uint64) (sent uint64) {
+func (gr *GlobalRelabeling) OnLift(g *Graph, id uint32) (sent uint64) {
 	// TODO: improve performance
 	newCount := gr.CurrentLiftCount.Add(1)
 	shouldGrLiftCount, shouldGrTime := newCount > gr.NextGrLiftCount.Load(), time.Now().UnixMilli() > gr.NextGrTime.Load()
@@ -81,10 +81,10 @@ func (gr *GlobalRelabeling) OnLift(sendMsg func(sinkId uint32) uint64) (sent uin
 			if shouldGrLiftCount || shouldGrTime {
 				log.Info().Msg(fmt.Sprintf("Global Relabeling is triggered shouldGrLiftCount=%v shouldGrTime=%v", shouldGrLiftCount, shouldGrTime))
 				// Source should always be present when lift
-				sent += sendMsg(gr.SinkId.Load())
-				sent += sendMsg(gr.SourceId.Load())
+				sent += gr.sendMsg(g, id, gr.SinkId.Load())
+				sent += gr.sendMsg(g, id, gr.SourceId.Load())
 				if SynchronousGlobalRelabeling {
-					RunSynchronousGlobalRelabel()
+					gr.runSyncGlobalRelabel(g)
 				} else {
 					gr.GlobalRelabelingDone(time.Second.Milliseconds() * 10)
 				}
@@ -95,7 +95,7 @@ func (gr *GlobalRelabeling) OnLift(sendMsg func(sinkId uint32) uint64) (sent uin
 }
 
 func (gr *GlobalRelabeling) GlobalRelabelingDone(lastGrRuntimeMilli int64) {
-	gr.UpdateInterval(VertexCountHelper.GetMaxVertexCount())
+	gr.UpdateInterval(gr.getVertexCount())
 	gr.UpdateTimeInterval(lastGrRuntimeMilli)
 
 	gr.NextGrLiftCount.Store(gr.CurrentLiftCount.Load() + gr.LiftCountInterval.Load())
