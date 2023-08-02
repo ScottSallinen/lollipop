@@ -13,6 +13,12 @@ func Assert(cond bool, msg string) {
 	}
 }
 
+func AssertC(cond bool) {
+	if !cond {
+		log.Panic().Msg("Something is wrong. Please see the stack trace.")
+	}
+}
+
 type VertexType uint8
 
 const (
