@@ -32,10 +32,8 @@ var INTEREST_MAP = make(map[graph.RawType]int)
 var USE_INTEREST = false // Of interest, array for wikipedia-growth.
 
 func init() {
-	if USE_INTEREST {
-		for i, v := range INTEREST_ARRAY {
-			INTEREST_MAP[graph.AsRawType(v)] = i
-		}
+	for i, v := range INTEREST_ARRAY {
+		INTEREST_MAP[graph.AsRawType(v)] = i
 	}
 }
 
@@ -114,7 +112,7 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 			header += strconv.FormatUint(uint64(raw), 10) + ","
 		}
 	} else {
-		header += "pctSame,matchedVertices,same,different"
+		header += "pctSame,matchedVertices,same,different,colourCount"
 	}
 
 	if stdOut {
@@ -177,12 +175,14 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 			dfLine += "," + strconv.FormatFloat(float64(same)*100.0/float64(same+different), 'f', 3, 64) + "," + strconv.FormatUint(uint64(same+different), 10) + "," + strconv.FormatUint(uint64(same), 10) + "," + strconv.FormatUint(uint64(different), 10)
 
 			if snapshotDBAll != nil {
+				colours := make(map[uint32]int32)
 				same := 0
 				different := 0
 				if i == 0 {
 					// Do nothing
 				} else {
 					for raw, c := range snapshotDBAll[i] {
+						colours[c] += 1
 						if prevC, in := snapshotDBAll[i-1][raw]; in {
 							if c == prevC {
 								same++
@@ -192,7 +192,8 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 						}
 					}
 				}
-				sfLine += "," + strconv.FormatFloat(float64(same)*100.0/float64(same+different), 'f', 3, 64) + "," + strconv.FormatUint(uint64(same+different), 10) + "," + strconv.FormatUint(uint64(same), 10) + "," + strconv.FormatUint(uint64(different), 10)
+				sfLine += "," + strconv.FormatFloat(float64(same)*100.0/float64(same+different), 'f', 3, 64) + "," + strconv.FormatUint(uint64(same+different), 10) + "," +
+					strconv.FormatUint(uint64(same), 10) + "," + strconv.FormatUint(uint64(different), 10) + "," + strconv.FormatUint(uint64(len(colours)), 10)
 			}
 		}
 
