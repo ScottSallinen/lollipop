@@ -16,8 +16,7 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/j"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/k"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/l"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
 )
 
 type benchmarkGraph struct {
@@ -115,7 +114,6 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF cons
 		SourceRawId = graph.RawType(tc.Source)
 		SinkRawId = graph.RawType(tc.Sink)
 		VertexCountHelper.Reset(1000)
-		GlobalRelabelingHelper.Reset()
 		TimeSeriesReset()
 
 		InitialHeight = MaxHeight
@@ -163,25 +161,10 @@ func BenchmarkOne() {
 
 	originalGre := GlobalRelabelingEnabled
 	GlobalRelabelingEnabled = true
-	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkOneTestCases))
+	results = append(results, runBenchmark(m.Run, options, m.Name, benchmarkOneTestCases))
 	GlobalRelabelingEnabled = false
-	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkOneTestCases))
+	results = append(results, runBenchmark(m.Run, options, m.Name, benchmarkOneTestCases))
 	GlobalRelabelingEnabled = originalGre
-
-	printResults(results)
-}
-
-func BenchmarkKLTimeseries() {
-	options := benchmarkBaseOptions
-	options.Dynamic = true
-	options.LogTimeseries = true
-	options.TimeSeriesInterval = 86400 * 30
-
-	results := make([]benchmarkResult, 0)
-
-	GlobalRelabelingEnabled = true
-	results = append(results, runBenchmark(k.Run, options, k.Name, benchmarkCasesTimeseries))
-	results = append(results, runBenchmark(l.Run, options, l.Name, benchmarkCasesTimeseries))
 
 	printResults(results)
 }
@@ -196,7 +179,7 @@ func BenchmarkLRateLimit() {
 	baseRate := 50_000
 	for rateMultiplier := 1; rateMultiplier <= 5; rateMultiplier += 1 {
 		options.TargetRate = float64(baseRate * rateMultiplier)
-		results = append(results, runBenchmark(l.Run, options, l.Name+" with rate "+strconv.Itoa(int(options.TargetRate)), benchmarkCasesTimeseries))
+		results = append(results, runBenchmark(m.Run, options, m.Name+" with rate "+strconv.Itoa(int(options.TargetRate)), benchmarkCasesTimeseries))
 	}
 
 	printResults(results)
@@ -210,7 +193,7 @@ func BenchmarkLScalability() {
 
 	for t := 4; t <= 16; t += 4 {
 		options.NumThreads = uint32(t)
-		results = append(results, runBenchmark(l.Run, options, l.Name+" with t="+strconv.Itoa(t)+" rate="+strconv.Itoa(int(options.TargetRate)), benchmarkCasesScalability))
+		results = append(results, runBenchmark(m.Run, options, m.Name+" with t="+strconv.Itoa(t)+" rate="+strconv.Itoa(int(options.TargetRate)), benchmarkCasesScalability))
 	}
 
 	printResults(results)

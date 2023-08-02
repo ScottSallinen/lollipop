@@ -201,7 +201,6 @@ func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF con
 			InitialHeight = MaxHeight
 			SourceRawId = graph.RawType(tg.Source)
 			SinkRawId = graph.RawType(tg.Sink)
-			GlobalRelabelingHelper.UpdateInterval(int64(tg.VertexCount))
 			if options.Dynamic {
 				VertexCountHelper.Reset(utils.Min(1000, int64(tg.VertexCount)))
 			} else {
