@@ -83,8 +83,12 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 
 		log.Info().Msg("Creating result for graph with " + utils.V(numVertices) + " vertices and " + utils.V(numEdges) + " edges")
 		oracleGraph.AlgTimer.Start()
-		ConvergeAsync(alg, oracleGraph, new(sync.WaitGroup))
-		if aOF, ok := any(alg).(AlgorithmOnFinish[V, E, M, N]); ok {
+		algOracle := alg
+		if aN, ok := any(alg).(AlgorithmNew[V, E, M, N, A]); ok {
+			algOracle = aN.New()
+		}
+		ConvergeAsync(algOracle, oracleGraph, new(sync.WaitGroup))
+		if aOF, ok := any(algOracle).(AlgorithmOnFinish[V, E, M, N]); ok {
 			aOF.OnFinish(oracleGraph, oracleGraph, maxAtEvent)
 		}
 		msgSend := uint64(0)
@@ -121,12 +125,12 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 				aOF.OnFinish(g, g, maxAtEvent)
 			}
 
-			aOOC.OnOracleCompare(g, oracleGraph)
-
 			// Has to be here, before we reset properties.
 			if g.Options.CheckCorrectness {
 				OracleCheckCorrectness(alg, g, oracleGraph)
 			}
+
+			aOOC.OnOracleCompare(g, oracleGraph)
 
 			if finishOriginal {
 				g.NodeForEachVertex(func(i, v uint32, vertex *Vertex[V, E], prop *V) {
