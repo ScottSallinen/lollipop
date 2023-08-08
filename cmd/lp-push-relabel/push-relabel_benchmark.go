@@ -15,7 +15,6 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/b"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/j"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
 )
 
@@ -157,7 +156,6 @@ func BenchmarkOne() {
 	results = append(results, runBenchmark(b.RunMsgH, options, "MsgH", benchmarkOneTestCases))
 	results = append(results, runBenchmark(h.Run, options, h.Name, benchmarkOneTestCases))
 	results = append(results, runBenchmark(i.Run, options, i.Name, benchmarkOneTestCases))
-	results = append(results, runBenchmark(j.Run, options, j.Name, benchmarkOneTestCases))
 
 	originalGre := GlobalRelabelingEnabled
 	GlobalRelabelingEnabled = true
