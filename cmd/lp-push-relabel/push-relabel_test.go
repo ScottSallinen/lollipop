@@ -88,27 +88,6 @@ func TestMain(m *testing.M) {
 // 	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
 // }
 
-// func TestMsgAAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, c.RunMsgA, "MessagePassingArray", options)
-// }
-
-// func TestDAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, d.Run, d.Name, options)
-// }
-
-// func TestDIncremental(t *testing.T) {
-// 	options := baseOptions
-// 	options.Dynamic = true
-// 	RunTestGraphs(t, d.Run, d.Name, options)
-// }
-
-// func TestEAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, e.Run, e.Name, options)
-// }
-
 // func TestFAsyncStatic(t *testing.T) {
 // 	options := baseOptions
 // 	RunTestGraphs(t, f.Run, f.Name, options)
@@ -139,43 +118,6 @@ func TestMain(m *testing.M) {
 // 	options := baseOptions
 // 	options.Dynamic = true
 // 	RunTestGraphs(t, i.Run, i.Name, options)
-// }
-
-// func TestJAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, j.Run, j.Name, options)
-// }
-
-// func TestJIncremental(t *testing.T) {
-// 	options := baseOptions
-// 	options.Dynamic = true
-// 	RunTestGraphs(t, j.Run, j.Name, options)
-// }
-
-// func TestKAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	GlobalRelabelingEnabled = true
-// 	RunTestGraphs(t, k.Run, k.Name, options)
-// }
-
-// func TestKIncremental(t *testing.T) {
-// 	options := baseOptions
-// 	options.Dynamic = true
-// 	GlobalRelabelingEnabled = true
-// 	RunTestGraphs(t, k.Run, k.Name, options)
-// }
-
-// func TestLAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	GlobalRelabelingEnabled = true
-// 	RunTestGraphs(t, l.Run, l.Name, options)
-// }
-
-// func TestLIncremental(t *testing.T) {
-// 	options := baseOptions
-// 	options.Dynamic = true
-// 	GlobalRelabelingEnabled = true
-// 	RunTestGraphs(t, l.Run, l.Name, options)
 // }
 
 func TestMAsyncStatic(t *testing.T) {
