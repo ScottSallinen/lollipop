@@ -23,10 +23,6 @@ var (
 	TsFileName = ""
 )
 
-const (
-	TsWriteEveryUpdate = false // Writes the timeseries file every single time it updates (instead of just at the end).
-)
-
 func TimeSeriesReset() {
 	TsDB = TsDB[:0]
 	TsFileName = "results/push-relabel-k-timeseries-" + time.Now().Format("2006-01-02 15h04m05s") + ".csv"
@@ -55,6 +51,9 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 	}
 
 	for _, entry := range TsDB {
+		if entry.CurrentMaxFlow < 0 {
+			continue
+		}
 		line := entry.Name.Format("2006-01-02") + "," + strconv.FormatInt(int64(entry.CurrentMaxFlow), 10) + "," +
 			strconv.FormatUint(entry.VertexCount, 10) + "," + strconv.FormatUint(entry.EdgeCount, 10) + "," +
 			strconv.FormatInt(entry.Latency.Milliseconds(), 10) + "," +

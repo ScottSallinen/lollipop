@@ -12,19 +12,30 @@ import (
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
-var CheckStability = false
-var VertexFlowDB struct {
-	Dynamic []map[graph.RawType]int64
-	Static  []map[graph.RawType]int64
+type VertexFlowEntry struct {
+	VerticesInFlow   int64
+	VerticesDiffFlow int64
+	VertexCount      int64
 }
 
-func (pr *PushRelabel) getFlowSnapshot(g *Graph, AtEventIndex uint64) map[graph.RawType]int64 {
+var CheckStability = false
+var VertexFlowDB struct {
+	Dynamic []VertexFlowEntry
+	Static  []VertexFlowEntry
+
+	LastSnapshotDynamic map[graph.RawType]int64
+	LastSnapshotStatic  map[graph.RawType]int64
+}
+
+func (pr *PushRelabel) getFlowSnapshot(g *Graph, AtEventIndex uint64, lastSnapshot map[graph.RawType]int64) (snapshot map[graph.RawType]int64, entry VertexFlowEntry) {
 	flowSnapshot := make(map[graph.RawType]int64)
 	sourceId := pr.VertexCount.GetSourceId()
 
+	vertexCount := int64(0)
 	g.NodeForEachVertex(func(o, internalId uint32, v *Vertex) {
 		vertexStructure := g.NodeVertexStructure(internalId)
 		if vertexStructure.CreateEvent <= AtEventIndex {
+			vertexCount += 1
 			NbrIds := make(map[uint32]struct{})
 			ResCapMap, ResCapSum := make(map[uint32]int64), int64(0)
 			EdgeCapMap, EdgeCapSum := make(map[uint32]int64), int64(0)
@@ -73,12 +84,30 @@ func (pr *PushRelabel) getFlowSnapshot(g *Graph, AtEventIndex uint64) map[graph.
 				Flow = OutFlowSum
 			}
 
+			AssertC(Flow >= 0)
 			if Flow > 0 {
 				flowSnapshot[vertexStructure.RawId] = Flow
 			}
 		}
 	})
-	return flowSnapshot
+
+	for v, f := range lastSnapshot {
+		AssertC(f > 0)
+		if flowSnapshot[v] != f {
+			entry.VerticesDiffFlow += 1
+		}
+	}
+
+	for v, f := range flowSnapshot {
+		AssertC(f > 0)
+		if _, ok := flowSnapshot[v]; !ok {
+			entry.VerticesDiffFlow += 1
+		}
+	}
+
+	entry.VerticesInFlow = int64(len(flowSnapshot))
+	entry.VertexCount = vertexCount
+	return flowSnapshot, entry
 }
 
 // Note OnOracleCompare doesn't make much sense for this algorithm, since it is approximate.
@@ -93,21 +122,21 @@ func (pr *PushRelabel) OnOracleCompare(g *Graph, oracle *Graph) {
 		AtEventIndex = utils.Max(AtEventIndex, g.GraphThreads[t].AtEvent)
 	}
 
-	var flowSnapshotDynamic, flowSnapshotStatic map[graph.RawType]int64
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		flowSnapshotDynamic = pr.getFlowSnapshot(g, AtEventIndex)
+		flowSnapshot, entry := pr.getFlowSnapshot(g, AtEventIndex, VertexFlowDB.LastSnapshotDynamic)
+		VertexFlowDB.LastSnapshotDynamic = flowSnapshot
+		VertexFlowDB.Dynamic = append(VertexFlowDB.Dynamic, entry)
 		wg.Done()
 	}()
 	go func() {
-		flowSnapshotStatic = pr.getFlowSnapshot(oracle, AtEventIndex)
+		flowSnapshot, entry := pr.getFlowSnapshot(oracle, AtEventIndex, VertexFlowDB.LastSnapshotStatic)
+		VertexFlowDB.LastSnapshotStatic = flowSnapshot
+		VertexFlowDB.Static = append(VertexFlowDB.Static, entry)
 		wg.Done()
 	}()
 	wg.Wait()
-
-	VertexFlowDB.Dynamic = append(VertexFlowDB.Dynamic, flowSnapshotDynamic)
-	VertexFlowDB.Static = append(VertexFlowDB.Static, flowSnapshotStatic)
 	runtime.GC()
 }
 
@@ -119,7 +148,7 @@ func PrintVertexFlowDB(fileOut bool, stdOut bool) {
 	}
 
 	header := "Date,MaxFlow,VertexCount,EdgeCount,Latency,CurrentRuntime,AlgTimeSinceLast"
-	header += "VertexNumInFlow,VertexPercentDiff"
+	header += ",VertexNumInFlowDynamic,VertexFlowSameDynamic,VertexNumInFlowStatic,VertexFlowSameStatic"
 	if stdOut {
 		println(header)
 	}
@@ -131,13 +160,18 @@ func PrintVertexFlowDB(fileOut bool, stdOut bool) {
 	}
 
 	for i, entry := range TsDB {
+		RealVertexCount := VertexFlowDB.Dynamic[i].VertexCount // The vertex count computed above (checked CreateEvent)
+		AssertC(VertexFlowDB.Dynamic[i].VertexCount == VertexFlowDB.Static[i].VertexCount)
+
 		line := entry.Name.Format("2006-01-02") + "," + strconv.FormatInt(int64(entry.CurrentMaxFlow), 10) + "," +
-			strconv.FormatUint(entry.VertexCount, 10) + "," + strconv.FormatUint(entry.EdgeCount, 10) + "," +
+			strconv.FormatInt(RealVertexCount, 10) + "," + strconv.FormatUint(entry.EdgeCount, 10) + "," +
 			strconv.FormatInt(entry.Latency.Milliseconds(), 10) + "," +
 			strconv.FormatInt(entry.CurrentRuntime.Milliseconds(), 10) + "," + strconv.FormatInt(entry.AlgTimeSinceLast.Milliseconds(), 10)
-		// VertexFlowDynamic := &VertexFlowDB.Dynamic[i]
-		// VertexFlowStatic := &VertexFlowDB.Dynamic[i]
-		// line += "," + VertexFlowDB[i].Dynamic
+
+		line += "," + strconv.FormatInt(VertexFlowDB.Dynamic[i].VerticesInFlow, 10)
+		line += "," + strconv.FormatInt(RealVertexCount-VertexFlowDB.Dynamic[i].VerticesDiffFlow, 10)
+		line += "," + strconv.FormatInt(VertexFlowDB.Static[i].VerticesInFlow, 10)
+		line += "," + strconv.FormatInt(RealVertexCount-VertexFlowDB.Static[i].VerticesDiffFlow, 10)
 
 		if stdOut {
 			println(line)
