@@ -37,6 +37,7 @@ type GraphOptions struct {
 	TimeSeriesInterval    uint64  // Interval (seconds) for how often to log timeseries.
 	TargetRate            float64 // Target rate of events (in events per second). 0 is unbounded.
 	InsertDeleteOnExpire  uint64  // If non-zero, will insert deletion of edges that were added before, after passing the expiration duration. (Create a sliding window graph). Needs (Get/Set)Timestamp defined.
+	SkipDelProb           float64 // The probability of not adding a corresponding delete event when an edge expires
 	AsyncContinuationTime int64   // If non-zero, will continue the algorithm for AsyncContinuationTime milliseconds before collecting a state (logging a timeseries).
 	TimestampPos          int32   // Logical (not zero-indexed) position after [src, dst]. Value 0 means no timestamp in event file or not desired.
 	WeightPos             int32   // Logical (not zero-indexed) position after [src, dst]. Value 0 means no weight in event file or not desired.
@@ -56,6 +57,7 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 	dEdgePtr := flag.Int("de", 0, "Log timeseries data, by edge count change. Provide the delta edges between attempted queries. (Sets dynamic.)")
 	dTimePtr := flag.Int("dt", 0, "Log timeseries data, by querying against the given timestamp interval in days. 0 is disabled. (Sets dynamic.)")
 	dRatePtr := flag.Float64("dr", 0, "Set a target dynamic rate, with given rate in Edge Per Second. 0 is unbounded. (Sets dynamic.)")
+	skipDelProbPtr := flag.Float64("sdp", 0, "Set the probability of skipping the delete events for expired edges.")
 	timePosPtr := flag.Int("pt", 0, "Logical position of timestamp after [src, dst]. \nExample: [src, dst, timestamp], use 1. \nExample: [src, dst, weight, timestamp], use 2. \nValue 0 means no timestamp in events, or not desired.")
 	weightPosPtr := flag.Int("pw", 0, "Logical position of weight after [src, dst]. \nExample: [src, dst, weight, timestamp], use 1. \nValue 0 means no weight in events, or not desired.")
 	windowPtr := flag.Int("w", 0, "Inject to the stream: deletion of edges that are w days behind the current timestamp (ensure pt is set).")
@@ -104,6 +106,11 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 		tsInterval = uint64(*dEdgePtr)
 	}
 	deleteOnExpire := (24 * 60 * 60) * uint64(*windowPtr)
+	if *skipDelProbPtr != 0 {
+		if *skipDelProbPtr < 0 || *skipDelProbPtr >= 1 {
+			log.Panic().Msg("sdp must be in the range [0, 1)")
+		}
+	}
 
 	if *pprofPtr != "" {
 		go func() {
@@ -150,6 +157,7 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 		TimeseriesEdgeCount:   (*dEdgePtr > 0),
 		TimeSeriesInterval:    tsInterval,
 		InsertDeleteOnExpire:  deleteOnExpire,
+		SkipDelProb:           *skipDelProbPtr,
 		AsyncContinuationTime: int64(*refinePtr),
 		OracleCompare:         *oraclePtr,
 		SyncPreviousOnly:      *syncPrevPtr,
