@@ -23,7 +23,7 @@ type VertexType uint8
 
 const (
 	EmptyValue = math.MaxUint32
-	MaxHeight  = math.MaxUint32
+	MaxHeight  = math.MaxInt32 / 2
 
 	Normal VertexType = 0
 	Source VertexType = 1
