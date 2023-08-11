@@ -520,7 +520,7 @@ func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart i
 				}
 				sent += g.EnsureSend(g.ActiveNotification(sidx, notification, mailbox, tidx))
 
-				if nbr.Pos > 0 {
+				if nbr.Pos >= 0 {
 					if !pr.SkipRestoreHeightInvar.Load() {
 						sent += pr.restoreHeightInvariant(g, src, nbr, sidx)
 					}

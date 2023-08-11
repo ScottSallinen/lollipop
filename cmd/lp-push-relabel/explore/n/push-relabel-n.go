@@ -379,10 +379,10 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 	nbr.HeightPos, nbr.HeightNeg = n.Note.HeightPos, n.Note.HeightNeg
 
 	restoreSent := pr.restoreHeightInvariantWithPush(g, v, nbr, n.Target)
-		if restoreSent > 0 {
+	if restoreSent > 0 {
 		sent += restoreSent
-			sendHeight = false // already told the neighbour our height
-		}
+		sendHeight = false // already told the neighbour our height
+	}
 
 	if sendHeight && !v.Property.HeightPosChanged && !v.Property.HeightNegChanged { // Tell the neighbour our height
 		mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
@@ -430,14 +430,14 @@ func (pr *PushRelabel) restoreHeightInvariant(g *Graph, v *Vertex, nbr *Neighbou
 		}
 	}
 	if pr.HandleDeletes && nbr.ResCapIn > 0 && v.Property.HeightNeg > nbr.HeightNeg+1 {
-			if v.Property.Type == Sink {
-				// Sink has sufficient flow to saturate all outgoing edges
-				// AssertC(!canPush) // TODO: Maybe we should let sink generate negative excess at start
-			} else {
-				AssertC(v.Property.Type != Source)
-				updateHeightNeg(v, nbr.HeightNeg+1)
-			}
+		if v.Property.Type == Sink {
+			// Sink has sufficient flow to saturate all outgoing edges
+			// AssertC(!canPush) // TODO: Maybe we should let sink generate negative excess at start
+		} else {
+			AssertC(v.Property.Type != Source)
+			updateHeightNeg(v, nbr.HeightNeg+1)
 		}
+	}
 	return sent
 }
 
