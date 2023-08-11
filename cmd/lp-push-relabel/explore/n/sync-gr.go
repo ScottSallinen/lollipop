@@ -41,7 +41,12 @@ func (pr *PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
 		pr.CurrentPhase = RELABEL
 		pr.SkipRestoreHeightInvar.Store(false)
 		resetHeights(g)
-		sent += sendMsgToSpecialHeightVertices(g, pr.VertexCount.GetMaxVertexCount())
+		if !pr.HandleDeletes {
+			sent += pr.sendMsgToSpecialHeightVerticesNoDeletes(g, uint32(pr.VertexCount.GetMaxVertexCount()))
+		} else {
+			sent += pr.sendMsgToSpecialHeightVerticesWithDeletes(g, uint32(pr.VertexCount.GetMaxVertexCount()))
+		}
+
 		pr.t2 = time.Now()
 
 	case RELABEL:
@@ -64,30 +69,63 @@ func resetHeights(g *Graph) {
 	g.NodeParallelFor(func(ordinalStart, threadOffset uint32, gt *graph.GraphThread[VertexProp, EdgeProp, Mail, Note]) (accumulated int) {
 		for i := 0; i < len(gt.Vertices); i++ {
 			v := &gt.Vertices[i].Property
-			v.Height = MaxHeight
+			v.HeightPos, v.HeightNeg = MaxHeight, MaxHeight
 			for j := range v.Nbrs {
-				v.Nbrs[j].Height = MaxHeight
+				v.Nbrs[j].HeightPos, v.Nbrs[j].HeightNeg = MaxHeight, MaxHeight
 			}
 		}
 		return 0
 	})
 }
 
-func sendMsgToSpecialHeightVertices(g *Graph, vertexCount int64) (sent uint64) {
+func (pr *PushRelabel) sendMsgToSpecialHeightVerticesNoDeletes(g *Graph, vertexCount uint32) (sent uint64) {
 	_, source := g.NodeVertexFromRaw(SourceRawId)
 	sourceInternalId, _ := g.NodeVertexFromRaw(SourceRawId)
-	source.Property.Height = vertexCount
-	source.Property.HeightChanged = true
+	source.Property.HeightPos = vertexCount
+	source.Property.HeightPosChanged = true
 	sMailbox, sTidx := g.NodeVertexMailbox(sourceInternalId)
 	sent += g.EnsureSend(g.ActiveNotification(sourceInternalId, graph.Notification[Note]{Target: sourceInternalId, Note: Note{PosType: EmptyValue}}, sMailbox, sTidx))
 
 	sinkInternalId, _ := g.NodeVertexFromRaw(SinkRawId)
 	_, sink := g.NodeVertexFromRaw(SinkRawId)
-	sink.Property.Height = 0
-	sink.Property.HeightChanged = true
+	sink.Property.HeightPos = 0
+	sink.Property.HeightPosChanged = true
 	tMailbox, tTidx := g.NodeVertexMailbox(sinkInternalId)
 	sent += g.EnsureSend(g.ActiveNotification(sinkInternalId, graph.Notification[Note]{Target: sinkInternalId, Note: Note{PosType: EmptyValue}}, tMailbox, tTidx))
 	return sent
+}
+
+func (pr *PushRelabel) sendMsgToSpecialHeightVerticesWithDeletes(g *Graph, vertexCount uint32) (sent uint64) {
+	sentAtomic := atomic.Uint64{}
+	specialHeightVertices := g.NodeParallelFor(func(ordinalStart, threadOffset uint32, gt *graph.GraphThread[VertexProp, EdgeProp, Mail, Note]) (accumulated int) {
+		for i := 0; i < len(gt.Vertices); i++ {
+			specialHeight := false
+			v := &gt.Vertices[i].Property
+			if v.Type == Source {
+				v.HeightPos, v.HeightNeg = vertexCount, 0
+				v.HeightPosChanged, v.HeightNegChanged = true, true
+				specialHeight = true
+			} else if v.Type == Sink {
+				v.HeightPos, v.HeightNeg = 0, vertexCount
+				v.HeightPosChanged, v.HeightNegChanged = true, true
+				specialHeight = true
+			} else if v.Excess < 0 {
+				v.HeightPos = 0
+				v.HeightPosChanged = true
+				specialHeight = true
+			}
+
+			if specialHeight {
+				noti := graph.Notification[Note]{Target: threadOffset | uint32(i), Note: Note{PosType: EmptyValue}}
+				mailbox, tidx := g.NodeVertexMailbox(noti.Target)
+				sentAtomic.Add(g.EnsureSend(g.ActiveNotification(noti.Target, noti, mailbox, tidx)))
+				accumulated++
+			}
+		}
+		return accumulated
+	})
+	log.Info().Msg(fmt.Sprintf("Number of vertices with special heights: %v", specialHeightVertices))
+	return sentAtomic.Load()
 }
 
 func sendMsgToActiveVertices(g *Graph) (sent uint64) {
@@ -95,11 +133,10 @@ func sendMsgToActiveVertices(g *Graph) (sent uint64) {
 	activeVertices := g.NodeParallelFor(func(ordinalStart, threadOffset uint32, gt *graph.GraphThread[VertexProp, EdgeProp, Mail, Note]) (accumulated int) {
 		for i := 0; i < len(gt.Vertices); i++ {
 			v := &gt.Vertices[i].Property
-			if v.Excess > 0 {
+			if v.Excess != 0 {
 				id := threadOffset | uint32(i)
 				mailbox, tidx := g.NodeVertexMailbox(id)
 				sentAtomic.Add(g.EnsureSend(g.ActiveNotification(id, graph.Notification[Note]{Target: id, Note: Note{PosType: EmptyValue}}, mailbox, tidx)))
-
 				accumulated++
 			}
 		}

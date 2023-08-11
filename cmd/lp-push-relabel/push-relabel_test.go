@@ -12,6 +12,7 @@ import (
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/n"
 )
 
 type TestGraph struct {
@@ -129,6 +130,17 @@ func TestMIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
 	RunTestGraphs(t, m.Run, m.Name, options)
+}
+
+func TestNAsyncStatic(t *testing.T) {
+	options := baseOptions
+	RunTestGraphs(t, n.Run, n.Name, options)
+}
+
+func TestNIncremental(t *testing.T) {
+	options := baseOptions
+	options.Dynamic = true
+	RunTestGraphs(t, n.Run, n.Name, options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF constraints.Integer](

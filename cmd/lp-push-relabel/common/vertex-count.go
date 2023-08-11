@@ -20,14 +20,23 @@ func (vc *VertexCount) Reset(initialEstimatedCount int64) {
 	vc.alpha = 1.1
 }
 
-func (vc *VertexCount) NewVertex() (source uint32) {
+func (vc *VertexCount) NewVertexN() (estimateIncreased bool) {
 	newCount := atomic.AddInt64(&vc.realCount, 1)
 	estimatedCount := atomic.LoadInt64(&vc.estimatedCount)
 	if newCount > estimatedCount {
 		newEstimatedCount := int64(float32(newCount)*vc.alpha) + 1
 		if atomic.CompareAndSwapInt64(&vc.estimatedCount, estimatedCount, newEstimatedCount) {
-			return atomic.LoadUint32(&vc.source)
+			return true
 		}
+	}
+	return false
+}
+
+// Depreciated
+func (vc *VertexCount) NewVertex() (source uint32) {
+	estimateIncreased := vc.NewVertexN()
+	if estimateIncreased {
+		return atomic.LoadUint32(&vc.source)
 	}
 	return EmptyValue
 }
