@@ -482,29 +482,36 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 			}
 		}
 	} else if v.Property.Excess < 0 {
-		panic("Excess shouldn't be <0 if there's no deletes. Integer overflow?")
-		AssertC(v.Property.Type == Normal)
-		if v.Property.HeightNeg < MaxHeight {
-			// Lifting HeightNeg is disabled to ensure the algorithm terminates
-			for i := range v.Property.Nbrs {
-				nbr := &v.Property.Nbrs[i]
-				if nbr.ResCapIn > 0 && v.Property.HeightNeg > nbr.HeightNeg {
-					amount := -utils.Min(-v.Property.Excess, nbr.ResCapIn)
-					AssertC(amount < 0)
-					updateFlow(v, nbr, amount)
-					sent += pr.restoreHeightInvariant(g, v, nbr, myId)
-
-					noti := graph.Notification[Note]{
-						Target: nbr.Didx,
-						Note:   Note{HeightPos: v.Property.HeightPos, HeightNeg: v.Property.HeightNeg, Flow: amount, SrcPos: nbr.Pos},
-					}
-					mailbox, tidx := g.NodeVertexMailbox(noti.Target)
-					sent += g.EnsureSend(g.ActiveNotification(myId, noti, mailbox, tidx))
-
-					if v.Property.Excess == 0 {
-						break
-					}
+		Assert(pr.HandleDeletes, "Excess shouldn't be <0 if there's no deletes. Integer overflow?")
+		if v.Property.Type == Normal {
+			lifted := false
+			for v.Property.Excess != 0 {
+				dischargeSent, nextHeightNeg, nextPushTarget := pr.dischargeNegOnce(g, v, myId)
+				sent += dischargeSent
+				if v.Property.Excess == 0 {
+					break
 				}
+				// lift
+				if nextHeightNeg >= MaxHeight {
+					break
+				}
+				updateHeightNeg(v, nextHeightNeg)
+				lifted = true
+
+				// push
+				nbr := &v.Property.Nbrs[nextPushTarget]
+				amount := -utils.Min(-v.Property.Excess, nbr.ResCapIn)
+				AssertC(amount < 0)
+				updateFlow(v, nbr, amount)
+				sent += pr.restoreHeightInvariant(g, v, nbr, myId)
+
+				noti := graph.Notification[Note]{Target: nbr.Didx, Note: Note{HeightPos: v.Property.HeightPos, HeightNeg: v.Property.HeightNeg, Flow: amount, SrcPos: nbr.Pos}}
+				mailbox, tidx := g.NodeVertexMailbox(noti.Target)
+				sent += g.EnsureSend(g.ActiveNotification(myId, noti, mailbox, tidx))
+			}
+
+			if GlobalRelabelingEnabled && lifted {
+				sent += pr.GlobalRelabeling.OnLift(g, myId)
 			}
 		}
 	}
@@ -543,13 +550,45 @@ func (pr *PushRelabel) dischargePosOnce(g *Graph, v *Vertex, myId uint32) (sent 
 	return sent, nextHeightPos, nextPush
 }
 
-func (pr *PushRelabel) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (sent uint64) {
-	// Make sure a vertex with negative excess can pull positive flow in a isolated component without s/t
-	if v.Property.Excess < 0 && v.Property.HeightPos > 0 {
-		AssertC(pr.HandleDeletes)
-		v.Property.HeightPos = 0
-		v.Property.HeightPosChanged = true
+func (pr *PushRelabel) dischargeNegOnce(g *Graph, v *Vertex, myId uint32) (sent uint64, nextHeightNeg uint32, nextPushTarget int) {
+	nextHeightNeg = uint32(MaxHeight)
+	nextPushTarget = -1
+	for i := range v.Property.Nbrs {
+		nbr := &v.Property.Nbrs[i]
+		if nbr.ResCapIn > 0 {
+			if !(v.Property.HeightNeg > nbr.HeightNeg) {
+				if nbr.HeightNeg+1 < nextHeightNeg {
+					nextHeightNeg = nbr.HeightNeg + 1
+					nextPushTarget = i
+				}
+			} else {
+				amount := -utils.Min(-v.Property.Excess, nbr.ResCapIn)
+				AssertC(amount < 0)
+				updateFlow(v, nbr, amount)
+				sent += pr.restoreHeightInvariant(g, v, nbr, myId)
+
+				mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
+				sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
+					Target: nbr.Didx,
+					Note:   Note{HeightPos: v.Property.HeightPos, HeightNeg: v.Property.HeightNeg, Flow: amount, SrcPos: nbr.Pos},
+				}, mailbox, tidx))
+
+				if v.Property.Excess == 0 {
+					return
+				}
+			}
+		}
 	}
+	return sent, nextHeightNeg, nextPushTarget
+}
+
+func (pr *PushRelabel) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (sent uint64) {
+	// // Make sure a vertex with negative excess can pull positive flow in a isolated component without s/t
+	// if v.Property.Excess < 0 && v.Property.HeightPos > 0 && v.Property.Type == Normal {
+	// 	AssertC(pr.HandleDeletes)
+	// 	v.Property.HeightPos = 0
+	// 	v.Property.HeightPosChanged = true
+	// }
 
 	// discharge
 	if !pr.SkipPush.Load() {
