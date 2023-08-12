@@ -350,33 +350,32 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		pr.MsgCounter.IncrementMsgCount(tidx, n.Note.Flow, false)
 		nbr = &v.Property.Nbrs[n.Note.SrcPos]
 
-		// handleFlow
-		if n.Note.Flow < 0 {
-			AssertC(!pr.SkipPush.Load())
-			// retract request
-			amount := utils.Max(n.Note.Flow, -nbr.ResCapOut)
-			if amount < 0 {
-				updateFlow(v, nbr, -amount)
-
-				mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
-				sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
-					Target: nbr.Didx,
-					Note:   Note{HeightPos: v.Property.HeightPos, HeightNeg: v.Property.HeightNeg, Flow: -amount, SrcPos: nbr.Pos},
-				}, mailbox, tidx))
-			}
-			// TODO: fix
-			panic(2)
-		} else if n.Note.Flow > 0 {
-			// additional flow
-			oldResCapOut := nbr.ResCapOut
+		// handle positive/negative flow
+		if n.Note.Flow != 0 {
+			AssertC(n.Note.Flow > 0 || pr.HandleDeletes)
+			oldResCapIn, oldResCapOut := nbr.ResCapIn, nbr.ResCapOut
 			updateFlow(v, nbr, -n.Note.Flow)
-			if pr.HandleDeletes {
-				sendHeight = sendHeight || (oldResCapOut <= 0 && nbr.ResCapOut > 0)
+			if pr.HandleDeletes && !sendHeight {
+				sendHeight = (oldResCapIn <= 0 && nbr.ResCapIn > 0) || (oldResCapOut <= 0 && nbr.ResCapOut > 0)
 			}
 		}
 	}
 
 	nbr.HeightPos, nbr.HeightNeg = n.Note.HeightPos, n.Note.HeightNeg
+
+	if nbr.ResCapIn < 0 {
+		// The neighbour needs help with their c_f
+		AssertC(pr.HandleDeletes)
+		amount := -nbr.ResCapIn
+		updateFlow(v, nbr, amount)
+		noti := graph.Notification[Note]{
+			Target: nbr.Didx,
+			Note:   Note{HeightPos: v.Property.HeightPos, HeightNeg: v.Property.HeightNeg, Flow: amount, SrcPos: nbr.Pos},
+		}
+		mailbox, tidx := g.NodeVertexMailbox(noti.Target)
+		sent += g.EnsureSend(g.ActiveNotification(n.Target, noti, mailbox, tidx))
+		sendHeight = false // already told the neighbour our height
+	}
 
 	restoreSent := pr.restoreHeightInvariantWithPush(g, v, nbr, n.Target)
 	if restoreSent > 0 {
@@ -676,11 +675,38 @@ func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart i
 }
 
 func (pr *PushRelabel) OnEdgeDel(g *Graph, src *Vertex, sidx uint32, deletedEdges []Edge, m Mail) (sent uint64) {
+	AssertC(pr.HandleDeletes)
 	if src.Property.UnknownPosCount == math.MaxUint32 {
 		src.Property.UnknownPosCount = 0
 		sent += pr.Init(g, src, sidx)
 	} else {
-		panic(2)
+		for _, e := range deletedEdges {
+			if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == pr.VertexCount.GetSourceId() || src.Property.Type == Sink {
+				continue
+			}
+
+			if src.Property.Type == Source {
+				src.Property.Excess -= int64(e.Property.Weight)
+				pr.SourceSupply -= int64(e.Property.Weight)
+			}
+
+			pos, exist := src.Property.NbrMap[e.Didx]
+			AssertC(exist && pos >= 0)
+			nbr := &src.Property.Nbrs[pos]
+			nbr.ResCapOut -= int64(e.Property.Weight)
+
+			noti := graph.Notification[Note]{
+				Target: nbr.Didx,
+				Note:   Note{HeightPos: src.Property.HeightPos, HeightNeg: src.Property.HeightNeg, Flow: -int64(e.Property.Weight)},
+			}
+			if nbr.Pos == -1 {
+				noti.Note.SrcPos, noti.Note.PosType = int32(sidx), UpdateInCapId
+			} else {
+				noti.Note.SrcPos, noti.Note.PosType = nbr.Pos, UpdateInCapPos
+			}
+			mailbox, tidx := g.NodeVertexMailbox(noti.Target)
+			sent += g.EnsureSend(g.ActiveNotification(sidx, noti, mailbox, tidx))
+		}
 	}
 
 	mailbox, _ := g.NodeVertexMailbox(sidx)
@@ -694,9 +720,11 @@ func (pr *PushRelabel) OnCheckCorrectness(g *Graph) {
 	sourceInternalId, source := g.NodeVertexFromRaw(SourceRawId)
 	sinkInternalId, sink := g.NodeVertexFromRaw(SinkRawId)
 	if source == nil || sink == nil {
-		log.Debug().Msg("Skipping OnCheckCorrectness due to missing source or sink")
+		log.Warn().Msg("Skipping OnCheckCorrectness due to missing source or sink")
 		return
 	}
+
+	log.Info().Msg("Sink excess is " + utils.V(sink.Property.Excess))
 
 	log.Info().Msg("Ensuring the vertex type is correct")
 	AssertC(source.Property.Type == Source)
@@ -741,12 +769,14 @@ func (pr *PushRelabel) OnCheckCorrectness(g *Graph) {
 		}
 	})
 
-	log.Info().Msg("Checking ResCapIn are correct")
+	log.Info().Msg("Checking ResCapOut and ResCapIn are correct")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
 		for _, nbr := range v.Property.Nbrs {
 			targetVertex := g.NodeVertex(nbr.Didx)
 			realResCap := targetVertex.Property.Nbrs[nbr.Pos].ResCapOut
 			AssertC(nbr.ResCapIn == realResCap)
+			AssertC(nbr.ResCapIn >= 0)
+			AssertC(nbr.ResCapOut >= 0)
 		}
 	})
 
