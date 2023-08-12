@@ -67,6 +67,10 @@ func (pr *PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
 		return
 	case DRAIN_MSG:
 		sent += pr.startRelabel(g)
+		if sent > 0 {
+			break
+		}
+		fallthrough
 	case RELABEL:
 		sent += pr.resumeExecution(g)
 	}
