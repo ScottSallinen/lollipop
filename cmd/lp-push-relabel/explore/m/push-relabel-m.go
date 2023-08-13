@@ -363,7 +363,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 
 func (pr *PushRelabel) restoreHeightInvariant(g *Graph, v *Vertex, nbr *Neighbour, myId uint32) (sent uint64) {
 	if nbr.ResCapOut > 0 && v.Property.Height > nbr.Height+1 {
-		canPush := pr.SkipPush.Load()
+		canPush := !pr.SkipPush.Load()
 		if canPush && v.Property.Excess > 0 {
 			// Push
 			amount := utils.Min(v.Property.Excess, nbr.ResCapOut)
