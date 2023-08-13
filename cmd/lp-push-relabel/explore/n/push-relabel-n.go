@@ -80,6 +80,14 @@ const (
 	NewMaxVertexCount = 0b0111
 )
 
+func getNegativeExcessVertexHeight(vc *VertexCount) uint32 {
+	// A vertex should be given a valid height (<MaxHeight) so that it can pull positive
+	// flow in a isolated component with no s/t.
+	// Ideally, for a vertex with a negative excess, we would like to set its height to a
+	// value equals to the distance to t after the negative excess has been returned to t.
+	return uint32(vc.GetMaxVertexCount()) / 2
+}
+
 func (v *VertexProp) resetHeights(vc *VertexCount) (HeightPosChanged, HeightNegChanged bool) {
 	v.HeightPos, v.HeightNeg = MaxHeight, MaxHeight
 	if v.Type == Source {
@@ -89,7 +97,7 @@ func (v *VertexProp) resetHeights(vc *VertexCount) (HeightPosChanged, HeightNegC
 		v.HeightPos, v.HeightNeg = 0, uint32(vc.GetMaxVertexCount())
 		return true, true
 	} else if v.Excess < 0 {
-		v.HeightPos = 0
+		v.HeightPos = getNegativeExcessVertexHeight(vc)
 		return true, false
 	}
 	return false, false
@@ -550,12 +558,13 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 }
 
 func (pr *PushRelabel) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (sent uint64) {
-	// // Make sure a vertex with negative excess can pull positive flow in a isolated component without s/t
-	// if v.Property.Excess < 0 && v.Property.HeightPos > 0 && v.Property.Type == Normal {
-	// 	AssertC(pr.HandleDeletes)
-	// 	v.Property.HeightPos = 0
-	// 	v.Property.HeightPosChanged = true
-	// }
+	if v.Property.Excess < 0 && v.Property.Type == Normal {
+		AssertC(pr.HandleDeletes)
+		targetHeight := getNegativeExcessVertexHeight(&pr.VertexCount)
+		if v.Property.HeightPos > targetHeight {
+			v.Property.updateHeightPos(targetHeight)
+		}
+	}
 
 	// discharge
 	sent += pr.discharge(g, v, myId)
