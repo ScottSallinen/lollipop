@@ -89,25 +89,25 @@ func updateHeightNeg(v *Vertex, heightNeg uint32) {
 	v.Property.HeightNegChanged = true
 }
 
-func (pr *PushRelabel) updateResCapOut(v *Vertex, nbr *Neighbour, delta int64, sendHeightOut *bool) {
+func (pr *PushRelabel) updateResCapOut(v *Vertex, nbr *Neighbour, delta int64, sendHeightNeg *bool) {
 	oldResCapOut := nbr.ResCapOut
 	nbr.ResCapOut += delta
 	if pr.HandleDeletes && oldResCapOut <= 0 && nbr.ResCapOut > 0 {
-		*sendHeightOut = true
+		*sendHeightNeg = true
 	}
 }
 
-func (pr *PushRelabel) updateResCapIn(v *Vertex, nbr *Neighbour, delta int64, sendHeightIn *bool) {
+func (pr *PushRelabel) updateResCapIn(v *Vertex, nbr *Neighbour, delta int64, sendHeightPos *bool) {
 	oldResCapIn := nbr.ResCapIn
 	nbr.ResCapIn += delta
 	if oldResCapIn <= 0 && nbr.ResCapIn > 0 {
-		*sendHeightIn = true
+		*sendHeightPos = true
 	}
 }
 
-func (pr *PushRelabel) updateFlowSH(v *Vertex, nbr *Neighbour, amount int64, sendHeightOut *bool, sendHeightIn *bool) {
-	pr.updateResCapOut(v, nbr, -amount, sendHeightOut)
-	pr.updateResCapIn(v, nbr, amount, sendHeightIn)
+func (pr *PushRelabel) updateFlowSH(v *Vertex, nbr *Neighbour, amount int64, sendHeightPos *bool, sendHeightNeg *bool) {
+	pr.updateResCapOut(v, nbr, -amount, sendHeightNeg)
+	pr.updateResCapIn(v, nbr, amount, sendHeightPos)
 	v.Property.Excess -= amount
 }
 
@@ -130,7 +130,7 @@ func (*PushRelabel) New() (new *PushRelabel) {
 		},
 		func() uint64 { return uint64(new.VertexCount.GetMaxVertexCount()) },
 	)
-	// new.HandleDeletes = true
+	new.HandleDeletes = true
 	return new
 }
 
@@ -286,7 +286,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 
 	_, tidx := graph.InternalExpand(n.Target)
 	var nbr *Neighbour
-	sendHeight := false // Is their view of our height stale?
+	sendHeightPos, sendHeightNeg := false, false // Is their view of our height stale?
 
 	if n.Note.PosType&TypePosMask != 0 {
 		// Handle special messages
@@ -313,7 +313,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 					nbr.Pos = receiverPos
 					v.Property.UnknownPosCount--
 				}
-				pr.updateResCapIn(v, nbr, resCapOffset, &sendHeight)
+				pr.updateResCapIn(v, nbr, resCapOffset, &sendHeightPos)
 			}
 
 		case NbrPos:
@@ -328,13 +328,13 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 
 			case UpdateInCapPos:
 				nbr = &v.Property.Nbrs[n.Note.SrcPos]
-				pr.updateResCapIn(v, nbr, n.Note.Flow, &sendHeight)
+				pr.updateResCapIn(v, nbr, n.Note.Flow, &sendHeightPos)
 
 			case UpdateInCapId:
 				senderPos, exist := v.Property.NbrMap[uint32(n.Note.SrcPos)]
 				AssertC(exist)
 				nbr = &v.Property.Nbrs[senderPos]
-				pr.updateResCapIn(v, nbr, n.Note.Flow, &sendHeight)
+				pr.updateResCapIn(v, nbr, n.Note.Flow, &sendHeightPos)
 
 			case NewMaxVertexCount:
 				if v.Property.Type == Source {
@@ -370,7 +370,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		// handle positive/negative flow
 		if n.Note.Flow != 0 {
 			AssertC(n.Note.Flow > 0 || pr.HandleDeletes)
-			pr.updateFlowSH(v, nbr, -n.Note.Flow, &sendHeight, &sendHeight) // TODO
+			pr.updateFlowSH(v, nbr, -n.Note.Flow, &sendHeightPos, &sendHeightNeg) // TODO
 		}
 	}
 
@@ -380,24 +380,23 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		// The neighbour needs help with their c_f
 		AssertC(pr.HandleDeletes)
 		amount := -nbr.ResCapIn
-		pr.updateFlowSH(v, nbr, amount, &sendHeight, &sendHeight) // TODO
+		pr.updateFlowSH(v, nbr, amount, &sendHeightPos, &sendHeightNeg) // TODO
 		noti := graph.Notification[Note]{
 			Target: nbr.Didx,
 			Note:   Note{HeightPos: v.Property.HeightPos, HeightNeg: v.Property.HeightNeg, Flow: amount, SrcPos: nbr.Pos},
 		}
 		mailbox, tidx := g.NodeVertexMailbox(noti.Target)
 		sent += g.EnsureSend(g.ActiveNotification(n.Target, noti, mailbox, tidx))
-		sendHeight = false // already told the neighbour our height
+		sendHeightPos, sendHeightNeg = false, false // already told the neighbour our height
 	}
 
 	restoreSent := pr.restoreHeightInvariantWithPush(g, v, nbr, n.Target)
 	if restoreSent > 0 {
 		sent += restoreSent
-		sendHeight = false // already told the neighbour our height
+		sendHeightPos, sendHeightNeg = false, false // already told the neighbour our height
 	}
 
-	// TODO
-	if sendHeight && !v.Property.HeightPosChanged && !v.Property.HeightNegChanged { // Tell the neighbour our height
+	if (sendHeightPos && !v.Property.HeightPosChanged) || (sendHeightNeg && !v.Property.HeightNegChanged) { // Tell the neighbour our height
 		mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 		sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[Note]{
 			Target: nbr.Didx,
@@ -476,13 +475,10 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 				for v.Property.Excess != 0 {
 					dischargeSent, nextHeightPos, nextPush := pr.dischargePosOnce(g, v, myId)
 					sent += dischargeSent
-					if v.Property.Excess == 0 || cannotLift {
+					if v.Property.Excess == 0 || cannotLift || nextHeightPos >= MaxHeight {
 						break
 					}
 					// lift
-					if nextHeightPos >= MaxHeight {
-						break
-					}
 					updateHeightPos(v, nextHeightPos)
 					lifted = true
 
@@ -512,13 +508,10 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 			for v.Property.Excess != 0 {
 				dischargeSent, nextHeightNeg, nextPushTarget := pr.dischargeNegOnce(g, v, myId)
 				sent += dischargeSent
-				if v.Property.Excess == 0 || cannotLift {
+				if v.Property.Excess == 0 || cannotLift || nextHeightNeg >= MaxHeight {
 					break
 				}
 				// lift
-				if nextHeightNeg >= MaxHeight {
-					break
-				}
 				updateHeightNeg(v, nextHeightNeg)
 				lifted = true
 
@@ -621,7 +614,7 @@ func (pr *PushRelabel) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (se
 	posChanged, negChanged := v.Property.HeightPosChanged, v.Property.HeightNegChanged
 	if posChanged || negChanged {
 		for _, nbr := range v.Property.Nbrs {
-			if (nbr.ResCapIn > 0) || (pr.HandleDeletes && nbr.ResCapOut > 0) { // TODO
+			if (posChanged && nbr.ResCapIn > 0) || (negChanged && nbr.ResCapOut > 0) {
 				mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
 				sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 					Target: nbr.Didx,
@@ -629,8 +622,7 @@ func (pr *PushRelabel) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (se
 				}, mailbox, tidx))
 			}
 		}
-		v.Property.HeightPosChanged = false
-		v.Property.HeightNegChanged = false
+		v.Property.HeightPosChanged, v.Property.HeightNegChanged = false, false
 	}
 	return sent
 }
