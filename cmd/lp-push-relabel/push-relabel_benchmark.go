@@ -16,20 +16,14 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/h"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/i"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/n"
 )
-
-type benchmarkGraph struct {
-	Path         string
-	VertexCount  uint64
-	TimestampPos int32
-	WeightPos    int32
-}
 
 type benchmarkTestCase struct {
 	MaxFlow int64
 	Source  uint32
 	Sink    uint32
-	Graph   benchmarkGraph
+	Graph   TestGraph
 }
 
 type benchmarkResult struct {
@@ -38,20 +32,6 @@ type benchmarkResult struct {
 	latencies []int64
 	messages  []uint64
 }
-
-var (
-	HiveComments = benchmarkGraph{
-		Path:         "/home/luuo/hive-comments.txt",
-		VertexCount:  671295,
-		TimestampPos: 1,
-	}
-
-	Ethereum = benchmarkGraph{
-		Path:        "/home/luuo/eth-transfers-t200m.txt.p",
-		VertexCount: 5672202,
-		WeightPos:   1,
-	}
-)
 
 var (
 	benchmarkOneTestCases = []benchmarkTestCase{
@@ -68,15 +48,15 @@ var (
 	benchmarkDynamicCases = []benchmarkTestCase{
 		{98018, 5880, 38806, HiveComments},
 		{98018, 5880, 38806, HiveComments},
-		{98018, 5880, 38806, HiveComments},
-		{98018, 5880, 38806, HiveComments},
-		{98018, 5880, 38806, HiveComments},
+		// {98018, 5880, 38806, HiveComments},
+		// {98018, 5880, 38806, HiveComments},
+		// {98018, 5880, 38806, HiveComments},
 
 		{2299228, 492, 60, Ethereum},
 		{2299228, 492, 60, Ethereum},
-		{2299228, 492, 60, Ethereum},
-		{2299228, 492, 60, Ethereum},
-		{2299228, 492, 60, Ethereum},
+		// {2299228, 492, 60, Ethereum},
+		// {2299228, 492, 60, Ethereum},
+		// {2299228, 492, 60, Ethereum},
 	}
 	benchmarkCasesTimeseries = []benchmarkTestCase{
 		{98018, 5880, 38806, HiveComments},
@@ -144,7 +124,7 @@ func runBenchmark[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF cons
 
 func RunBenchmarks() {
 	utils.SetLevel(0)
-	BenchmarkLScalability()
+	BenchmarkMNDynamic()
 }
 
 // Static, Old
@@ -193,6 +173,19 @@ func BenchmarkLScalability() {
 		options.NumThreads = uint32(t)
 		results = append(results, runBenchmark(m.Run, options, m.Name+" with t="+strconv.Itoa(t)+" rate="+strconv.Itoa(int(options.TargetRate)), benchmarkCasesScalability))
 	}
+
+	printResults(results)
+}
+
+func BenchmarkMNDynamic() {
+	options := benchmarkBaseOptions
+	options.DebugLevel = 2
+	// options.Dynamic = true
+	options.NumThreads = 10
+
+	results := make([]benchmarkResult, 0)
+	// results = append(results, runBenchmark(m.Run, options, m.Name, benchmarkDynamicCases))
+	results = append(results, runBenchmark(n.Run, options, n.Name, benchmarkDynamicCases))
 
 	printResults(results)
 }
