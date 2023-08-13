@@ -14,6 +14,39 @@ import (
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
 )
 
+type TestGraph struct {
+	Path         string
+	TimestampPos int32
+	WeightPos    int32
+	VertexCount  uint64 // Optional
+}
+
+var (
+	SmallOne = TestGraph{
+		Path:        "../../data/small-weighted-1.txt",
+		VertexCount: 4,
+	}
+	SmallTwo = TestGraph{
+		Path:        "../../data/small-weighted-2.txt",
+		VertexCount: 3,
+	}
+	HiveCommentsSample = TestGraph{
+		Path:         "../../data/comment-graph-sample.txt",
+		TimestampPos: 1,
+		VertexCount:  17500,
+	}
+	HiveComments = TestGraph{
+		Path:         "/home/luuo/hive-comments.txt",
+		TimestampPos: 1,
+		VertexCount:  671295,
+	}
+	Ethereum = TestGraph{
+		Path:        "/home/luuo/eth-transfers-t200m.txt.p",
+		WeightPos:   1,
+		VertexCount: 5672202,
+	}
+)
+
 func main() {
 	if slices.Contains(os.Args, "-B") || slices.Contains(os.Args, "--B") {
 		RunBenchmarks()
