@@ -21,10 +21,9 @@ func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[Vert
 			AlgTimeSinceLast: tse.AlgTimeSinceLast,
 		}
 
-		sourceId, sinkId := pr.GlobalRelabeling.GetSourceAndSinkInternalIds()
-		source, sink := tse.GraphView.NodeVertexOrNil(sourceId), tse.GraphView.NodeVertexOrNil(sinkId)
-		if source != nil && sink != nil {
-			outEntry.CurrentMaxFlow = sink.Property.Excess
+		sourceId, sinkId := pr.SourceId.Load(), pr.SinkId.Load()
+		if sourceId != EmptyValue && sinkId != EmptyValue {
+			outEntry.CurrentMaxFlow = tse.GraphView.NodeVertex(sinkId).Property.Excess
 		}
 
 		tse.GraphView = nil

@@ -16,15 +16,24 @@ import (
 )
 
 type PushRelabel struct {
+	// Config
+	SourceRawId   graph.RawType
+	SinkRawId     graph.RawType
+	HandleDeletes bool
+
+	// Global Relabeling
+	GlobalRelabeling GlobalRelabeling
 	CurrentPhase     Phase
 	t0, t1, t2, t3   time.Time
 	BlockLift        atomic.Bool
 	BlockPush        atomic.Bool
-	VertexCount      VertexCount
-	GlobalRelabeling GlobalRelabeling
-	MsgCounter       ThreadMsgCounter[int64]
-	SourceSupply     int64
-	HandleDeletes    bool
+
+	VertexCount VertexCount
+	MsgCounter  ThreadMsgCounter[int64]
+
+	SourceId     atomic.Uint32
+	SinkId       atomic.Uint32
+	SourceSupply int64
 }
 
 type Neighbour struct {
@@ -46,7 +55,7 @@ type VertexProp struct {
 
 	Nbrs            []Neighbour
 	NbrMap          map[uint32]int32 // Id -> Pos
-	UnknownPosCount uint32           // shouldn't do anything if it's not 0, max means init
+	UnknownPosCount uint32           // shouldn't do anything if it's not 0, EmptyValue means init
 }
 
 type EdgeProp struct {
@@ -79,14 +88,29 @@ const (
 	NewHeightEpoch    = 0b1111
 )
 
-func updateHeightPos(v *Vertex, heightPos uint32) {
-	v.Property.HeightPos = heightPos
-	v.Property.HeightPosChanged = true
+func (v *VertexProp) resetHeights(vc *VertexCount) (HeightPosChanged, HeightNegChanged bool) {
+	v.HeightPos, v.HeightNeg = MaxHeight, MaxHeight
+	if v.Type == Source {
+		v.HeightPos, v.HeightNeg = uint32(vc.GetMaxVertexCount()), 0
+		return true, true
+	} else if v.Type == Sink {
+		v.HeightPos, v.HeightNeg = 0, uint32(vc.GetMaxVertexCount())
+		return true, true
+	} else if v.Excess < 0 {
+		v.HeightPos = 0
+		return true, false
+	}
+	return false, false
 }
 
-func updateHeightNeg(v *Vertex, heightNeg uint32) {
-	v.Property.HeightNeg = heightNeg
-	v.Property.HeightNegChanged = true
+func (v *VertexProp) updateHeightPos(heightPos uint32) {
+	v.HeightPos = heightPos
+	v.HeightPosChanged = true
+}
+
+func (v *VertexProp) updateHeightNeg(heightNeg uint32) {
+	v.HeightNeg = heightNeg
+	v.HeightNegChanged = true
 }
 
 func (pr *PushRelabel) updateResCapOut(v *Vertex, nbr *Neighbour, delta int64, sendHeightNeg *bool) {
@@ -117,8 +141,13 @@ func (pr *PushRelabel) updateFlow(v *Vertex, nbr *Neighbour, amount int64) {
 	v.Property.Excess -= amount
 }
 
-func (*PushRelabel) New() (new *PushRelabel) {
+func (old *PushRelabel) New() (new *PushRelabel) {
 	new = &PushRelabel{}
+
+	new.SourceRawId = old.SourceRawId
+	new.SinkRawId = old.SinkRawId
+	new.HandleDeletes = old.HandleDeletes
+
 	new.MsgCounter.Reset()
 	new.VertexCount.Reset(1000)
 	new.GlobalRelabeling.Reset(
@@ -130,7 +159,8 @@ func (*PushRelabel) New() (new *PushRelabel) {
 		},
 		func() uint64 { return uint64(new.VertexCount.GetMaxVertexCount()) },
 	)
-	new.HandleDeletes = true
+	new.SourceId.Store(EmptyValue)
+	new.SinkId.Store(EmptyValue)
 	return new
 }
 
@@ -149,7 +179,12 @@ func Run(options graph.GraphOptions) (maxFlow int64, g *Graph) {
 	TimeSeriesReset()
 
 	// Create Alg
-	alg := new(PushRelabel).New()
+	alg := new(PushRelabel)
+	alg.SourceRawId = SourceRawId
+	alg.SinkRawId = SinkRawId
+	alg.HandleDeletes = true
+
+	alg = alg.New()
 
 	// Create Graph
 	g = new(Graph)
@@ -176,20 +211,15 @@ func (pr *PushRelabel) InitAllNote(_ *Vertex, _ uint32, _ graph.RawType) (initia
 }
 
 func (pr *PushRelabel) BaseVertexMailbox(v *Vertex, internalId uint32, s *graph.VertexStructure) (m Mail) {
-	v.Property.HeightPos = uint32(InitialHeight)
-	v.Property.HeightNeg = uint32(InitialHeight)
-	if s.RawId == SourceRawId {
-		pr.GlobalRelabeling.RegisterSource(internalId)
+	if s.RawId == pr.SourceRawId {
 		v.Property.Type = Source
-		v.Property.HeightPos = uint32(pr.VertexCount.RegisterSource(internalId))
-		v.Property.HeightNeg = 0
-	} else if s.RawId == SinkRawId {
-		pr.GlobalRelabeling.RegisterSink(internalId)
+		pr.SourceId.Store(internalId)
+	} else if s.RawId == pr.SinkRawId {
 		v.Property.Type = Sink
-		v.Property.HeightNeg = uint32(pr.VertexCount.GetMaxVertexCount())
-		v.Property.HeightPos = 0
+		pr.SinkId.Store(internalId)
 	}
-	v.Property.UnknownPosCount = math.MaxUint32 // Make as uninitialized
+	v.Property.resetHeights(&pr.VertexCount)
+	v.Property.UnknownPosCount = EmptyValue // Make as uninitialized
 	return m
 }
 
@@ -206,7 +236,7 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 	sourceOutCap := 0
 	for eidx := range v.OutEdges {
 		e := &v.OutEdges[eidx]
-		if e.Didx == myId || e.Property.Weight <= 0 || e.Didx == pr.VertexCount.GetSourceId() || v.Property.Type == Sink {
+		if e.Didx == myId || e.Property.Weight <= 0 || e.Didx == pr.SourceId.Load() || v.Property.Type == Sink {
 			continue
 		}
 		AssertC(e.Property.Weight <= math.MaxInt64) // Cannot handle this weight
@@ -246,27 +276,28 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 
 	sendNewMaxVertexCount := pr.VertexCount.NewVertexN()
 	if sendNewMaxVertexCount {
-		source, sink := pr.GlobalRelabeling.GetSourceAndSinkInternalIds()
-		if source != EmptyValue {
+		if source := pr.SourceId.Load(); source != EmptyValue {
 			mailbox, tidx := g.NodeVertexMailbox(source)
 			sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
 				Target: source,
 				Note:   Note{PosType: NewMaxVertexCount},
 			}, mailbox, tidx))
 		}
-		if pr.HandleDeletes && sink != EmptyValue {
-			mailbox, tidx := g.NodeVertexMailbox(sink)
-			sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
-				Target: sink,
-				Note:   Note{PosType: NewMaxVertexCount},
-			}, mailbox, tidx))
+		if pr.HandleDeletes {
+			if sink := pr.SinkId.Load(); sink != EmptyValue {
+				mailbox, tidx := g.NodeVertexMailbox(sink)
+				sent += g.EnsureSend(g.ActiveNotification(myId, graph.Notification[Note]{
+					Target: sink,
+					Note:   Note{PosType: NewMaxVertexCount},
+				}, mailbox, tidx))
+			}
 		}
 	}
 	return
 }
 
 func (pr *PushRelabel) OnUpdateVertex(g *Graph, v *Vertex, n graph.Notification[Note], m Mail) (sent uint64) {
-	if v.Property.UnknownPosCount == math.MaxUint32 {
+	if v.Property.UnknownPosCount == EmptyValue {
 		v.Property.UnknownPosCount = 0
 		sent += pr.Init(g, v, n.Target)
 	}
@@ -338,9 +369,9 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 
 			case NewMaxVertexCount:
 				if v.Property.Type == Source {
-					updateHeightPos(v, uint32(pr.VertexCount.GetMaxVertexCount()))
+					v.Property.updateHeightPos(uint32(pr.VertexCount.GetMaxVertexCount()))
 				} else if v.Property.Type == Sink {
-					updateHeightNeg(v, uint32(pr.VertexCount.GetMaxVertexCount()))
+					v.Property.updateHeightNeg(uint32(pr.VertexCount.GetMaxVertexCount()))
 				} else {
 					log.Panic().Msg("This normal vertex should not receive NewMaxVertexCount")
 				}
@@ -446,7 +477,7 @@ func (pr *PushRelabel) doRestoreHeightPosInvariant(g *Graph, v *Vertex, nbr *Nei
 	if nbr.ResCapOut > 0 && v.Property.HeightPos > nbr.HeightPos+1 {
 		if v.Property.Type != Source { // Source has sufficient flow to saturate all outgoing edges (push might be disabled)
 			AssertC(v.Property.Type != Sink)
-			updateHeightPos(v, nbr.HeightPos+1)
+			v.Property.updateHeightPos(nbr.HeightPos + 1)
 		}
 	}
 }
@@ -458,7 +489,7 @@ func (pr *PushRelabel) doRestoreHeightNegInvariant(g *Graph, v *Vertex, nbr *Nei
 			// AssertC(!canPush) // TODO: Maybe we should let sink generate negative excess at start
 		} else {
 			AssertC(v.Property.Type != Source)
-			updateHeightNeg(v, nbr.HeightNeg+1)
+			v.Property.updateHeightNeg(nbr.HeightNeg + 1)
 		}
 	}
 }
@@ -479,7 +510,7 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 						break
 					}
 					// lift
-					updateHeightPos(v, nextHeightPos)
+					v.Property.updateHeightPos(nextHeightPos)
 					lifted = true
 
 					// push
@@ -512,7 +543,7 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 					break
 				}
 				// lift
-				updateHeightNeg(v, nextHeightNeg)
+				v.Property.updateHeightNeg(nextHeightNeg)
 				lifted = true
 
 				// push
@@ -628,13 +659,13 @@ func (pr *PushRelabel) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (se
 }
 
 func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart int, m Mail) (sent uint64) {
-	if src.Property.UnknownPosCount == math.MaxUint32 {
+	if src.Property.UnknownPosCount == EmptyValue {
 		src.Property.UnknownPosCount = 0
 		sent += pr.Init(g, src, sidx)
 	} else {
 		for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
 			e := &src.OutEdges[eidx]
-			if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == pr.VertexCount.GetSourceId() || src.Property.Type == Sink {
+			if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == pr.SourceId.Load() || src.Property.Type == Sink {
 				continue
 			}
 			AssertC(e.Property.Weight <= math.MaxInt64) // Cannot handle this weight
@@ -686,12 +717,12 @@ func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart i
 
 func (pr *PushRelabel) OnEdgeDel(g *Graph, src *Vertex, sidx uint32, deletedEdges []Edge, m Mail) (sent uint64) {
 	AssertC(pr.HandleDeletes)
-	if src.Property.UnknownPosCount == math.MaxUint32 {
+	if src.Property.UnknownPosCount == EmptyValue {
 		src.Property.UnknownPosCount = 0
 		sent += pr.Init(g, src, sidx)
 	} else {
 		for _, e := range deletedEdges {
-			if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == pr.VertexCount.GetSourceId() || src.Property.Type == Sink {
+			if e.Didx == sidx || e.Property.Weight <= 0 || e.Didx == pr.SourceId.Load() || src.Property.Type == Sink {
 				continue
 			}
 
@@ -728,12 +759,14 @@ func (pr *PushRelabel) OnEdgeDel(g *Graph, src *Vertex, sidx uint32, deletedEdge
 }
 
 func (pr *PushRelabel) OnCheckCorrectness(g *Graph) {
-	sourceInternalId, source := g.NodeVertexFromRaw(SourceRawId)
-	sinkInternalId, sink := g.NodeVertexFromRaw(SinkRawId)
-	if source == nil || sink == nil {
+	sourceId, sinkId := pr.SourceId.Load(), pr.SinkId.Load()
+	if sourceId == EmptyValue || sinkId == EmptyValue {
 		log.Warn().Msg("Skipping OnCheckCorrectness due to missing source or sink")
 		return
 	}
+	AssertC(g.NodeVertexRawID(sourceId) == pr.SourceRawId)
+	AssertC(g.NodeVertexRawID(sinkId) == pr.SinkRawId)
+	source, sink := g.NodeVertex(sourceId), g.NodeVertex(sinkId)
 
 	log.Info().Msg("Sink excess is " + utils.V(sink.Property.Excess))
 
@@ -742,7 +775,7 @@ func (pr *PushRelabel) OnCheckCorrectness(g *Graph) {
 	AssertC(sink.Property.Type == Sink)
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
 		if v.Property.Type != Normal {
-			AssertC(internalId == sourceInternalId || internalId == sinkInternalId)
+			AssertC(internalId == sourceId || internalId == sinkId)
 		}
 	})
 
@@ -756,7 +789,7 @@ func (pr *PushRelabel) OnCheckCorrectness(g *Graph) {
 	log.Info().Msg("Checking Pos are correct")
 	g.NodeForEachVertex(func(ordinal, internalId uint32, v *Vertex) {
 		for _, e := range v.OutEdges {
-			if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == pr.VertexCount.GetSourceId() || v.Property.Type == Sink {
+			if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == sourceId || v.Property.Type == Sink {
 				continue
 			}
 			pos, ok := v.Property.NbrMap[e.Didx]
@@ -821,7 +854,7 @@ func (pr *PushRelabel) OnCheckCorrectness(g *Graph) {
 		capacityOriginal := int64(0)
 		capacityResidual := int64(0)
 		for _, e := range v.OutEdges {
-			if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == pr.VertexCount.GetSourceId() || v.Property.Type == Sink {
+			if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == sourceId || v.Property.Type == Sink {
 				continue
 			}
 			capacityOriginal += int64(e.Property.Weight)
@@ -843,7 +876,7 @@ func (pr *PushRelabel) OnCheckCorrectness(g *Graph) {
 	log.Info().Msg("Checking sourceOut and sinkIn")
 	sourceOut := int64(0)
 	for _, e := range source.OutEdges {
-		if e.Didx == sourceInternalId || e.Property.Weight <= 0 {
+		if e.Didx == sourceId || e.Property.Weight <= 0 {
 			continue
 		}
 		sourceOut += int64(e.Property.Weight)
