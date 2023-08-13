@@ -5,7 +5,6 @@ import (
 	"math"
 	"strconv"
 	"sync/atomic"
-	"time"
 	"unsafe"
 
 	"github.com/ScottSallinen/lollipop/graph"
@@ -21,13 +20,7 @@ type PushRelabel struct {
 	SinkRawId     graph.RawType
 	HandleDeletes bool
 
-	// Global Relabeling
-	GlobalRelabeling GlobalRelabeling
-	CurrentPhase     Phase
-	t0, t1, t2, t3   time.Time
-	BlockLift        atomic.Bool
-	BlockPush        atomic.Bool
-
+	Gr          GlobalRelabel
 	VertexCount VertexCount
 	MsgCounter  ThreadMsgCounter[int64]
 
@@ -150,15 +143,7 @@ func (old *PushRelabel) New() (new *PushRelabel) {
 
 	new.MsgCounter.Reset()
 	new.VertexCount.Reset(1000)
-	new.GlobalRelabeling.Reset(
-		func(g *Graph) { go new.SyncGlobalRelabel(g) },
-		func(g *Graph, sourceId, targetId uint32) uint64 {
-			note := graph.Notification[Note]{Target: targetId, Note: Note{PosType: NewHeightEpoch}}
-			mailbox, tidx := g.NodeVertexMailbox(note.Target)
-			return g.EnsureSend(g.ActiveNotification(sourceId, note, mailbox, tidx))
-		},
-		func() uint64 { return uint64(new.VertexCount.GetMaxVertexCount()) },
-	)
+	new.Gr.Reset()
 	new.SourceId.Store(EmptyValue)
 	new.SinkId.Store(EmptyValue)
 	return new
@@ -182,7 +167,7 @@ func Run(options graph.GraphOptions) (maxFlow int64, g *Graph) {
 	alg := new(PushRelabel)
 	alg.SourceRawId = SourceRawId
 	alg.SinkRawId = SinkRawId
-	alg.HandleDeletes = true
+	// alg.HandleDeletes = true
 
 	alg = alg.New()
 
@@ -401,7 +386,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		// handle positive/negative flow
 		if n.Note.Flow != 0 {
 			AssertC(n.Note.Flow > 0 || pr.HandleDeletes)
-			pr.updateFlowSH(v, nbr, -n.Note.Flow, &sendHeightPos, &sendHeightNeg) // TODO
+			pr.updateFlowSH(v, nbr, -n.Note.Flow, &sendHeightPos, &sendHeightNeg)
 		}
 	}
 
@@ -411,7 +396,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		// The neighbour needs help with their c_f
 		AssertC(pr.HandleDeletes)
 		amount := -nbr.ResCapIn
-		pr.updateFlowSH(v, nbr, amount, &sendHeightPos, &sendHeightNeg) // TODO
+		pr.updateFlowSH(v, nbr, amount, &sendHeightPos, &sendHeightNeg)
 		noti := graph.Notification[Note]{
 			Target: nbr.Didx,
 			Note:   Note{HeightPos: v.Property.HeightPos, HeightNeg: v.Property.HeightNeg, Flow: amount, SrcPos: nbr.Pos},
@@ -421,11 +406,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		sendHeightPos, sendHeightNeg = false, false // already told the neighbour our height
 	}
 
-	restoreSent := pr.restoreHeightInvariantWithPush(g, v, nbr, n.Target)
-	if restoreSent > 0 {
-		sent += restoreSent
-		sendHeightPos, sendHeightNeg = false, false // already told the neighbour our height
-	}
+	sent += pr.restoreHeightInvariantWithPush(g, v, nbr, n.Target, &sendHeightPos, &sendHeightNeg)
 
 	if (sendHeightPos && !v.Property.HeightPosChanged) || (sendHeightNeg && !v.Property.HeightNegChanged) { // Tell the neighbour our height
 		mailbox, tidx := g.NodeVertexMailbox(nbr.Didx)
@@ -437,9 +418,9 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 	return
 }
 
-func (pr *PushRelabel) restoreHeightInvariantWithPush(g *Graph, v *Vertex, nbr *Neighbour, myId uint32) (sent uint64) {
+func (pr *PushRelabel) restoreHeightInvariantWithPush(g *Graph, v *Vertex, nbr *Neighbour, myId uint32, sendHeightPos, sendHeightNeg *bool) (sent uint64) {
 	excess := v.Property.Excess
-	if !pr.BlockPush.Load() && excess != 0 {
+	if !pr.Gr.BlockPush.Load() && excess != 0 {
 		amount := int64(0)
 		if excess > 0 && nbr.ResCapOut > 0 && v.Property.HeightPos > nbr.HeightPos+1 {
 			// Push positive flow
@@ -458,22 +439,15 @@ func (pr *PushRelabel) restoreHeightInvariantWithPush(g *Graph, v *Vertex, nbr *
 			}
 			mailbox, tidx := g.NodeVertexMailbox(noti.Target)
 			sent += g.EnsureSend(g.ActiveNotification(myId, noti, mailbox, tidx))
+			*sendHeightPos, *sendHeightNeg = false, false
 		}
 	}
-	pr.doRestoreHeightPosInvariant(g, v, nbr, myId)
-	pr.doRestoreHeightNegInvariant(g, v, nbr, myId)
+	pr.restoreHeightPosInvariant(g, v, nbr, myId)
+	pr.restoreHeightNegInvariant(g, v, nbr, myId)
 	return
 }
 
 func (pr *PushRelabel) restoreHeightPosInvariant(g *Graph, v *Vertex, nbr *Neighbour, myId uint32) {
-	pr.doRestoreHeightPosInvariant(g, v, nbr, myId)
-}
-
-func (pr *PushRelabel) restoreHeightNegInvariant(g *Graph, v *Vertex, nbr *Neighbour, myId uint32) {
-	pr.doRestoreHeightNegInvariant(g, v, nbr, myId)
-}
-
-func (pr *PushRelabel) doRestoreHeightPosInvariant(g *Graph, v *Vertex, nbr *Neighbour, myId uint32) {
 	if nbr.ResCapOut > 0 && v.Property.HeightPos > nbr.HeightPos+1 {
 		if v.Property.Type != Source { // Source has sufficient flow to saturate all outgoing edges (push might be disabled)
 			AssertC(v.Property.Type != Sink)
@@ -482,7 +456,7 @@ func (pr *PushRelabel) doRestoreHeightPosInvariant(g *Graph, v *Vertex, nbr *Nei
 	}
 }
 
-func (pr *PushRelabel) doRestoreHeightNegInvariant(g *Graph, v *Vertex, nbr *Neighbour, myId uint32) {
+func (pr *PushRelabel) restoreHeightNegInvariant(g *Graph, v *Vertex, nbr *Neighbour, myId uint32) {
 	if pr.HandleDeletes && nbr.ResCapIn > 0 && v.Property.HeightNeg > nbr.HeightNeg+1 {
 		if v.Property.Type == Sink {
 			// Sink has sufficient flow to saturate all outgoing edges
@@ -495,14 +469,14 @@ func (pr *PushRelabel) doRestoreHeightNegInvariant(g *Graph, v *Vertex, nbr *Nei
 }
 
 func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64) {
-	if pr.BlockPush.Load() {
+	if pr.Gr.BlockPush.Load() {
 		return
 	}
 	if v.Property.Excess > 0 {
 		if v.Property.HeightPos < MaxHeight {
 			if v.Property.Type != Sink {
 				lifted := false
-				cannotLift := v.Property.Type != Normal || pr.BlockLift.Load()
+				cannotLift := v.Property.Type != Normal || pr.Gr.BlockLift.Load()
 				for v.Property.Excess != 0 {
 					dischargeSent, nextHeightPos, nextPush := pr.dischargePosOnce(g, v, myId)
 					sent += dischargeSent
@@ -527,7 +501,7 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 				}
 
 				if GlobalRelabelingEnabled && lifted {
-					sent += pr.GlobalRelabeling.OnLift(g, myId)
+					pr.Gr.OnLift(g, pr)
 				}
 			}
 		}
@@ -535,7 +509,7 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 		Assert(pr.HandleDeletes, "Excess shouldn't be <0 if there's no deletes. Integer overflow?")
 		if v.Property.Type == Normal { // s and t should not push away negative excess?
 			lifted := false
-			cannotLift := pr.BlockLift.Load()
+			cannotLift := pr.Gr.BlockLift.Load()
 			for v.Property.Excess != 0 {
 				dischargeSent, nextHeightNeg, nextPushTarget := pr.dischargeNegOnce(g, v, myId)
 				sent += dischargeSent
@@ -559,7 +533,7 @@ func (pr *PushRelabel) discharge(g *Graph, v *Vertex, myId uint32) (sent uint64)
 			}
 
 			if GlobalRelabelingEnabled && lifted {
-				sent += pr.GlobalRelabeling.OnLift(g, myId)
+				pr.Gr.OnLift(g, pr)
 			}
 		}
 	}
@@ -656,6 +630,10 @@ func (pr *PushRelabel) finalizeVertexState(g *Graph, v *Vertex, myId uint32) (se
 		v.Property.HeightPosChanged, v.Property.HeightNegChanged = false, false
 	}
 	return sent
+}
+
+func (pr *PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
+	return pr.Gr.OnSuperStepConverged(g, pr)
 }
 
 func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart int, m Mail) (sent uint64) {
