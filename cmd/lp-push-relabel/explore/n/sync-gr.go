@@ -2,6 +2,7 @@ package n
 
 import (
 	"fmt"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +22,10 @@ const (
 
 func (pr *PushRelabel) SyncGlobalRelabel(g *Graph) {
 	log.Info().Msg("SyncGlobalRelabel starts.")
+
+	source, sink := g.NodeVertex(pr.SourceId.Load()), g.NodeVertex(pr.SinkId.Load())
+	log.Info().Msg("Source sent: " + strconv.Itoa(int(pr.SourceSupply-source.Property.Excess)))
+	log.Info().Msg("Sink excess: " + strconv.Itoa(int(sink.Property.Excess)))
 
 	pr.t0 = time.Now()
 	pr.CurrentPhase = DRAIN_MSG
@@ -97,15 +102,13 @@ func resetHeights(g *Graph) {
 func (pr *PushRelabel) sendMsgToSpecialHeightVerticesNoDeletes(g *Graph, vertexCount uint32) (sent uint64) {
 	_, source := g.NodeVertexFromRaw(SourceRawId)
 	sourceInternalId, _ := g.NodeVertexFromRaw(SourceRawId)
-	source.Property.HeightPos = vertexCount
-	source.Property.HeightPosChanged = true
+	source.Property.updateHeightPos(vertexCount)
 	sMailbox, sTidx := g.NodeVertexMailbox(sourceInternalId)
 	sent += g.EnsureSend(g.ActiveNotification(sourceInternalId, graph.Notification[Note]{Target: sourceInternalId, Note: Note{PosType: EmptyValue}}, sMailbox, sTidx))
 
 	sinkInternalId, _ := g.NodeVertexFromRaw(SinkRawId)
 	_, sink := g.NodeVertexFromRaw(SinkRawId)
-	sink.Property.HeightPos = 0
-	sink.Property.HeightPosChanged = true
+	sink.Property.updateHeightPos(0)
 	tMailbox, tTidx := g.NodeVertexMailbox(sinkInternalId)
 	sent += g.EnsureSend(g.ActiveNotification(sinkInternalId, graph.Notification[Note]{Target: sinkInternalId, Note: Note{PosType: EmptyValue}}, tMailbox, tTidx))
 	return sent
@@ -117,17 +120,8 @@ func (pr *PushRelabel) sendMsgToSpecialHeightVerticesWithDeletes(g *Graph, verte
 		for i := 0; i < len(gt.Vertices); i++ {
 			specialHeight := false
 			v := &gt.Vertices[i].Property
-			if v.Type == Source {
-				v.HeightPos, v.HeightNeg = vertexCount, 0
-				v.HeightPosChanged, v.HeightNegChanged = true, true
-				specialHeight = true
-			} else if v.Type == Sink {
-				v.HeightPos, v.HeightNeg = 0, vertexCount
-				v.HeightPosChanged, v.HeightNegChanged = true, true
-				specialHeight = true
-			} else if v.Excess < 0 {
-				v.HeightPos = 0
-				v.HeightPosChanged = true
+			if v.Type != Normal || v.Excess < 0 {
+				v.HeightPosChanged, v.HeightNegChanged = v.resetHeights(&pr.VertexCount)
 				specialHeight = true
 			}
 

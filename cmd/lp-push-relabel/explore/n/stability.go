@@ -29,7 +29,7 @@ var VertexFlowDB struct {
 
 func (pr *PushRelabel) getFlowSnapshot(g *Graph, AtEventIndex uint64, lastSnapshot map[graph.RawType]int64) (snapshot map[graph.RawType]int64, entry VertexFlowEntry) {
 	flowSnapshot := make(map[graph.RawType]int64)
-	sourceId := pr.VertexCount.GetSourceId()
+	sourceId := pr.SourceId.Load()
 
 	vertexCount := int64(0)
 	g.NodeForEachVertex(func(o, internalId uint32, v *Vertex) {
