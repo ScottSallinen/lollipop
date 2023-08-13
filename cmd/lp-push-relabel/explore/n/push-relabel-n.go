@@ -404,12 +404,14 @@ func (pr *PushRelabel) restoreHeightInvariantWithPush(g *Graph, v *Vertex, nbr *
 	excess := v.Property.Excess
 	if excess != 0 && !pr.SkipPush.Load() {
 		amount := int64(0)
-		if excess > 0 && v.Property.HeightPos > nbr.HeightPos+1 {
+		if excess > 0 && nbr.ResCapOut > 0 && v.Property.HeightPos > nbr.HeightPos+1 {
 			// Push positive flow
 			amount = utils.Min(excess, nbr.ResCapOut)
-		} else if pr.HandleDeletes && excess < 0 && v.Property.HeightNeg > nbr.HeightNeg+1 {
+			AssertC(amount > 0)
+		} else if pr.HandleDeletes && excess < 0 && nbr.ResCapIn > 0 && v.Property.HeightNeg > nbr.HeightNeg+1 {
 			// Push negative flow
 			amount = -utils.Min(-excess, nbr.ResCapIn)
+			AssertC(amount < 0)
 		}
 		if amount != 0 {
 			var sendHeight bool
