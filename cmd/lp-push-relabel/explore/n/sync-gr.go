@@ -73,6 +73,10 @@ func (pr *PushRelabel) OnSuperStepConverged(g *Graph) (sent uint64) {
 		fallthrough
 	case RELABEL:
 		sent += pr.resumeExecution(g)
+		if sent == 0 {
+			log.Error().Msg("resumeExecution sent 0 messages. Adding one message to avoid termination.")
+			sent += 1
+		}
 	}
 	return sent
 }
