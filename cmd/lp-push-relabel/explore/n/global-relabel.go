@@ -40,8 +40,8 @@ type GlobalRelabel struct {
 }
 
 const (
-	grAlphaLiftCount = float64(2.0)
-	grAlphaTime      = float64(5.0)
+	grAlphaLiftCount = float64(0.5)
+	grAlphaTime      = float64(3.0)
 	grMinInterval    = 128
 )
 
@@ -137,7 +137,7 @@ func (gr *GlobalRelabel) resumeExecution(g *Graph, pr *PushRelabel) (sent uint64
 	totalRuntime := gr.t3.Sub(gr.t0)
 	vertexCount := uint32(pr.VertexCount.GetMaxVertexCount())
 	log.Info().Msg(fmt.Sprintf("SyncGlobalRelabel done. vertexCount="+strconv.Itoa(int(vertexCount))+
-		"Draining Messages took %.2fs, Resetting heights took %.2fs, Global Relabeling took %.2fs. Total took %.2fs",
+		". Draining Messages took %.2fs, Resetting heights took %.2fs, Global Relabeling took %.2fs. Total took %.2fs",
 		gr.t1.Sub(gr.t0).Seconds(), gr.t2.Sub(gr.t1).Seconds(), gr.t3.Sub(gr.t2).Seconds(), totalRuntime.Seconds()))
 	gr.notifyCompletion(totalRuntime.Milliseconds(), vertexCount)
 	g.Broadcast(graph.RESUME)
