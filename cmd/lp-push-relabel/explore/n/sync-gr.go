@@ -24,8 +24,7 @@ func (pr *PushRelabel) SyncGlobalRelabel(g *Graph) {
 
 	pr.t0 = time.Now()
 	pr.CurrentPhase = DRAIN_MSG
-	pr.SkipPush.Store(true)
-	pr.SkipRestoreHeightInvar.Store(true)
+	pr.BlockLift.Store(true)
 	if g.Options.Dynamic {
 		g.Broadcast(graph.BLOCK_TOP_ASYNC)
 	}
@@ -34,14 +33,14 @@ func (pr *PushRelabel) SyncGlobalRelabel(g *Graph) {
 func (pr *PushRelabel) startRelabel(g *Graph) (sent uint64) {
 	pr.t1 = time.Now()
 	pr.CurrentPhase = RELABEL
-	pr.SkipRestoreHeightInvar.Store(false)
+	pr.BlockPush.Store(true)
+	pr.BlockLift.Store(false)
 	resetHeights(g)
 	if !pr.HandleDeletes {
 		sent += pr.sendMsgToSpecialHeightVerticesNoDeletes(g, uint32(pr.VertexCount.GetMaxVertexCount()))
 	} else {
 		sent += pr.sendMsgToSpecialHeightVerticesWithDeletes(g, uint32(pr.VertexCount.GetMaxVertexCount()))
 	}
-
 	pr.t2 = time.Now()
 	return
 }
@@ -49,13 +48,14 @@ func (pr *PushRelabel) startRelabel(g *Graph) (sent uint64) {
 func (pr *PushRelabel) resumeExecution(g *Graph) (sent uint64) {
 	pr.t3 = time.Now()
 	pr.CurrentPhase = RESUME
-	pr.SkipPush.Store(false)
+	pr.BlockPush.Store(false)
 	sent += sendMsgToActiveVertices(g)
 
 	totalRuntime := pr.t3.Sub(pr.t0)
 	log.Info().Msg(fmt.Sprintf("SyncGlobalRelabel done. "+
 		"Draining Messages took %.2fs, Resetting heights took %.2fs, Global Relabeling took %.2fs. Total took %.2fs",
 		pr.t1.Sub(pr.t0).Seconds(), pr.t2.Sub(pr.t1).Seconds(), pr.t3.Sub(pr.t2).Seconds(), totalRuntime.Seconds()))
+
 	pr.GlobalRelabeling.GlobalRelabelingDone(totalRuntime.Milliseconds())
 	g.Broadcast(graph.RESUME)
 	return
