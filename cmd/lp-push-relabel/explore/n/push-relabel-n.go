@@ -307,13 +307,13 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 		return
 	}
 
-	_, tidx := graph.InternalExpand(n.Target)
+	// tidx := n.Target >> graph.THREAD_SHIFT
 	var nbr *Neighbour
 	sendHeightPos, sendHeightNeg := false, false // Is their view of our height stale?
 
 	if n.Note.PosType&TypePosMask != 0 {
 		// Handle special messages
-		pr.MsgCounter.IncrementMsgCount(tidx, 0, true)
+		// pr.MsgCounter.IncrementMsgCount(tidx, 0, true)
 		switch n.Note.PosType & TypePosMask {
 
 		case NewNbr:
@@ -378,7 +378,7 @@ func (pr *PushRelabel) processMessage(g *Graph, v *Vertex, n graph.Notification[
 
 	} else {
 		// Handle normal messages
-		pr.MsgCounter.IncrementMsgCount(tidx, n.Note.Flow, false)
+		// pr.MsgCounter.IncrementMsgCount(tidx, n.Note.Flow, false)
 		nbr = &v.Property.Nbrs[n.Note.SrcPos]
 
 		// handle positive/negative flow
