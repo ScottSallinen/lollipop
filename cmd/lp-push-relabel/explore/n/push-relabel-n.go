@@ -85,7 +85,7 @@ func getNegativeExcessVertexHeight(vc *VertexCount) uint32 {
 	// flow in a isolated component with no s/t.
 	// Ideally, for a vertex with a negative excess, we would like to set its height to a
 	// value equals to the distance to t after the negative excess has been returned to t.
-	return uint32(vc.GetMaxVertexCount()) / 2
+	return 0
 }
 
 func (v *VertexProp) resetHeights(vc *VertexCount) (HeightPosChanged, HeightNegChanged bool) {
