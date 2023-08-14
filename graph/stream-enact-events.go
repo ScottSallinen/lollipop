@@ -160,8 +160,8 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		})
 	}
 
-	expiredIndex := uint64(0)
-	for ; expiredIndex < uint64(len(gt.ExpiredEdges)); expiredIndex++ { // Check if we need to inject expired edges, and inject all that are expired
+	expiredIndex, insertedDeletes := 0, 0
+	for ; expiredIndex < len(gt.ExpiredEdges); expiredIndex++ { // Check if we need to inject expired edges, and inject all that are expired
 		nextDelete := &gt.ExpiredEdges[expiredIndex]
 		if (nextDelete.Second.TypeAndEventIdx & EVENT_TYPE_MASK) != uint64(DEL) {
 			continue // Must have decided not to change it to a delete.
@@ -174,12 +174,17 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		// This will need more consideration if/when we wish to target edges more specifically / efficiently.
 		EP(&nextDelete.Second.Edge.Property).ReplaceTimestamp(ts - delOnExpire)
 
-		uniqueCount = gt.checkInsertPending(nextDelete.First, uint32(changeCount+expiredIndex), uniqueCount)
+		insertedDeletes += 1
+		deleteIndex := changeCount + uint64(insertedDeletes)
 
-		if (changeCount + expiredIndex) >= uint64(len(gt.TopologyEventBuff)) {
+		uniqueCount = gt.checkInsertPending(nextDelete.First, uint32(deleteIndex), uniqueCount)
+
+		if deleteIndex < uint64(len(gt.TopologyEventBuff)) {
+			gt.TopologyEventBuff[deleteIndex] = nextDelete.Second
+		} else if deleteIndex == uint64(len(gt.TopologyEventBuff)) {
 			gt.TopologyEventBuff = append(gt.TopologyEventBuff, nextDelete.Second)
 		} else {
-			gt.TopologyEventBuff[changeCount+expiredIndex] = nextDelete.Second
+			log.Panic().Msg("deleteIndex > len(gt.TopologyEventBuff)")
 		}
 	}
 	gt.ExpiredEdges = gt.ExpiredEdges[expiredIndex:] // Deque might be better, but would be harder to sort.
