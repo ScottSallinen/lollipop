@@ -97,8 +97,8 @@ func (gr *GlobalRelabel) OnSuperStepConverged(g *Graph, pr *PushRelabel) (sent u
 	case RELABEL:
 		sent += gr.resumeExecution(g, pr)
 		if sent == 0 {
-			log.Error().Msg("resumeExecution sent 0 messages. Adding one message to avoid termination.")
-			sent += 1
+			log.Warn().Msg("resumeExecution sent 0 messages. Calling sendMsgToSpecialHeightVerticesNoDeletes to avoid termination.")
+			sent += sendMsgToSpecialHeightVerticesNoDeletes(g, pr)
 		}
 	}
 	return sent

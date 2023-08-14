@@ -23,7 +23,9 @@ func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[Vert
 
 		sourceId, sinkId := pr.SourceId.Load(), pr.SinkId.Load()
 		if sourceId != EmptyValue && sinkId != EmptyValue {
-			outEntry.CurrentMaxFlow = tse.GraphView.NodeVertex(sinkId).Property.Excess
+			if sink := tse.GraphView.NodeVertexOrNil(sinkId); sink != nil { // sink might not be captured in this snapshot
+				outEntry.CurrentMaxFlow = sink.Property.Excess
+			}
 		}
 
 		tse.GraphView = nil
