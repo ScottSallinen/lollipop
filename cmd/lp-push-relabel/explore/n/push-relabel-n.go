@@ -174,7 +174,7 @@ func Run(options graph.GraphOptions) (maxFlow int64, g *Graph) {
 	alg := new(PushRelabel)
 	alg.SourceRawId = SourceRawId
 	alg.SinkRawId = SinkRawId
-	alg.HandleDeletes = true
+	alg.HandleDeletes = options.InsertDeleteOnExpire > 0
 
 	alg = alg.New()
 
