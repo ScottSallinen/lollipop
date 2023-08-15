@@ -11,7 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/n"
 )
 
 type TestGraph struct {
@@ -55,7 +55,6 @@ func main() {
 
 	sourceId := flag.Int("S", -1, "Source vertex (raw id).")
 	sinkId := flag.Int("T", -1, "Sink vertex (raw id).")
-	disableGlobalRelabeling := flag.Bool("DG", false, "Disable global relabeling")
 	stability := flag.Bool("Stability", false, "Collect statistics related to solution stability.")
 	flag.Bool("B", false, "Run benchmarks")
 	graphOptions := graph.FlagsToOptions()
@@ -70,13 +69,12 @@ func main() {
 	InitialHeight = MaxHeight
 	SourceRawId = graph.RawType(*sourceId)
 	SinkRawId = graph.RawType(*sinkId)
-	GlobalRelabelingEnabled = !*disableGlobalRelabeling
 
-	m.CheckStability = *stability
-	mf, _ := m.Run(graphOptions)
+	n.CheckStability = *stability
+	mf, _ := n.Run(graphOptions)
 	log.Info().Msg(fmt.Sprintf("Maximum flow is %v", mf))
 
 	if *stability {
-		m.PrintVertexFlowDB(true, false)
+		n.PrintVertexFlowDB(true, false)
 	}
 }
