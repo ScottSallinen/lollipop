@@ -108,7 +108,7 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 	deleteOnExpire := (24 * 60 * 60) * uint64(*windowPtr)
 	if *skipDelProbPtr != 0 {
 		if *skipDelProbPtr < 0 || *skipDelProbPtr >= 1 {
-			log.Panic().Msg("sdp must be in the range [0, 1)")
+			log.Panic().Msg("Skip deletion probability must be in the range [0, 1)")
 		}
 	}
 
