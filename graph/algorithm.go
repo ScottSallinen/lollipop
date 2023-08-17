@@ -105,6 +105,10 @@ func Run[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]
 		defer file.Close()
 	}
 
+	if aN, ok := any(alg).(AlgorithmNew[V, E, M, N, A]); ok {
+		alg = aN.New()
+	}
+
 	g.AlgTimer.Start()
 	if dynamic {
 		log.Info().Msg("ConvergeDynamic")
