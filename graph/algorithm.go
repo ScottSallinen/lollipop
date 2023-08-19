@@ -105,10 +105,6 @@ func Run[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]
 		defer file.Close()
 	}
 
-	if aN, ok := any(alg).(AlgorithmNew[V, E, M, N, A]); ok {
-		alg = aN.New()
-	}
-
 	g.AlgTimer.Start()
 	if dynamic {
 		log.Info().Msg("ConvergeDynamic")
@@ -185,6 +181,10 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 		g.NoteInit = true
 	}
 
+	if aN, ok := any(alg).(AlgorithmNew[V, E, M, N, A]); ok {
+		alg = aN.New()
+	}
+
 	feederWg := new(sync.WaitGroup)
 	feederWg.Add(1)
 
@@ -239,6 +239,10 @@ func DynamicGraphExecutionFromTestEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M]
 	g.NoteInit = (g.InitNotes != nil)
 	if _, ok := any(alg).(AlgorithmInitAllNote[V, E, M, N]); ok {
 		g.NoteInit = true
+	}
+
+	if aN, ok := any(alg).(AlgorithmNew[V, E, M, N, A]); ok {
+		alg = aN.New()
 	}
 
 	feederWg := new(sync.WaitGroup)
