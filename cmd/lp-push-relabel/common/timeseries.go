@@ -25,7 +25,7 @@ var (
 
 func TimeSeriesReset() {
 	TsDB = TsDB[:0]
-	TsFileName = "results/push-relabel-k-timeseries-" + time.Now().Format("2006-01-02 15h04m05s") + ".csv"
+	TsFileName = "results/push-relabel-timeseries.csv"
 }
 
 func PrintTimeSeries(fileOut bool, stdOut bool) {
