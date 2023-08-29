@@ -23,8 +23,13 @@ func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[Vert
 
 		sourceId, sinkId := pr.SourceId.Load(), pr.SinkId.Load()
 		if sourceId != EmptyValue && sinkId != EmptyValue {
-			if sink := tse.GraphView.NodeVertexOrNil(sinkId); sink != nil { // sink might not be captured in this snapshot
-				outEntry.CurrentMaxFlow = sink.Property.Excess
+			source, sink := tse.GraphView.NodeVertexOrNil(sourceId), tse.GraphView.NodeVertexOrNil(sinkId)
+			if source != nil && sink != nil { // sink might not be captured in this snapshot
+				sourceEvent := tse.GraphView.NodeVertexStructure(sourceId).CreateEvent
+				sinkEvent := tse.GraphView.NodeVertexStructure(sinkId).CreateEvent
+				if sourceEvent <= tse.AtEventIndex && sinkEvent <= tse.AtEventIndex { // Make sure they are created before this snapshot is captured
+					outEntry.CurrentMaxFlow = sink.Property.Excess
+				}
 			}
 		}
 
