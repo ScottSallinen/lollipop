@@ -14,14 +14,15 @@ import (
 
 type VertexFlowEntry struct {
 	VerticesInFlow   int64
-	VerticesDiffFlow int64
+	VerticesSameFlow int64
 	VertexCount      int64
 }
 
 var CheckStability = false
 var VertexFlowDB struct {
-	Dynamic []VertexFlowEntry
-	Static  []VertexFlowEntry
+	Dynamic       []VertexFlowEntry
+	Static        []VertexFlowEntry
+	StaticLatency []int64
 
 	LastSnapshotDynamic map[graph.RawType]int64
 	LastSnapshotStatic  map[graph.RawType]int64
@@ -91,17 +92,17 @@ func (pr *PushRelabel) getFlowSnapshot(g *Graph, AtEventIndex uint64, lastSnapsh
 		}
 	})
 
-	for v, f := range lastSnapshot {
-		AssertC(f > 0)
-		if flowSnapshot[v] != f {
-			entry.VerticesDiffFlow += 1
-		}
-	}
+	// for v, f := range lastSnapshot {
+	// 	AssertC(f > 0)
+	// 	if flowSnapshot[v] != f {
+	// 		entry.VerticesDiffFlow += 1
+	// 	}
+	// }
 
 	for v, f := range flowSnapshot {
 		AssertC(f > 0)
-		if _, ok := flowSnapshot[v]; !ok {
-			entry.VerticesDiffFlow += 1
+		if lastSnapshot[v] > 0 {
+			entry.VerticesSameFlow += 1
 		}
 	}
 
@@ -121,6 +122,8 @@ func (pr *PushRelabel) OnOracleCompare(g *Graph, oracle *Graph) {
 	for t := 0; t < int(g.NumThreads); t++ {
 		AtEventIndex = utils.Max(AtEventIndex, g.GraphThreads[t].AtEvent)
 	}
+
+	VertexFlowDB.StaticLatency = append(VertexFlowDB.StaticLatency, oracle.Watch.Elapsed().Milliseconds())
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -143,12 +146,12 @@ func (pr *PushRelabel) OnOracleCompare(g *Graph, oracle *Graph) {
 func PrintVertexFlowDB(fileOut bool, stdOut bool) {
 	var f *os.File
 	if fileOut {
-		f = utils.CreateFile("results/push-relabel-m-timeseries-flow.csv")
+		f = utils.CreateFile("results/push-relabel-timeseries-flow.csv")
 		defer f.Close()
 	}
 
 	header := "Date,MaxFlow,VertexCount,EdgeCount,Latency,CurrentRuntime,AlgTimeSinceLast"
-	header += ",VertexNumInFlowDynamic,VertexFlowSameDynamic,VertexNumInFlowStatic,VertexFlowSameStatic"
+	header += ",VertexNumInFlowDynamic,VertexFlowSameDynamic,VertexNumInFlowStatic,VertexFlowSameStatic,StaticLatency"
 	if stdOut {
 		println(header)
 	}
@@ -169,9 +172,10 @@ func PrintVertexFlowDB(fileOut bool, stdOut bool) {
 			strconv.FormatInt(entry.CurrentRuntime.Milliseconds(), 10) + "," + strconv.FormatInt(entry.AlgTimeSinceLast.Milliseconds(), 10)
 
 		line += "," + strconv.FormatInt(VertexFlowDB.Dynamic[i].VerticesInFlow, 10)
-		line += "," + strconv.FormatInt(RealVertexCount-VertexFlowDB.Dynamic[i].VerticesDiffFlow, 10)
+		line += "," + strconv.FormatInt(VertexFlowDB.Dynamic[i].VerticesSameFlow, 10)
 		line += "," + strconv.FormatInt(VertexFlowDB.Static[i].VerticesInFlow, 10)
-		line += "," + strconv.FormatInt(RealVertexCount-VertexFlowDB.Static[i].VerticesDiffFlow, 10)
+		line += "," + strconv.FormatInt(VertexFlowDB.Static[i].VerticesSameFlow, 10)
+		line += "," + strconv.FormatInt(VertexFlowDB.StaticLatency[i], 10)
 
 		if stdOut {
 			println(line)
