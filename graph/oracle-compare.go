@@ -91,6 +91,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		if aOF, ok := any(algOracle).(AlgorithmOnFinish[V, E, M, N]); ok {
 			aOF.OnFinish(oracleGraph, oracleGraph, maxAtEvent)
 		}
+		oracleGraph.AlgTimer.Pause()
 		msgSend := uint64(0)
 		for t := 0; t < int(oracleGraph.NumThreads); t++ {
 			msgSend += oracleGraph.GraphThreads[t].MsgSend
