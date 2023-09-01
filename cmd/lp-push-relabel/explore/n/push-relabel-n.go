@@ -142,7 +142,7 @@ func (pr *PushRelabel) updateFlow(v *Vertex, nbr *Neighbour, amount int64) {
 }
 
 func (old *PushRelabel) New() (new *PushRelabel) {
-	new = &PushRelabel{}
+	new = old
 
 	new.SourceRawId = old.SourceRawId
 	new.SinkRawId = old.SinkRawId
@@ -185,15 +185,15 @@ func Run(options graph.GraphOptions) (maxFlow int64, g *Graph) {
 	// Launch
 	done := false
 	if options.DebugLevel > 0 {
-		alg.MsgCounter.GoLogMsgCount(&done)
+		alg.MsgCounter.GoLogMsgCount(alg, g, &done)
 	}
 	graph.Launch(alg, g)
 	done = true
 
-	return alg.GetMaxFlowValue(g), g
+	return GetMaxFlowValue(g), g
 }
 
-func (pr *PushRelabel) GetMaxFlowValue(g *Graph) int64 {
+func GetMaxFlowValue(g *Graph) int64 {
 	_, sink := g.NodeVertexFromRaw(SinkRawId)
 	return sink.Property.Excess
 }

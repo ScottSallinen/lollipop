@@ -7,7 +7,10 @@ import (
 	"golang.org/x/exp/constraints"
 
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
+
+	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type MsgCount struct {
@@ -23,12 +26,20 @@ type ThreadMsgCount struct {
 	Last    MsgCount
 }
 
+type Progress struct {
+	Time         time.Duration
+	SourceSent   int64
+	SinkReceived int64
+}
+
 type ThreadMsgCounter[N constraints.Integer] struct {
 	Counters []ThreadMsgCount
+	Progress []Progress
 }
 
 func (tmc *ThreadMsgCounter[N]) Reset() {
 	tmc.Counters = make([]ThreadMsgCount, graph.THREAD_MAX)
+	tmc.Progress = make([]Progress, 0)
 }
 
 func (tmc *ThreadMsgCounter[N]) IncrementMsgCount(tidx uint32, flow N, special bool) {
@@ -71,11 +82,39 @@ func (tmc *ThreadMsgCounter[N]) LogMsgCount() {
 	log.Info().Msg(fmt.Sprintf("Special:       %13d %10d", totals.Special, deltas.Special))
 }
 
-func (tmc *ThreadMsgCounter[N]) GoLogMsgCount(exit *bool) {
+func (tmc *ThreadMsgCounter[N]) LogProgress(pr *PushRelabel, g *Graph) {
+	if g.AlgTimer.Elapsed() > 8760*time.Hour {
+		return // Haven't started
+	}
+	SourceSent, SinkReceived := int64(0), int64(0)
+	sourceId, sinkId := pr.SourceId.Load(), pr.SinkId.Load()
+	if sourceId != EmptyValue {
+		SourceSent = pr.SourceSupply - g.NodeVertex(sourceId).Property.Excess
+	}
+	if sinkId != EmptyValue {
+		SinkReceived = g.NodeVertex(sinkId).Property.Excess
+	}
+	log.Info().Msg("Current Progress, Time: " + utils.V(g.AlgTimer.Elapsed().Milliseconds()) +
+		", SourceSent: " + utils.V(SourceSent) +
+		", SinkReceived: " + utils.V(SinkReceived))
+	tmc.Progress = append(tmc.Progress, Progress{
+		Time:         g.AlgTimer.Elapsed(),
+		SourceSent:   SourceSent,
+		SinkReceived: SinkReceived,
+	})
+}
+
+func (tmc *ThreadMsgCounter[N]) GoLogMsgCount(pr *PushRelabel, g *Graph, exit *bool) {
 	go func() {
 		for !*exit {
 			time.Sleep(5 * time.Second)
 			tmc.LogMsgCount()
+		}
+	}()
+	go func() {
+		for !*exit {
+			time.Sleep(500 * time.Millisecond)
+			tmc.LogProgress(pr, g)
 		}
 	}()
 }
