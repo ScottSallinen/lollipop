@@ -206,10 +206,16 @@ func (g *Graph[V, E, M, N]) AwaitAck() {
 }
 
 func (g *Graph[V, E, M, N]) ExecuteQuery(entry uint64) {
+	if g.Options.DebugLevel >= 2 {
+		log.Info().Msg("ExecuteQuery start, Time: " + utils.V(g.AlgTimer.Elapsed().Milliseconds()) + ", entry: " + utils.V(entry))
+	}
 	g.QueryWaiter.Add(1)
 	g.LogEntryChan <- entry
 	if !QUERY_NON_BLOCKING {
 		g.QueryWaiter.Wait() // Wait for the query to finish before processing new events
+	}
+	if g.Options.DebugLevel >= 2 {
+		log.Info().Msg("ExecuteQuery end, Time: " + utils.V(g.AlgTimer.Elapsed().Milliseconds()) + ", entry: " + utils.V(entry))
 	}
 }
 
