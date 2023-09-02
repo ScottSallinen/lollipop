@@ -94,9 +94,14 @@ func (tmc *ThreadMsgCounter[N]) LogProgress(pr *PushRelabel, g *Graph) {
 	if sinkId != EmptyValue {
 		SinkReceived = g.NodeVertex(sinkId).Property.Excess
 	}
+	EdgesAdded := uint32(0)
+	for t := 0; t < int(g.NumThreads); t++ {
+		EdgesAdded += g.GraphThreads[t].NumOutAdds
+	}
 	log.Info().Msg("Current Progress, Time: " + utils.V(g.AlgTimer.Elapsed().Milliseconds()) +
 		", SourceSent: " + utils.V(SourceSent) +
-		", SinkReceived: " + utils.V(SinkReceived))
+		", SinkReceived: " + utils.V(SinkReceived) +
+		", EdgesAdded: " + utils.V(EdgesAdded))
 	tmc.Progress = append(tmc.Progress, Progress{
 		Time:         g.AlgTimer.Elapsed(),
 		SourceSent:   SourceSent,
@@ -113,7 +118,7 @@ func (tmc *ThreadMsgCounter[N]) GoLogMsgCount(pr *PushRelabel, g *Graph, exit *b
 	}()
 	go func() {
 		for !*exit {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			tmc.LogProgress(pr, g)
 		}
 	}()
