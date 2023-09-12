@@ -13,6 +13,7 @@ import (
 	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
 	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/n"
+	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/o"
 )
 
 type TestCase struct {
@@ -150,6 +151,18 @@ func TestNDeletes(t *testing.T) {
 	options.TargetRate = 1000000
 	options.InsertDeleteOnExpire = (24 * 60 * 60)
 	RunTestGraphs(t, n.Run, n.Name, options)
+}
+
+func TestOAsyncStatic(t *testing.T) {
+	options := baseOptions
+	RunTestGraphs(t, o.Run, o.Name, options)
+}
+
+func TestOIncremental(t *testing.T) {
+	options := baseOptions
+	options.Dynamic = true
+	options.TargetRate = 1000000
+	RunTestGraphs(t, o.Run, o.Name, options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF constraints.Integer](
