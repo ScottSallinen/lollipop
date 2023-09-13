@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"runtime"
 
 	"github.com/rs/zerolog/log"
 
@@ -10,7 +9,11 @@ import (
 	"github.com/ScottSallinen/lollipop/utils"
 )
 
-var SNAPSHOT_ORACLE = false
+// A strategy (for static graphs) is to use wait count to have each vertex pick a colour "in order".
+// Note that the Base mail for a dynamic graph would have no beginning edges, so wait count would be zero -- thus this strategy is only useful for static graphs.
+var UseWaitCount = false
+
+var SnapshotOracle = false
 
 func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	maxColour := uint32(0)
@@ -77,7 +80,7 @@ func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty
 func (*Colouring) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	var entry []utils.Pair[graph.RawType, uint32]
 	var entryAll map[graph.RawType]uint32
-	if USE_INTEREST {
+	if UseInterest {
 		entry = make([]utils.Pair[graph.RawType, uint32], len(INTEREST_ARRAY))
 		for i := range INTEREST_ARRAY {
 			entry[i] = utils.Pair[graph.RawType, uint32]{
@@ -94,14 +97,14 @@ func (*Colouring) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, M
 		AtEventIndex = utils.Max(AtEventIndex, g.GraphThreads[t].AtEvent)
 	}
 
-	if SNAPSHOT_ORACLE {
+	if SnapshotOracle {
 		g = oracle
 	}
 	g.NodeForEachVertex(func(o, internalId uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
 		vertexStructure := g.NodeVertexStructure(internalId)
 		if vertexStructure.CreateEvent <= AtEventIndex {
-			if USE_INTEREST {
-				if raw, ok := INTEREST_MAP[vertexStructure.RawId]; ok {
+			if UseInterest {
+				if raw, ok := InterestMap[vertexStructure.RawId]; ok {
 					entry[raw].Second = vertex.Property.Colour
 				}
 			} else {
@@ -110,12 +113,11 @@ func (*Colouring) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, M
 		}
 	})
 
-	if USE_INTEREST {
+	if UseInterest {
 		snapshotDB = append(snapshotDB, entry)
 	} else {
 		snapshotDBAll = append(snapshotDBAll, entryAll)
 	}
-	runtime.GC()
 }
 
 // Launch point. Parses command line arguments, and launches the graph execution.
@@ -125,16 +127,15 @@ func main() {
 	useWaitCount := flag.Bool("WaitCount", false, "Use wait count (does not work with dynamic mode)")
 	snapshotOracle := flag.Bool("SnapshotOracle", false, "Capture snapshots of the oracle rather than the original graph")
 	options := graph.FlagsToOptions()
+
 	options.Undirected = true // undirected should always be true.
-	USE_INTEREST = *useInterest
-	SNAPSHOT_ORACLE = *snapshotOracle
-	USE_WAIT_COUNT_MSG = *useWaitCount
-	USE_WAIT_COUNT = *useWaitCount
+	UseInterest = *useInterest
+	SnapshotOracle = *snapshotOracle
+	UseWaitCount = *useWaitCount
 	if *useMsgStrategy {
 		if options.Sync {
 			log.Panic().Msg("Cannot use a messaging strategy with synchronous iterations.")
 		}
-
 		graph.LaunchGraphExecution[*EPropMsg, VPropMsg, EPropMsg, MailMsg, NoteMsg](new(ColouringMsg), options, nil, nil)
 	} else {
 		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(Colouring), options, nil, nil)

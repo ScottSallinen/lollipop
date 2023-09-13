@@ -28,12 +28,12 @@ const WRITE_EVERY_UPDATE = false // Writes the timeseries file every single time
 
 // Top 50 vertices (by PageRank score) in the wikipedia-growth graph
 var INTEREST_ARRAY = []int{73, 259, 9479, 6276, 1710, 864, 2169, 110, 10312, 69, 425, 611, 1566, 11297, 1916, 1002, 975, 6413, 526, 5079, 1915, 11956, 2034, 956, 208, 15, 77041, 652, 20, 1352, 1918, 388, 1806, 1920, 3517, 863, 1594, 24772, 2008, 78349, 397, 1923, 1105, 8707, 7, 4336, 1753, 205, 17, 984, 5732, 983, 70, 1924, 111, 51076, 6903, 4083, 1936, 1115, 154942, 1550, 2266, 179, 1933, 37976, 2844, 1934, 57028, 1932, 84204, 1931, 490, 1935, 2312, 1925, 1846, 5081, 1930, 4378, 1917, 68, 3080, 2734, 435, 1482, 1929, 1922, 4104, 2814, 1926, 1919, 1164, 1110, 1928, 2843, 4364, 1921, 4148, 2041}
-var INTEREST_MAP = make(map[graph.RawType]int)
-var USE_INTEREST = false // Of interest, array for wikipedia-growth.
+var InterestMap = make(map[graph.RawType]int)
+var UseInterest = false // Of interest, array for wikipedia-growth.
 
 func init() {
 	for i, v := range INTEREST_ARRAY {
-		INTEREST_MAP[graph.AsRawType(v)] = i
+		InterestMap[graph.AsRawType(v)] = i
 	}
 }
 
@@ -53,7 +53,7 @@ func (*Colouring) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexPro
 			CurrentRuntime:   tse.CurrentRuntime,
 			AlgTimeSinceLast: tse.AlgTimeSinceLast,
 		}
-		if USE_INTEREST {
+		if UseInterest {
 			outEntry.Entry = make([]utils.Pair[graph.RawType, uint32], len(INTEREST_ARRAY))
 			for i := range INTEREST_ARRAY {
 				outEntry.Entry[i] = utils.Pair[graph.RawType, uint32]{
@@ -69,8 +69,8 @@ func (*Colouring) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexPro
 			vertexStructure := tse.GraphView.NodeVertexStructure(internalId)
 			if vertexStructure.CreateEvent <= tse.AtEventIndex { // TODO: should probably have the framework provide a better way to address this.
 				outEntry.RealVertexCount++
-				if USE_INTEREST {
-					if raw, ok := INTEREST_MAP[vertexStructure.RawId]; ok {
+				if UseInterest {
+					if raw, ok := InterestMap[vertexStructure.RawId]; ok {
 						outEntry.Entry[raw].Second = vertex.Property.Colour
 					}
 				} else {
@@ -106,7 +106,7 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 
 	header := "ts,date,cumRuntimeMS,algTimeSinceLastMS,qLatencyMS,allVC,realVC,EC,"
 
-	if USE_INTEREST {
+	if UseInterest {
 		header += ","
 		for _, raw := range INTEREST_ARRAY {
 			header += strconv.FormatUint(uint64(raw), 10) + ","
@@ -138,7 +138,7 @@ func PrintTimeSeries(fileOut bool, stdOut bool) {
 		dfLine := line
 		sfLine := line
 
-		if USE_INTEREST {
+		if UseInterest {
 			dfLine += ",,"
 			for _, c := range tsDB[i].Entry {
 				if c.Second != EMPTY_VAL {
