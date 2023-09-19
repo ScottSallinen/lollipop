@@ -11,10 +11,6 @@ import (
 
 type Colouring struct{}
 
-// A strategy (for static graphs) is to use wait count to have each vertex pick a colour "in order".
-// Note that the Base mail for a dynamic graph would have no beginning edges, so wait count would be zero -- thus this strategy is only useful for static graphs.
-const USE_WAIT_COUNT = false // Don't enable this for dynamic graphs.
-
 const EMPTY_VAL = (math.MaxUint32) >> 1
 const MSB_MASK = (1 << 31) - 1
 const MSB = (1 << 31)
@@ -65,7 +61,7 @@ func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgePro
 	m.Pos = internalId // This is the vertex ID, set for the base mailbox of the vertex.
 	m.Colour = 0       // Used as wait count (if enabled) for the base mailbox of the vertex.
 
-	if USE_WAIT_COUNT { // Initialize WaitCount (only relevant for static graphs)
+	if UseWaitCount { // Initialize WaitCount (only relevant for static graphs)
 		myPriority := hash(internalId)
 		for i := 0; i < len(vertex.OutEdges); i++ {
 			didx := vertex.OutEdges[i].Didx
@@ -92,7 +88,7 @@ func (*Colouring) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty]
 func (*Colouring) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo bool) {
 	didx := existing.Pos
 	if sidx == didx { // Self mail (init)
-		if !USE_WAIT_COUNT {
+		if !UseWaitCount {
 			return true // Not using wait count, always on self mail (at-least-once)
 		}
 		return (atomic.LoadUint32(&existing.Colour) == 0) // Might cause a second update cycle (but it does not matter)
@@ -120,7 +116,7 @@ func (*Colouring) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo
 		existing.Mutex.RLock()
 		atomic.StoreUint32(&existing.NbrScratch[incoming.Pos], colour)
 		existing.Mutex.RUnlock()
-	} else if !USE_WAIT_COUNT {
+	} else if !UseWaitCount {
 		return false // No change
 	}
 
@@ -128,7 +124,7 @@ func (*Colouring) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo
 		return false // If target (existing) has priority, no need to notify it
 	}
 
-	if !USE_WAIT_COUNT {
+	if !UseWaitCount {
 		return true // Not using wait count, need to ensure update when a priority neighbour tells us their colour
 	} else if atomic.LoadUint32(&existing.Colour) > 0 { // Check wait count.
 		newWaitCount := atomic.AddUint32(&existing.Colour, ^uint32(0)) // Subtract 1
