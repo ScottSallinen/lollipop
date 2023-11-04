@@ -142,7 +142,7 @@ func (pr *PushRelabel) updateFlow(v *Vertex, nbr *Neighbour, amount int64) {
 }
 
 func (old *PushRelabel) New() (new *PushRelabel) {
-	new = old
+	new = old // FIXME: this breaks the stability test. This is suppose to allocate a new struct on the heap, which unfortunately conflicts with how GoLogMsgCount works.
 
 	new.SourceRawId = old.SourceRawId
 	new.SinkRawId = old.SinkRawId
