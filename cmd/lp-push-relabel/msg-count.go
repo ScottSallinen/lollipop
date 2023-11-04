@@ -1,4 +1,4 @@
-package n
+package main
 
 import (
 	"fmt"
@@ -9,8 +9,6 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
-
-	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type MsgCount struct {

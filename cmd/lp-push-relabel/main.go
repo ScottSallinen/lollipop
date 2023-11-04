@@ -3,15 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/rs/zerolog/log"
-
-	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/n"
 )
 
 type TestGraph struct {
@@ -48,11 +42,6 @@ var (
 )
 
 func main() {
-	if slices.Contains(os.Args, "-B") || slices.Contains(os.Args, "--B") {
-		RunBenchmarks()
-		return
-	}
-
 	sourceId := flag.Int("S", -1, "Source vertex (raw id).")
 	sinkId := flag.Int("T", -1, "Sink vertex (raw id).")
 	stability := flag.Bool("Stability", false, "Collect statistics related to solution stability.")
@@ -66,15 +55,14 @@ func main() {
 		graphOptions.OracleCompare = true
 	}
 
-	InitialHeight = MaxHeight
 	SourceRawId = graph.RawType(*sourceId)
 	SinkRawId = graph.RawType(*sinkId)
 
-	n.CheckStability = *stability
-	mf, _ := n.Run(graphOptions)
+	CheckStability = *stability
+	mf, _ := Run(graphOptions)
 	log.Info().Msg(fmt.Sprintf("Maximum flow is %v", mf))
 
 	if *stability {
-		n.PrintVertexFlowDB(true, false)
+		PrintVertexFlowDB(true, false)
 	}
 }

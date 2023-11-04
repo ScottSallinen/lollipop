@@ -1,4 +1,4 @@
-package n
+package main
 
 import (
 	"fmt"
@@ -10,8 +10,6 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
-
-	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type PushRelabel struct {
@@ -245,7 +243,7 @@ func (pr *PushRelabel) Init(g *Graph, v *Vertex, myId uint32) (sent uint64) {
 		pos, exist := v.Property.NbrMap[e.Didx]
 		if !exist {
 			pos = int32(len(v.Property.Nbrs))
-			v.Property.Nbrs = append(v.Property.Nbrs, Neighbour{HeightPos: uint32(InitialHeight), HeightNeg: uint32(InitialHeight), Pos: -1, Didx: e.Didx})
+			v.Property.Nbrs = append(v.Property.Nbrs, Neighbour{HeightPos: MaxHeight, HeightNeg: MaxHeight, Pos: -1, Didx: e.Didx})
 			v.Property.NbrMap[e.Didx] = pos
 			v.Property.UnknownPosCount++
 		}
@@ -627,7 +625,7 @@ func (pr *PushRelabel) OnEdgeAdd(g *Graph, src *Vertex, sidx uint32, eidxStart i
 				// (ii) if old ResCapOut >  0, the invariant is already maintained.
 			} else {
 				pos = int32(len(src.Property.Nbrs))
-				src.Property.Nbrs = append(src.Property.Nbrs, Neighbour{HeightPos: uint32(InitialHeight), HeightNeg: uint32(InitialHeight), ResCapOut: int64(e.Property.Weight), Pos: -1, Didx: e.Didx})
+				src.Property.Nbrs = append(src.Property.Nbrs, Neighbour{HeightPos: MaxHeight, HeightNeg: MaxHeight, ResCapOut: int64(e.Property.Weight), Pos: -1, Didx: e.Didx})
 				src.Property.NbrMap[e.Didx] = pos
 				src.Property.UnknownPosCount++
 
