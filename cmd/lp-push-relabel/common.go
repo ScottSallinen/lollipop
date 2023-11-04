@@ -1,4 +1,4 @@
-package common
+package main
 
 import (
 	"math"
@@ -32,7 +32,6 @@ const (
 
 // Set these flags before running the algorithm
 var (
-	InitialHeight           = int64(0) // The initial height of a vertex that is newly added to the graph.
 	GlobalRelabelingEnabled = true
 
 	SourceRawId = graph.AsRawType(-1)

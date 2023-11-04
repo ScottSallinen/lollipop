@@ -1,4 +1,4 @@
-package n
+package main
 
 import (
 	"os"
@@ -8,8 +8,6 @@ import (
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
-
-	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
 )
 
 type VertexFlowEntry struct {

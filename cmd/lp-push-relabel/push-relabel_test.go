@@ -9,11 +9,6 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"golang.org/x/exp/constraints"
-
-	. "github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/common"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/m"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/n"
-	"github.com/ScottSallinen/lollipop/cmd/lp-push-relabel/explore/o"
 )
 
 type TestCase struct {
@@ -68,81 +63,16 @@ func TestMain(m *testing.M) {
 	os.Exit(c)
 }
 
-// func TestAggHAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
-// }
-
-// func TestAggHIncremental(t *testing.T) {
-// 	options := baseOptions
-// 	options.Dynamic = true
-// 	RunTestGraphs(t, a.RunAggH, "AggregateHashtable", options)
-// }
-
-// func TestBAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
-// }
-
-// func TestBIncremental(t *testing.T) {
-// 	options := baseOptions
-// 	options.Dynamic = true
-// 	RunTestGraphs(t, b.RunMsgH, "MessagePassingHashtable", options)
-// }
-
-// func TestFAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, f.Run, f.Name, options)
-// }
-
-// func TestGAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, g.Run, g.Name, options)
-// }
-
-// func TestHAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, h.Run, h.Name, options)
-// }
-
-// func TestHIncremental(t *testing.T) {
-// 	options := baseOptions
-// 	options.Dynamic = true
-// 	RunTestGraphs(t, h.Run, h.Name, options)
-// }
-
-// func TestIAsyncStatic(t *testing.T) {
-// 	options := baseOptions
-// 	RunTestGraphs(t, i.Run, i.Name, options)
-// }
-
-// func TestIIncremental(t *testing.T) {
-// 	options := baseOptions
-// 	options.Dynamic = true
-// 	RunTestGraphs(t, i.Run, i.Name, options)
-// }
-
-func TestMAsyncStatic(t *testing.T) {
+func TestAsyncStatic(t *testing.T) {
 	options := baseOptions
-	RunTestGraphs(t, m.Run, m.Name, options)
+	RunTestGraphs(t, Run, Name, options)
 }
 
-func TestMIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	RunTestGraphs(t, m.Run, m.Name, options)
-}
-
-func TestNAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, n.Run, n.Name, options)
-}
-
-func TestNIncremental(t *testing.T) {
+func TestIncremental(t *testing.T) {
 	options := baseOptions
 	options.Dynamic = true
 	options.TargetRate = 1000000
-	RunTestGraphs(t, n.Run, n.Name, options)
+	RunTestGraphs(t, Run, Name, options)
 }
 
 func TestNDeletes(t *testing.T) {
@@ -150,19 +80,7 @@ func TestNDeletes(t *testing.T) {
 	options.Dynamic = true
 	options.TargetRate = 1000000
 	options.InsertDeleteOnExpire = (24 * 60 * 60)
-	RunTestGraphs(t, n.Run, n.Name, options)
-}
-
-func TestOAsyncStatic(t *testing.T) {
-	options := baseOptions
-	RunTestGraphs(t, o.Run, o.Name, options)
-}
-
-func TestOIncremental(t *testing.T) {
-	options := baseOptions
-	options.Dynamic = true
-	options.TargetRate = 1000000
-	RunTestGraphs(t, o.Run, o.Name, options)
+	RunTestGraphs(t, Run, Name, options)
 }
 
 func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF constraints.Integer](
@@ -179,7 +97,6 @@ func RunTestGraphs[V graph.VPI[V], E graph.EPI[E], M graph.MVI[M], N any, MF con
 		}
 		for i := 0; i < 5; i++ {
 			options.NumThreads = uint32(rand.Intn(MaxThreads-1) + 1)
-			InitialHeight = MaxHeight
 			SourceRawId = graph.RawType(tg.Source)
 			SinkRawId = graph.RawType(tg.Sink)
 			if options.Dynamic {
