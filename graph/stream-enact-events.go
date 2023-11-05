@@ -116,6 +116,7 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 // Injects expired edges into the topology event buffer. To be done after the topology event buffer has been remapped with internal source ids.
 func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount int, uniqueCount uint64, delOnExpire uint64) (newUniqueCount uint64) {
 	latestTime := gt.TopologyEventBuff[changeCount-1].Edge.Property.GetTimestamp() // Unless there are out of order events...?
+	skipDelProb := g.Options.SkipDelProb
 
 	if latestTime == 0 && g.warnZeroTimestamp == 0 && atomic.CompareAndSwapUint64(&g.warnZeroTimestamp, 0, 1) {
 		log.Warn().Msg("WARNING: detected a 0 for timestamp event(s). Please check -pt option.")
@@ -125,10 +126,11 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		if gt.TopologyEventBuff[i].EventType() != ADD {
 			continue
 		}
-		// TODO: Could randomize if edges are deleted. Though, if we randomize the end time, note we would need to sort the expired edges (or use heap/pq).
-		//if rand.Float64() > 0.5 {
-		//	continue
-		//}
+		// Randomize if edges are deleted.
+		// Note: if we randomize the end time, we would need to sort the expired edges (or use heap/pq).
+		if skipDelProb > 0 && rand.Float64() < skipDelProb {
+			continue
+		}
 
 		// Adjust the copied edge.
 		futureDelete := &(gt.ExpiredEdges[len(gt.ExpiredEdges)-changeCount+i].Second)
@@ -154,7 +156,7 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		})
 	}
 
-	expiredIndex := 0
+	expiredIndex, insertedDeletes := 0, 0
 	for ; expiredIndex < len(gt.ExpiredEdges); expiredIndex++ { // Check if we need to inject expired edges, and inject all that are expired
 		nextDelete := &gt.ExpiredEdges[expiredIndex]
 		if (nextDelete.Second.TypeAndEventIdx & EVENT_TYPE_MASK) != uint64(DEL) {
@@ -168,12 +170,17 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		// This will need more consideration if/when we wish to target edges more specifically / efficiently.
 		EP(&nextDelete.Second.Edge.Property).ReplaceTimestamp(ts - delOnExpire)
 
-		uniqueCount = gt.checkInsertPending(nextDelete.First, uint32(changeCount+expiredIndex), uniqueCount)
+		insertedDeletes += 1
+		deleteIndex := changeCount + insertedDeletes
 
-		if (changeCount + expiredIndex) >= len(gt.TopologyEventBuff) {
+		uniqueCount = gt.checkInsertPending(nextDelete.First, uint32(deleteIndex), uniqueCount)
+
+		if deleteIndex < len(gt.TopologyEventBuff) {
+			gt.TopologyEventBuff[deleteIndex] = nextDelete.Second
+		} else if deleteIndex == len(gt.TopologyEventBuff) {
 			gt.TopologyEventBuff = append(gt.TopologyEventBuff, nextDelete.Second)
 		} else {
-			gt.TopologyEventBuff[changeCount+expiredIndex] = nextDelete.Second
+			log.Panic().Msg("deleteIndex > len(gt.TopologyEventBuff)")
 		}
 	}
 	gt.ExpiredEdges = gt.ExpiredEdges[expiredIndex:] // Deque might be better, but would be harder to sort.
