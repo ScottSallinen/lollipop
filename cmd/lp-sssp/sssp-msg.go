@@ -1,6 +1,8 @@
 package main
 
 import (
+	"sync/atomic"
+
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
 	"github.com/rs/zerolog/log"
@@ -16,7 +18,9 @@ type VPMsg struct {
 }
 
 type EPMsg struct {
-	graph.WeightedEdge
+	graph.WithWeight
+	graph.NoTimestamp
+	graph.NoRaw
 }
 
 type MailMsg struct{}
@@ -40,7 +44,7 @@ func (*SSSPM) MailRetrieve(_ *MailMsg, _ *graph.Vertex[VPMsg, EPMsg]) (m MailMsg
 }
 
 // The initialization note will begin the algorithm if we get that (Note value is zero).
-func (*SSSPM) OnUpdateVertex(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], src *graph.Vertex[VPMsg, EPMsg], n graph.Notification[NoteMsg], _ MailMsg) (sent uint64) {
+func (*SSSPM) OnUpdateVertex(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPMsg, EPMsg, MailMsg, NoteMsg], src *graph.Vertex[VPMsg, EPMsg], n graph.Notification[NoteMsg], _ MailMsg) (sent uint64) {
 	if src.Property.Value > float64(n.Note) { // Only act on an improvement to shortest path.
 		src.Property.Value = float64(n.Note)
 		src.Property.WillUpdate = true
@@ -62,7 +66,7 @@ func (*SSSPM) OnUpdateVertex(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], src
 	return sent
 }
 
-func (*SSSPM) OnEdgeAdd(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], src *graph.Vertex[VPMsg, EPMsg], sidx uint32, eidxStart int, _ MailMsg) (sent uint64) {
+func (*SSSPM) OnEdgeAdd(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPMsg, EPMsg, MailMsg, NoteMsg], src *graph.Vertex[VPMsg, EPMsg], sidx uint32, eidxStart int, _ MailMsg) (sent uint64) {
 	if src.Property.Value == EMPTY_VAL {
 		return 0 // Only bother if we are connected.
 	}
@@ -81,19 +85,39 @@ func (*SSSPM) OnEdgeAdd(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], src *gra
 
 // Compatibility stuff below.
 
-func (*SSSPM) OnEdgeDel(*graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], *graph.Vertex[VPMsg, EPMsg], uint32, []graph.Edge[EPMsg], MailMsg) (sent uint64) {
+func (*SSSPM) OnEdgeDel(*graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], *graph.GraphThread[VPMsg, EPMsg, MailMsg, NoteMsg], *graph.Vertex[VPMsg, EPMsg], uint32, []graph.Edge[EPMsg], MailMsg) (sent uint64) {
 	panic("Incremental only algorithm")
 }
 
 func (*SSSPM) OnCheckCorrectness(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg]) {
 	maxValue := make([]float64, g.NumThreads)
-	g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VPMsg, EPMsg, MailMsg, NoteMsg]) int {
+	numDistZero := uint64(0)
+	numDistOne := uint64(0)
+	numDistTwo := uint64(0)
+	numDistThree := uint64(0)
+	numDistFour := uint64(0)
+
+	// Denote vertices that claim unvisited, and ensure out edges are at least as good as we could provide.
+	visited := g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VPMsg, EPMsg, MailMsg, NoteMsg]) int {
 		tidx := gt.Tidx
+		visitCount := 0
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 			vertex := &gt.Vertices[i]
 			ourValue := vertex.Property.Value
 			if ourValue < EMPTY_VAL {
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
+				visitCount++
+			}
+			if ourValue == 0 {
+				atomic.AddUint64(&numDistZero, 1)
+			} else if ourValue == 1 {
+				atomic.AddUint64(&numDistOne, 1)
+			} else if ourValue == 2 {
+				atomic.AddUint64(&numDistTwo, 1)
+			} else if ourValue == 3 {
+				atomic.AddUint64(&numDistThree, 1)
+			} else if ourValue == 4 {
+				atomic.AddUint64(&numDistFour, 1)
 			}
 
 			if _, ok := g.InitNotes[gt.VertexRawID(i)]; ok {
@@ -113,9 +137,11 @@ func (*SSSPM) OnCheckCorrectness(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg])
 				}
 			}
 		}
-		return 0
+		return visitCount
 	})
+	log.Info().Msg("Visited: " + utils.V(visited) + ", Percent: " + utils.F("%.3f", float64(visited)/float64(g.NodeVertexCount())*100.0))
 	log.Info().Msg("MaxValue (longest shortest path): " + utils.V(utils.MaxSlice(maxValue)))
+	log.Info().Msg("Num with distances of: 0: " + utils.V(numDistZero) + ", 1: " + utils.V(numDistOne) + ", 2: " + utils.V(numDistTwo) + ", 3: " + utils.V(numDistThree) + ", 4: " + utils.V(numDistFour))
 }
 
 func (*SSSPM) OnOracleCompare(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], oracle *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg]) {

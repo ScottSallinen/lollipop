@@ -48,7 +48,7 @@ func (*CC) MailRetrieve(existing *Mail, _ *graph.Vertex[VertexProperty, EdgeProp
 }
 
 // Function called for a vertex update.
-func (alg *CC) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], m Mail) (sent uint64) {
+func (alg *CC) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], m Mail) (sent uint64) {
 	// Only act on an improvement to component.
 	if src.Property.Value <= uint32(m) {
 		return 0
@@ -68,9 +68,9 @@ func (alg *CC) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail,
 }
 
 // Function called upon a new edge add.
-func (alg *CC) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
+func (alg *CC) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
 	// Do nothing more if we update; we already targeted all edges.
-	if sent = alg.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx}, m); sent != 0 {
+	if sent = alg.OnUpdateVertex(g, gt, src, graph.Notification[Note]{Target: sidx}, m); sent != 0 {
 		return sent
 	}
 
@@ -85,6 +85,6 @@ func (alg *CC) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note
 	return sent
 }
 
-func (*CC) OnEdgeDel(*graph.Graph[VertexProperty, EdgeProperty, Mail, Note], *graph.Vertex[VertexProperty, EdgeProperty], uint32, []graph.Edge[EdgeProperty], Mail) (sent uint64) {
+func (*CC) OnEdgeDel(*graph.Graph[VertexProperty, EdgeProperty, Mail, Note], *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], *graph.Vertex[VertexProperty, EdgeProperty], uint32, []graph.Edge[EdgeProperty], Mail) (sent uint64) {
 	panic("Incremental only algorithm")
 }

@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"bufio"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,12 +27,12 @@ const THREAD_MAX = 1 << THREAD_BITS         // (32) Max threads.
 const THREAD_BITS = 5                       // Bit count
 const THREAD_SHIFT = 32 - THREAD_BITS       // Bit offset to make thread bits first in the uint32
 const THREAD_MASK = (1 << THREAD_SHIFT) - 1 // Bit mask
+const THREAD_ID_MASK = ((1 << THREAD_BITS) - 1) << THREAD_SHIFT
 
 // Some constants for the graph.
 const BASE_SIZE = 4096 * 4
 const GROW_LIMIT = 7             // Number of times certain buffers can grow (double in size)
 const MSG_MAX = 1024             // Max messages a thread MAY pull from the queue at a time, before cycling back to check other tasks. A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
-const FAKE_TIMESTAMP = false     // Replaces timestamp with an ordinal index. Useful for testing.
 const QUERY_EMULATE_BSP = false  // (Only if NoConvergeForQuery) If enabled, queries block in a fashion that makes the system emulate a bulk synchronous design. Slower than async, but good for debugging.
 const TOPOLOGY_FIRST = false     // Should be false. Only process topology events (no algorithm-only events) until the topology is fully loaded. For testing how useful the topology hooks only are.
 const QUERY_NON_BLOCKING = false // Should be false. Determines if the input stream should be non blocked while waiting for a query result -- this way until we can make a better async state view. If a small rate or bundle size is used it could work (otherwise the system moves too fast).
@@ -137,6 +138,7 @@ func (g *Graph[V, E, M, N]) Init() {
 		gt.Notifications = make([]Notification[N], MSG_MAX)
 
 		gt.NotificationQueue.Init(uint64(notifQueueSize) * uint64(THREAD_MAX/g.NumThreads))
+		gt.NotificationBuff.Init()
 
 		gt.TopologyQueue.Init(BASE_SIZE, GROW_LIMIT)
 		gt.FromEmitQueue.Init(BASE_SIZE, GROW_LIMIT)
@@ -367,13 +369,15 @@ func (g *Graph[V, E, M, N]) WriteVertexProps(dynamic bool) {
 	filename := "results/" + g.PathlessName() + "-props-" + resName + ".txt"
 
 	file := utils.CreateFile(filename)
+	w := bufio.NewWriter(file)
 
 	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E]) {
-		_, err := file.WriteString(utils.V(g.NodeVertexRawID(internalId)) + "," + utils.V(vertex.Property) + "\n")
+		_, err := w.WriteString(utils.V(g.NodeVertexRawID(internalId)) + "," + utils.V(vertex.Property) + "\n")
 		if err != nil {
 			log.Panic().Err(err).Msg("Error writing to file.")
 		}
 	})
+	w.Flush()
 	file.Close()
 }
 

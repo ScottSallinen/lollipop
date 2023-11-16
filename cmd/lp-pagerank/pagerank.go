@@ -40,7 +40,9 @@ type VertexProperty struct {
 }
 
 type EdgeProperty struct {
-	graph.TimestampEdge
+	graph.WithTimestamp
+	graph.NoWeight
+	graph.NoRaw
 }
 
 type Mail struct {
@@ -74,7 +76,7 @@ func (*PageRank) MailRetrieve(existing *Mail, _ *graph.Vertex[VertexProperty, Ed
 	return outgoing
 }
 
-func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], m Mail) (sent uint64) {
+func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], m Mail) (sent uint64) {
 	src.Property.InFlow += m.Value
 
 	if math.Abs(src.Property.InFlow) > EPSILON {
@@ -100,7 +102,7 @@ func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty,
 // OnEdgeAdd: Function called upon a new edge add (which also bundles a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: eidxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
+func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
 	distAllPrev := src.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
 	src.Property.InFlow += m.Value
@@ -137,7 +139,7 @@ func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail
 }
 
 // Version that merges with a visit
-func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
+func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
 	distAllPrev := src.Property.Mass * (DAMPINGFACTOR / (1.0 - DAMPINGFACTOR))
 
 	src.Property.InFlow += m.Value

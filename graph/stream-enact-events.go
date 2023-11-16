@@ -59,7 +59,7 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 
 		if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
 			mail = alg.MailRetrieve(&mailbox.Inbox, v)
-			sent := alg.OnUpdateVertex(g, v, Notification[N]{Target: vidx}, mail)
+			sent := alg.OnUpdateVertex(g, gt, v, Notification[N]{Target: vidx}, mail)
 			gt.MsgSend += sent
 		}
 	} else {
@@ -82,7 +82,7 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 }
 
 // Checks the incoming from-emit queue, and passes anything to the remitter.
-func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N]) (closed bool, count uint64) {
+func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], onInEdgeAddFunc func(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], uint32, uint32, *TopologyEvent[E])) (closed bool, count uint64) {
 	var ok bool
 	var didx uint32
 	var event TopologyEvent[E]
@@ -100,6 +100,9 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 		if event.EventType() == ADD {
 			vs := gt.VertexStructure(didx)
 			pos = vs.InEventPos
+			if onInEdgeAddFunc != nil {
+				onInEdgeAddFunc(g, gt, gt.Vertex(didx), didx, pos, &event)
+			}
 			vs.InEventPos++
 			gt.NumInEvents++ // Thread total; unused.
 		}
@@ -114,14 +117,14 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 }
 
 // Injects expired edges into the topology event buffer. To be done after the topology event buffer has been remapped with internal source ids.
-func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount int, uniqueCount uint64, delOnExpire uint64) (newUniqueCount uint64) {
+func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount uint64, uniqueCount uint64, delOnExpire uint64) (newUniqueCount uint64) {
 	latestTime := gt.TopologyEventBuff[changeCount-1].Edge.Property.GetTimestamp() // Unless there are out of order events...?
 
 	if latestTime == 0 && g.warnZeroTimestamp == 0 && atomic.CompareAndSwapUint64(&g.warnZeroTimestamp, 0, 1) {
 		log.Warn().Msg("WARNING: detected a 0 for timestamp event(s). Please check -pt option.")
 	}
 
-	for i := 0; i < changeCount; i++ {
+	for i := uint64(0); i < changeCount; i++ {
 		if gt.TopologyEventBuff[i].EventType() != ADD {
 			continue
 		}
@@ -131,7 +134,7 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		//}
 
 		// Adjust the copied edge.
-		futureDelete := &(gt.ExpiredEdges[len(gt.ExpiredEdges)-changeCount+i].Second)
+		futureDelete := &(gt.ExpiredEdges[len(gt.ExpiredEdges)-int(changeCount+i)].Second)
 		// TODO: this expiry copies the event idx of the original. Perhaps this whole process should be move to the emitter...
 		futureDelete.TypeAndEventIdx = ((futureDelete.TypeAndEventIdx >> EVENT_TYPE_BITS) << EVENT_TYPE_BITS) | uint64(DEL)
 		thisEdgeTime := futureDelete.Edge.Property.GetTimestamp()
@@ -154,8 +157,8 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		})
 	}
 
-	expiredIndex := 0
-	for ; expiredIndex < len(gt.ExpiredEdges); expiredIndex++ { // Check if we need to inject expired edges, and inject all that are expired
+	expiredIndex := uint64(0)
+	for ; expiredIndex < uint64(len(gt.ExpiredEdges)); expiredIndex++ { // Check if we need to inject expired edges, and inject all that are expired
 		nextDelete := &gt.ExpiredEdges[expiredIndex]
 		if (nextDelete.Second.TypeAndEventIdx & EVENT_TYPE_MASK) != uint64(DEL) {
 			continue // Must have decided not to change it to a delete.
@@ -170,7 +173,7 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 
 		uniqueCount = gt.checkInsertPending(nextDelete.First, uint32(changeCount+expiredIndex), uniqueCount)
 
-		if (changeCount + expiredIndex) >= len(gt.TopologyEventBuff) {
+		if (changeCount + expiredIndex) >= uint64(len(gt.TopologyEventBuff)) {
 			gt.TopologyEventBuff = append(gt.TopologyEventBuff, nextDelete.Second)
 		} else {
 			gt.TopologyEventBuff[changeCount+expiredIndex] = nextDelete.Second
@@ -203,13 +206,13 @@ func (gt *GraphThread[V, E, M, N]) checkInsertPending(sidx uint32, pending uint3
 }
 
 // Main function to enact topology events. Will look through the topology event buffer and apply changes to the graph.
-func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount int, delOnExpire uint64) (addEvents uint32, delEvents uint32) {
+func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount uint64, delOnExpire uint64) (addEvents uint32, delEvents uint32) {
 	uniqueCount := uint64(0)
-	canCheckTimestamp := (g.Options.TimestampPos != 0) || FAKE_TIMESTAMP
+	canCheckTimestamp := (g.Options.TimestampPos != 0) || g.Options.LogicalTime
 	var ok bool
 	var sidx uint32
 
-	for i := 0; i < changeCount; i++ {
+	for i := uint64(0); i < changeCount; i++ {
 		if sidx, ok = gt.VertexMap[gt.TopologyEventBuff[i].SrcRaw]; !ok {
 			sidx = NewVertex(alg, g, gt, gt.TopologyEventBuff[i].SrcRaw, gt.TopologyEventBuff[i].EventIdx())
 		}
@@ -252,7 +255,7 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 			// From the gathered set of consecutive adds, apply them.
 			if len(src.OutEdges) > eidxStart {
 				mail := alg.MailRetrieve(&mailbox.Inbox, src)
-				sent += alg.OnEdgeAdd(g, src, sidx, eidxStart, mail)
+				sent += alg.OnEdgeAdd(g, gt, src, sidx, eidxStart, mail)
 			}
 			addEvents += uint32(len(src.OutEdges) - eidxStart)
 
@@ -384,7 +387,7 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 				}
 				// From the gathered set of consecutive deletes, apply them.
 				mail := alg.MailRetrieve(&mailbox.Inbox, src)
-				sent += alg.OnEdgeDel(g, src, sidx, deletedEdges, mail)
+				sent += alg.OnEdgeDel(g, gt, src, sidx, deletedEdges, mail)
 				delEvents += uint32(len(deletedEdges))
 			} // Addressed the delete(s), continue the loop (go back to checking for consecutive adds).
 		}

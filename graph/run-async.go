@@ -40,7 +40,7 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 					if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
 						activity := atomic.LoadInt32(&mailbox.Activity)
 						mail = alg.MailRetrieve(&mailbox.Inbox, vertex)
-						sent += alg.OnUpdateVertex(g, vertex, Notification[N]{Target: vidx, Activity: activity}, mail)
+						sent += alg.OnUpdateVertex(g, gt, vertex, Notification[N]{Target: vidx, Activity: activity}, mail)
 					}
 				}
 				gt.MsgSend += sent
@@ -92,7 +92,7 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
 				mail = alg.MailRetrieve(&mailbox.Inbox, vertex)
 				activity := atomic.LoadInt32(&mailbox.Activity)
-				sent := alg.OnUpdateVertex(g, vertex, Notification[N]{Target: vidx, Activity: activity}, mail)
+				sent := alg.OnUpdateVertex(g, &g.GraphThreads[tidx], vertex, Notification[N]{Target: vidx, Activity: activity}, mail)
 				g.GraphThreads[tidx].MsgSend += sent
 			}
 		}
@@ -100,12 +100,10 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 	log.Trace().Msg(", init_send, " + utils.F("%.3f", (g.AlgTimer.Elapsed()-now).Seconds()*1000))
 }
 
-// Will pull a bundle of notifications targeting this thread, and then process them all.
+// Will pull a bundle of notifications targeting this thread.
 // A notification represents a vertex is 'active' as it has work to do (e.g. has mail in its inbox, or the notification itself is important).
 // We define a message as a notification that was genuinely sent and is thus in the queue (e.g. it was not discarded due to non-uniqueness).
-// Will check for termination only if the bool is set.
-func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], exitCheck bool) (done bool, algCount int) {
-
+func ReceiveMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], algCount uint64) (newAlgCount uint64) {
 	// First check for any back-pressure from the last attempt. This are first in FIFO.
 	if gt.NotificationBuff.Len() != 0 {
 		for ; algCount < MSG_MAX; algCount++ {
@@ -143,25 +141,30 @@ func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M,
 			}
 		}
 	}
+	return algCount
+}
 
+// Will process the messages in the queue.
+// Will check for termination only if the bool is set.
+func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], algCount uint64, exitCheck bool) (done bool) {
 	sent := uint64(0)
 	// Process all that we pulled.
-	for i := 0; i < algCount; i++ {
+	for i := uint64(0); i < algCount; i++ {
 		vertex, mailbox := gt.VertexAndMailbox(gt.Notifications[i].Target)
 		gt.Notifications[i].Activity = atomic.AddInt32(&(mailbox.Activity), -1)
 		mail := alg.MailRetrieve(&(mailbox.Inbox), vertex)
-		sent += alg.OnUpdateVertex(g, vertex, gt.Notifications[i], mail)
+		sent += alg.OnUpdateVertex(g, gt, vertex, gt.Notifications[i], mail)
 	}
 
 	if algCount != 0 { // Update send and receive counts.
 		gt.MsgSend += sent
-		gt.MsgRecv += uint64(algCount)
+		gt.MsgRecv += algCount
 	} else if exitCheck {
 		if g.CheckTermination(gt.Tidx) {
-			return true, algCount
+			return true
 		}
 	}
-	return false, algCount
+	return false
 }
 
 func (gt *GraphThread[V, E, M, N]) checkCommandsAsync(epoch *bool) {
@@ -193,7 +196,7 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 	gt := &g.GraphThreads[tidx]
 	gt.Status = APPLY_MSG
 	_, checkSuperStep := any(alg).(AlgorithmOnSuperStepConverged[V, E, M, N])
-	algCount := 0
+	algCount := uint64(0)
 	algNoCountTimes := 0
 	epoch := false
 
@@ -204,7 +207,8 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 			gt.Status = APPLY_MSG
 		}
 
-		completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, true)
+		algCount = ReceiveMessages[V, E, M, N](alg, g, gt, algCount)
+		completed = ProcessMessages[V, E, M, N](alg, g, gt, algCount, true)
 		if !completed && algCount == 0 { // Minor back off if we didn't get, and keep getting, no messages.
 			algNoCountTimes++
 			if algNoCountTimes%100 == 0 {
@@ -215,6 +219,7 @@ func ConvergeAsyncThread[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, 
 		} else {
 			algNoCountTimes = 0
 		}
+		algCount = 0
 
 		if completed && checkSuperStep {
 			completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)

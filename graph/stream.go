@@ -165,9 +165,10 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 
 // Emitter is one thread that presents events in linear order to the system.
 // It sends corresponding TopologyEvent to the FromEmitQueue queue of the source vertex's thread.
-func (g *Graph[V, E, M, N]) Emitter(edgeQueues []utils.RingBuffSPSC[TopologyEvent[E]], order *utils.GrowableRingBuff[uint32]) {
+func Emitter[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], edgeQueues []utils.RingBuffSPSC[TopologyEvent[E]], order *utils.GrowableRingBuff[uint32]) {
 	runtime.LockOSThread()
 	undirected := g.Options.Undirected
+	logicalTime := g.Options.LogicalTime
 	eventIdx := uint64(0)
 	retried := 0
 	totalRetried := 0
@@ -190,6 +191,7 @@ outer:
 				totalRetried += retried
 			}
 			event.TypeAndEventIdx |= (eventIdx << EVENT_TYPE_BITS)
+			eventIdx++
 
 			targetTidx := event.DstRaw.Within(THREADS)
 			if pos, ok = g.GraphThreads[targetTidx].FromEmitQueue.PutFast(event); !ok {
@@ -204,7 +206,14 @@ outer:
 
 			if undirected {
 				uTargetTidx := event.SrcRaw.Within(THREADS)
-				uEvent := TopologyEvent[E]{TypeAndEventIdx: event.TypeAndEventIdx, SrcRaw: event.DstRaw, DstRaw: event.SrcRaw, EdgeProperty: event.EdgeProperty}
+				uEventIdx := event.TypeAndEventIdx & EVENT_TYPE_MASK
+				uEventIdx |= (eventIdx << EVENT_TYPE_BITS)
+				uEvent := TopologyEvent[E]{TypeAndEventIdx: uEventIdx, SrcRaw: event.DstRaw, DstRaw: event.SrcRaw, EdgeProperty: event.EdgeProperty}
+				EP(&uEvent.EdgeProperty).ReplaceRaw(event.SrcRaw)
+				if logicalTime {
+					EP(&uEvent.EdgeProperty).ReplaceTimestamp(eventIdx)
+				}
+				eventIdx++
 				if pos, ok = g.GraphThreads[uTargetTidx].FromEmitQueue.PutFast(uEvent); !ok {
 					gtPutFails += g.GraphThreads[uTargetTidx].FromEmitQueue.PutSlow(uEvent, pos)
 				}
@@ -212,7 +221,6 @@ outer:
 					putFails += order.PutSlow(uTargetTidx, pos)
 				}
 			}
-			eventIdx++
 		}
 	}
 
@@ -236,7 +244,7 @@ outer:
 	runtime.UnlockOSThread()
 }
 
-func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqCount uint64, edgeQueue *utils.RingBuffSPSC[TopologyEvent[E]], wPos int32, tPos int32, transpose bool) {
+func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqCount uint64, edgeQueue *utils.RingBuffSPSC[TopologyEvent[E]], wPos int32, tPos int32, transpose bool, undirected bool, logicalTime bool) {
 	runtime.LockOSThread()
 	file := utils.OpenFile(name)
 	fieldsBuff := [MAX_ELEMS_PER_EDGE]string{}
@@ -248,6 +256,10 @@ func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqC
 	var b []byte
 	var remaining []string
 	parseProp := wPos >= 0 || tPos >= 0
+	undirectedMul := uint64(1)
+	if undirected {
+		undirectedMul = 2
+	}
 
 	for lines := uint64(0); ; lines++ {
 		if i := bytes.IndexByte(scannerBuff[scanner.Start:scanner.End], '\n'); i >= 0 {
@@ -259,6 +271,7 @@ func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqC
 			}
 		}
 		if (b[0]) == '#' {
+			lines-- // To match the count of actual events.
 			continue
 		}
 		if (lines % enqCount) == myIndex {
@@ -268,12 +281,14 @@ func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqC
 			if parseProp {
 				EP(&event.EdgeProperty).ParseProperty(remaining, wPos, tPos)
 			}
-			if FAKE_TIMESTAMP {
-				EP(&event.EdgeProperty).ReplaceTimestamp(lines)
+			if logicalTime {
+				EP(&event.EdgeProperty).ReplaceTimestamp(lines * undirectedMul)
 			}
 			if transpose {
 				event.SrcRaw, event.DstRaw = event.DstRaw, event.SrcRaw
 			}
+			EP(&event.EdgeProperty).ReplaceRaw(event.DstRaw)
+
 			if pos, ok := edgeQueue.PutFast(event); !ok {
 				edgeQueue.PutSlow(event, pos)
 			}
@@ -299,11 +314,11 @@ func LoadGraphStream[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V,
 	edgeQueues := make([]utils.RingBuffSPSC[TopologyEvent[E]], loadThreads)
 	for i := uint64(0); i < loadThreads; i++ {
 		edgeQueues[i].Init(BASE_SIZE * 8) // Small seems fine
-		go EdgeEnqueueToEmitter[EP](g.Options.Name, i, loadThreads, &edgeQueues[i], (g.Options.WeightPos - 1), (g.Options.TimestampPos - 1), g.Options.Transpose)
+		go EdgeEnqueueToEmitter[EP](g.Options.Name, i, loadThreads, &edgeQueues[i], int32(g.Options.WeightPos-1), int32(g.Options.TimestampPos-1), g.Options.Transpose, g.Options.Undirected, g.Options.LogicalTime)
 	}
 
 	// Launch the Emitter thread.
-	go g.Emitter(edgeQueues, order)
+	go Emitter[EP](g, edgeQueues, order)
 
 	// This thread becomes the Remitter thread.
 	lines := g.Remitter(order)

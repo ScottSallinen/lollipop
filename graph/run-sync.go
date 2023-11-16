@@ -31,7 +31,7 @@ func ConvergeSync[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 				if active {
 					gt.NotificationQueue.Accept() // must exist, should discard
 					mail = alg.MailRetrieve(&mailbox.Inbox, vertex)
-					sent := alg.OnUpdateVertex(g, vertex, Notification[N]{Target: (i | threadOffset)}, mail)
+					sent := alg.OnUpdateVertex(g, gt, vertex, Notification[N]{Target: (i | threadOffset)}, mail)
 					tActivity += int(sent)
 					gt.MsgSend += sent
 					vertexUpdates[gt.Tidx]++
@@ -82,7 +82,7 @@ func ConvergeSyncPrevOnly[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E,
 				if frontier[idx] {
 					frontier[idx] = false
 					vertexUpdates[gt.Tidx]++
-					sent := alg.OnUpdateVertex(g, gt.Vertex(i), Notification[N]{Target: (i | threadOffset)}, mailLast[idx])
+					sent := alg.OnUpdateVertex(g, gt, gt.Vertex(i), Notification[N]{Target: (i | threadOffset)}, mailLast[idx])
 					tActivity += int(sent)
 					gt.MsgSend += sent
 				}

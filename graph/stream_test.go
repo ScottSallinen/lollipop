@@ -15,8 +15,14 @@ import (
 var fileName = "/mnt/nvme0/data/wikipedia-growth.txt"
 var target = 39000000
 
+type MyEdge struct {
+	WithTimestamp
+	NoWeight
+	NoRaw
+}
+
 func Benchmark_Load_RB_Bufio(b *testing.B) {
-	edgeQueue := new(utils.RingBuffSPSC[TopologyEvent[TimestampEdge]])
+	edgeQueue := new(utils.RingBuffSPSC[TopologyEvent[MyEdge]])
 	edgeQueue.Init(uint64(target))
 	go discardInput(edgeQueue)
 
@@ -32,7 +38,7 @@ func Benchmark_Load_RB_Bufio(b *testing.B) {
 }
 
 func Benchmark_Load_RB_Scan(b *testing.B) {
-	edgeQueue := new(utils.RingBuffSPSC[TopologyEvent[TimestampEdge]])
+	edgeQueue := new(utils.RingBuffSPSC[TopologyEvent[MyEdge]])
 	edgeQueue.Init(uint64(target))
 	go discardInput(edgeQueue)
 
@@ -53,7 +59,7 @@ func Benchmark_Load_RB_Scan(b *testing.B) {
 /*
 // Worse than chan?
 func Benchmark_Load_Zenq_Scan(b *testing.B) {
-	edgeQueue := zenq.New[TopologyEvent[TimestampEdge]](uint32(target))
+	edgeQueue := zenq.New[TopologyEvent[MyEdge]](uint32(target))
 	go discardInputZenq(edgeQueue)
 
 	file := utils.OpenFile(fileName)
@@ -72,7 +78,7 @@ func Benchmark_Load_Zenq_Scan(b *testing.B) {
 
 // Why so slow?
 func Benchmark_Load_Chan_Scan(b *testing.B) {
-	edgeQueue := make(chan TopologyEvent[TimestampEdge], (uint32(target)))
+	edgeQueue := make(chan TopologyEvent[MyEdge], (uint32(target)))
 	go discardInputChan(edgeQueue)
 
 	file := utils.OpenFile(fileName)
@@ -193,20 +199,20 @@ func stream_zenq_scan[EP EPP[E], E EPI[E]](file *os.File, s *utils.FastFileLines
 	return lines
 }
 
-func discardInputZenq(edgeQueue *zenq.ZenQ[TopologyEvent[TimestampEdge]]) {
+func discardInputZenq(edgeQueue *zenq.ZenQ[TopologyEvent[MyEdge]]) {
 	for {
 		edgeQueue.Read()
 	}
 }
 */
 
-func discardInputChan(edgeQueue chan TopologyEvent[TimestampEdge]) {
+func discardInputChan(edgeQueue chan TopologyEvent[MyEdge]) {
 	for range edgeQueue {
 		// do nothing
 	}
 }
 
-func discardInput(edgeQueue *utils.RingBuffSPSC[TopologyEvent[TimestampEdge]]) {
+func discardInput(edgeQueue *utils.RingBuffSPSC[TopologyEvent[MyEdge]]) {
 	retried := 0
 	totalRetried := 0
 	var ok bool

@@ -69,6 +69,12 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			mailbox.Inbox = mailbox.Inbox.New()
 		})
 
+		if OCopy, ok := any(new(V)).(VPCopyOracle[V]); ok {
+			oracleGraph.NodeForEachVertex(func(_, internalId uint32, oracleVertex *Vertex[V, E]) {
+				OCopy.CopyForOracle(&oracleVertex.Property, &g.NodeVertex(internalId).Property)
+			})
+		}
+
 		log.Info().Msg("Creating result for graph with " + utils.V(numVertices) + " vertices and " + utils.V(numEdges) + " edges")
 		oracleGraph.AlgTimer.Start()
 		ConvergeAsync(alg, oracleGraph, new(sync.WaitGroup))

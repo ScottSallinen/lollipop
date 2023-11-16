@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
 
@@ -12,6 +13,12 @@ import (
 // Performs some sanity checks for correctness.
 func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	maxValue := make([]float64, g.NumThreads)
+	numDistZero := uint64(0)
+	numDistOne := uint64(0)
+	numDistTwo := uint64(0)
+	numDistThree := uint64(0)
+	numDistFour := uint64(0)
+
 	// Denote vertices that claim unvisited, and ensure out edges are at least as good as we could provide.
 	visited := g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note]) int {
 		tidx := gt.Tidx
@@ -22,6 +29,17 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 			if ourValue < EMPTY_VAL {
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
 				visitCount++
+			}
+			if ourValue == 0 {
+				atomic.AddUint64(&numDistZero, 1)
+			} else if ourValue == 1 {
+				atomic.AddUint64(&numDistOne, 1)
+			} else if ourValue == 2 {
+				atomic.AddUint64(&numDistTwo, 1)
+			} else if ourValue == 3 {
+				atomic.AddUint64(&numDistThree, 1)
+			} else if ourValue == 4 {
+				atomic.AddUint64(&numDistFour, 1)
 			}
 
 			if initVal, ok := g.InitMails[gt.VertexRawID(i)]; ok {
@@ -45,6 +63,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 	})
 	log.Info().Msg("Visited: " + utils.V(visited) + ", Percent: " + utils.F("%.3f", float64(visited)/float64(g.NodeVertexCount())*100.0))
 	log.Info().Msg("MaxValue (longest shortest path): " + utils.V(utils.MaxSlice(maxValue)))
+	log.Info().Msg("Num with distances of: 0: " + utils.V(numDistZero) + ", 1: " + utils.V(numDistOne) + ", 2: " + utils.V(numDistTwo) + ", 3: " + utils.V(numDistThree) + ", 4: " + utils.V(numDistFour))
 }
 
 // Compares the results of the algorithm to the oracle.

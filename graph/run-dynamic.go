@@ -134,14 +134,15 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 	_, checkSuperStep := any(alg).(AlgorithmOnSuperStepConverged[V, E, M, N])
 	makeTimeseries := (g.Options.LogTimeseries)
 	insDelOnExpire := g.Options.InsertDeleteOnExpire
-	pullUpToBase := BASE_SIZE
+	pullUpToBase := uint64(BASE_SIZE)
 	blockTop := false
 	bspSync := false
 	blockAlgIfTop := false
 	epoch := false
 	var ok bool
-	var topCount, algCount int
-	var remitCount uint64
+	topCount := uint64(0)
+	algCount := uint64(0)
+	remitCount := uint64(0)
 	algFail := 0
 	topFail := 0
 	timeStates := g.Options.DebugLevel >= 2
@@ -149,6 +150,10 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		gt.LoopTimes = make([]time.Duration, DONE)
 	}
 	runtime.LockOSThread()
+	var onInEdgeAddFunc func(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], uint32, uint32, *TopologyEvent[E])
+	if aIN, ok := any(alg).(AlgorithmOnInEdgeAdd[V, E, M, N]); ok {
+		onInEdgeAddFunc = aIN.OnInEdgeAdd
+	}
 
 	var prev, curr time.Time
 
@@ -168,7 +173,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 
 		if !epoch && !remitClosed && !blockTop {
 			gt.Status = REMIT
-			remitClosed, remitCount = checkToRemit(alg, g, gt)
+			remitClosed, remitCount = checkToRemit(alg, g, gt, onInEdgeAddFunc)
 			gt.EventActions += remitCount
 			if remitClosed {
 				//log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] FromEmitEvents closed")
@@ -184,6 +189,12 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			}
 		} else {
 			remitCount = 0
+		}
+
+		processAlg := strucClosed || !(TOPOLOGY_FIRST || blockAlgIfTop)
+		if processAlg {
+			// Receive algorithmic messages; before topology events, to avoid messages that could be over topology that we have not yet processed.
+			algCount = ReceiveMessages[V, E, M, N](alg, g, gt, algCount)
 		}
 
 		// The main check for updates to topology. This occurs with priority over algorithmic messages.
@@ -213,7 +224,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			if topCount != 0 {
 				gt.EventActions += uint64(topCount)
 				gt.Status = APPLY_TOP
-				addEvents, delEvents := EnactTopologyEvents[EP](alg, g, gt, int(topCount), insDelOnExpire)
+				addEvents, delEvents := EnactTopologyEvents[EP](alg, g, gt, topCount, insDelOnExpire)
 				gt.NumOutAdds += addEvents
 				gt.NumOutDels += delEvents
 				gt.NumEdges += addEvents - delEvents
@@ -226,7 +237,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 
 				// If we filled bundle then we loop back to ingest more events, rather than process algorithm messages, as the thread is behind.
 				if (topCount == pullUpToBase) || bspSync {
-					if int(gt.NumEdges)/(64) > pullUpToBase {
+					if uint64(gt.NumEdges)/(64) > pullUpToBase {
 						pullUpToBase = pullUpToBase * 2
 						if len(gt.TopologyEventBuff) < int(pullUpToBase) {
 							gt.TopologyEventBuff = make([]RawEdgeEvent[E], pullUpToBase)
@@ -252,11 +263,12 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			}
 
 			if strucClosed {
+				gt.TopologyEventBuff = nil
+				gt.VertexPendingBuff = nil
 				doneEvents <- struct{}{}
 			}
 		}
 
-		processAlg := strucClosed || !(TOPOLOGY_FIRST || blockAlgIfTop)
 		algFailed := false
 		if processAlg {
 			// Process algorithm messages. Check for algorithm termination if needed.
@@ -264,10 +276,11 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 			checkTerm := (strucClosed && remitClosed) || // all topology events are done, or
 				(blockTop && checkSuperStep) || // topology events are currently blocked and we may super-step, (NoConvergeForQuery blocks top, would not have super-steps, but might complete)
 				(epoch && topCount == 0) // no more topology events in this epoch (assuming the remitter does not produce new events after it starts an epoch)
-			completed, algCount = ProcessMessages[V, E, M, N](alg, g, gt, checkTerm)
+			completed = ProcessMessages[V, E, M, N](alg, g, gt, algCount, checkTerm)
 			if !completed && algCount == 0 {
 				algFailed = true
 			}
+			algCount = 0
 
 			if completed && checkSuperStep {
 				completed = AwaitSuperStepConvergence[V, E, M, N](alg, g, tidx)

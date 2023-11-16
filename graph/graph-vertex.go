@@ -20,6 +20,11 @@ type VPI[V any] interface {
 	New() (new V) // "Default constructor."
 }
 
+// Optional definition if the oracle requires copied properties from the given graph, before running the algorithm.
+type VPCopyOracle[V any] interface {
+	CopyForOracle(*V, *V)
+}
+
 // For Intra-Node communication. Represents an abstract mailbox system.
 // Data here is ephemeral.
 type VertexMailbox[M MVI[M]] struct {
@@ -56,6 +61,11 @@ func InternalExpand(internalId uint32) (idx, tidx uint32) {
 	return idx, tidx
 }
 
+// Checks if two internal IDs are on the same graph thread.
+func SameTidx(internalId uint32, otherInternalId uint32) bool {
+	return (internalId & THREAD_ID_MASK) == (otherInternalId & THREAD_ID_MASK)
+}
+
 // ------------------ Thread level functions ------------------ //
 
 // Wrapper for getting a vertex; okay to provide a vidx or just the thread-local offset.
@@ -63,11 +73,18 @@ func (gt *GraphThread[V, E, M, N]) Vertex(internalOrOffset uint32) *Vertex[V, E]
 	return &gt.Vertices[(internalOrOffset & THREAD_MASK)]
 }
 
-// Wrapper for getting a vertex and its mail; okay to provide a vidx or just the thread-local offset.
+// Wrapper for getting a vertex and its mailbox; okay to provide a vidx or just the thread-local offset.
 func (gt *GraphThread[V, E, M, N]) VertexAndMailbox(internalOrOffset uint32) (*Vertex[V, E], *VertexMailbox[M]) {
 	idx := internalOrOffset & THREAD_MASK
 	bucket, bpos := idxToBucket(idx)
 	return &gt.Vertices[idx], &gt.VertexMailboxes[bucket][bpos]
+}
+
+// Wrapper for getting a vertex mailbox; okay to provide a vidx or just the thread-local offset.
+func (gt *GraphThread[V, E, M, N]) VertexMailbox(internalOrOffset uint32) *VertexMailbox[M] {
+	idx := internalOrOffset & THREAD_MASK
+	bucket, bpos := idxToBucket(idx)
+	return &gt.VertexMailboxes[bucket][bpos]
 }
 
 // Wrapper for getting a vertex structure; okay to provide a vidx or just the thread-local offset.

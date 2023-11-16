@@ -85,7 +85,7 @@ func (*ColouringMsg) MailRetrieve(existing *MailMsg, src *graph.Vertex[VPropMsg,
 	return m // Unused with this strategy.
 }
 
-func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], notif graph.Notification[NoteMsg], _ MailMsg) (sent uint64) {
+func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], notif graph.Notification[NoteMsg], _ MailMsg) (sent uint64) {
 	prop := &src.Property
 
 	if notif.Note.Pos == EMPTY_VAL_MSG { // Initialization notification, not from an inbound edge.
@@ -140,11 +140,11 @@ func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailM
 	return sent
 }
 
-func (alg *ColouringMsg) OnEdgeAdd(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], sidx uint32, eidxStart int, m MailMsg) (sent uint64) {
+func (alg *ColouringMsg) OnEdgeAdd(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], sidx uint32, eidxStart int, m MailMsg) (sent uint64) {
 	panic("TODO")
 }
 
-func (alg *ColouringMsg) OnEdgeDel(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], sidx uint32, deletedEdges []graph.Edge[EPropMsg], m MailMsg) (sent uint64) {
+func (alg *ColouringMsg) OnEdgeDel(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], sidx uint32, deletedEdges []graph.Edge[EPropMsg], m MailMsg) (sent uint64) {
 	panic("TODO")
 }
 

@@ -13,7 +13,11 @@ import (
 
 type GraphOptions struct {
 	NumThreads            uint32  // Number of threads to use for parallelism.
-	LoadThreads           uint32  // Number of threads to use for loading the graph.
+	LoadThreads           uint8   // Number of threads to use for loading the graph.
+	TimestampPos          int8    // Logical (not zero-indexed) position after [src, dst]. Value 0 means no timestamp in event file or not desired.
+	WeightPos             int8    // Logical (not zero-indexed) position after [src, dst]. Value 0 means no weight in event file or not desired.
+	QueueMultiplier       uint8   // 2^n Multiplier for the notification queue size.
+	DebugLevel            uint8   // If non-zero, will print extra debug information. 1 for debug, 2 adds extra timing details, 3 adds extra debug behaviour.
 	Undirected            bool    // Declares if the graph should be treated as undirected (e.g. for construction)
 	Transpose             bool    // Declares if the graph should transposed during construction (reverses src/dst of edges).
 	Dynamic               bool    // Declares if attached algorithms will be treated as dynamic.
@@ -31,15 +35,12 @@ type GraphOptions struct {
 	ColourOutput          bool    // If true, will colour terminal stdout output. Default enabled; can be disabled not supported.
 	Profile               bool    // If true, will profile the algorithm and create a pprof file.
 	TimeRange             bool    // If true, use timestamp edges with time *ranges* rather than "deletion" of events. In this case edges represent an event that can begin at one time and may end at a future time.
-	DebugLevel            uint32  // If non-zero, will print extra debug information. 1 for debug, 2 adds extra timing details, 3 adds extra debug behaviour.
-	PollingRate           uint32  // How often to print status (in milliseconds) when dynamic graph streaming is running
-	QueueMultiplier       uint32  // 2^n Multiplier for the notification queue size.
-	TimeSeriesInterval    uint64  // Interval (seconds) for how often to log timeseries.
+	LogicalTime           bool    // If true, use logical time (i.e., the order of events) rather than timestamps.
 	TargetRate            float64 // Target rate of events (in events per second). 0 is unbounded.
+	PollingRate           uint32  // How often to print status (in milliseconds) when dynamic graph streaming is running
+	AsyncContinuationTime int32   // If non-zero, will continue the algorithm for AsyncContinuationTime milliseconds before collecting a state (logging a timeseries).
+	TimeSeriesInterval    uint64  // Interval (seconds) for how often to log timeseries.
 	InsertDeleteOnExpire  uint64  // If non-zero, will insert deletion of edges that were added before, after passing the expiration duration. (Create a sliding window graph). Needs (Get/Set)Timestamp defined.
-	AsyncContinuationTime int64   // If non-zero, will continue the algorithm for AsyncContinuationTime milliseconds before collecting a state (logging a timeseries).
-	TimestampPos          int32   // Logical (not zero-indexed) position after [src, dst]. Value 0 means no timestamp in event file or not desired.
-	WeightPos             int32   // Logical (not zero-indexed) position after [src, dst]. Value 0 means no weight in event file or not desired.
 	Name                  string  // Name of the input graph.
 }
 
@@ -139,27 +140,27 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 		NumThreads:            uint32(threadCount),
 		Dynamic:               dynamic,
 		Sync:                  useSync,
-		QueueMultiplier:       uint32(*mqPtr),
+		QueueMultiplier:       uint8(*mqPtr),
 		Undirected:            *undirectedPtr,
 		Transpose:             *transposePtr,
 		WriteVertexProps:      *propPtr,
 		TargetRate:            *dRatePtr,
 		CheckCorrectness:      *checkPtr,
-		DebugLevel:            uint32(*debugPtr),
+		DebugLevel:            uint8(*debugPtr),
 		LogTimeseries:         (tsInterval > 0),
 		TimeseriesEdgeCount:   (*dEdgePtr > 0),
 		TimeSeriesInterval:    tsInterval,
 		InsertDeleteOnExpire:  deleteOnExpire,
-		AsyncContinuationTime: int64(*refinePtr),
+		AsyncContinuationTime: int32(*refinePtr),
 		OracleCompare:         *oraclePtr,
 		SyncPreviousOnly:      *syncPrevPtr,
 		OracleCompareSync:     *oracleSyncPtr,
 		AlgTimeIncludeQuery:   *algIncludeQueryPtr,
 		PollingRate:           uint32(*pollPtr),
 		Profile:               *profilePtr,
-		LoadThreads:           uint32(loadThreads),
-		TimestampPos:          int32(*timePosPtr),
-		WeightPos:             int32(*weightPosPtr),
+		LoadThreads:           uint8(loadThreads),
+		TimestampPos:          int8(*timePosPtr),
+		WeightPos:             int8(*weightPosPtr),
 	}
 	return graphOptions
 }

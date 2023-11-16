@@ -12,11 +12,11 @@ import (
 
 // Basic algorithm template. Se cmd/lp-template for better descriptions.
 type Algorithm[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	OnUpdateVertex(g *Graph[V, E, M, N], v *Vertex[V, E], n Notification[N], mail M) (sent uint64)
+	OnUpdateVertex(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], n Notification[N], mail M) (sent uint64)
 	MailMerge(incoming M, sidx uint32, existing *M) (newInfo bool)
 	MailRetrieve(existing *M, v *Vertex[V, E]) (outgoing M)
-	OnEdgeAdd(g *Graph[V, E, M, N], v *Vertex[V, E], sidx uint32, eidxStart int, mail M) (sent uint64)
-	OnEdgeDel(g *Graph[V, E, M, N], v *Vertex[V, E], sidx uint32, deletedEdges []Edge[E], mail M) (sent uint64)
+	OnEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], sidx uint32, eidxStart int, mail M) (sent uint64)
+	OnEdgeDel(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], sidx uint32, deletedEdges []Edge[E], mail M) (sent uint64)
 }
 
 type AlgorithmInitAllMail[V VPI[V], E EPI[E], M MVI[M], N any] interface {
@@ -29,6 +29,10 @@ type AlgorithmInitAllNote[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 
 type AlgorithmBaseVertexMailbox[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 	BaseVertexMailbox(v *Vertex[V, E], internalId uint32, s *VertexStructure) (baseMail M)
+}
+
+type AlgorithmOnInEdgeAdd[V VPI[V], E EPI[E], M MVI[M], N any] interface {
+	OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vidx uint32, pos uint32, event *TopologyEvent[E])
 }
 
 type AlgorithmOnFinish[V VPI[V], E EPI[E], M MVI[M], N any] interface {
@@ -184,7 +188,11 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 			defer file.Close()
 		}
 		g.Broadcast(BLOCK_ALG_IF_TOP)
-		ConvergeDynamic[EP](new(blankAlg[V, E, M, N]), g, feederWg)
+		blank := new(blankAlg[V, E, M, N])
+		if aIN, ok := any(alg).(AlgorithmOnInEdgeAdd[V, E, M, N]); ok {
+			blank.OnInEdgeAddFunc = aIN.OnInEdgeAdd
+		}
+		ConvergeDynamic[EP](blank, g, feederWg)
 		for t := 0; t < int(g.NumThreads); t++ {
 			g.TerminateVotes[t] = 0
 		}
@@ -273,7 +281,7 @@ func DynamicGraphExecutionFromTestEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M]
 func CheckAssumptions[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N]) {
 	event := TopologyEvent[E]{}
 
-	if FAKE_TIMESTAMP || g.Options.TimestampPos != 0 {
+	if g.Options.LogicalTime || g.Options.TimestampPos != 0 {
 		EP(&event.EdgeProperty).ReplaceTimestamp(123)
 		if event.EdgeProperty.GetTimestamp() != 123 {
 			log.Panic().Msg("Failure: we are using a timestamp strategy, but I could not replace a timestamp in an edge property.")
@@ -288,16 +296,23 @@ func CheckAssumptions[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorith
 }
 
 // --------- Blank Algorithm, for loading a stream with no algorithm. ---------
-type blankAlg[V VPI[V], E EPI[E], M MVI[M], N any] struct{}
+type blankAlg[V VPI[V], E EPI[E], M MVI[M], N any] struct {
+	OnInEdgeAddFunc func(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vidx uint32, pos uint32, event *TopologyEvent[E])
+}
 
-func (e *blankAlg[V, E, M, N]) OnUpdateVertex(*Graph[V, E, M, N], *Vertex[V, E], Notification[N], M) (s uint64) {
+func (e *blankAlg[V, E, M, N]) OnUpdateVertex(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], Notification[N], M) (s uint64) {
 	return
 }
 func (e *blankAlg[V, E, M, N]) MailMerge(M, uint32, *M) (b bool)     { return false }
 func (e *blankAlg[V, E, M, N]) MailRetrieve(*M, *Vertex[V, E]) (m M) { return }
-func (e *blankAlg[V, E, M, N]) OnEdgeAdd(*Graph[V, E, M, N], *Vertex[V, E], uint32, int, M) (s uint64) {
+func (e *blankAlg[V, E, M, N]) OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vidx uint32, pos uint32, event *TopologyEvent[E]) {
+	if e.OnInEdgeAddFunc != nil {
+		e.OnInEdgeAddFunc(g, gt, v, vidx, pos, event)
+	}
+}
+func (e *blankAlg[V, E, M, N]) OnEdgeAdd(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], uint32, int, M) (s uint64) {
 	return
 }
-func (e *blankAlg[V, E, M, N]) OnEdgeDel(*Graph[V, E, M, N], *Vertex[V, E], uint32, []Edge[E], M) (s uint64) {
+func (e *blankAlg[V, E, M, N]) OnEdgeDel(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], uint32, []Edge[E], M) (s uint64) {
 	return
 }

@@ -75,7 +75,7 @@ type Deque[T any] struct {
 	tp         int      // tp is the index pointing one beyond the current last element in the deque (i.e. last element added in the current deque values).
 	len        int      // Len holds the current deque values length.
 	spareLinks int      // spareLinks holds the number of already used, but now empty, ready-to-be-reused, slices.
-	tZero      T
+	tZero      *T
 }
 
 // Node represents a deque node.
@@ -94,6 +94,7 @@ type node[T any] struct {
 // Init initializes or clears deque d.
 func (d *Deque[T]) Init() *Deque[T] {
 	*d = Deque[T]{}
+	d.tZero = new(T)
 	return d
 }
 
@@ -107,7 +108,7 @@ func (d *Deque[T]) Len() int { return d.len }
 // The complexity is O(1).
 func (d *Deque[T]) Front() (T, bool) {
 	if d.len == 0 {
-		return d.tZero, false
+		return *d.tZero, false
 	}
 	return d.head.v[d.hp], true
 }
@@ -118,7 +119,7 @@ func (d *Deque[T]) Front() (T, bool) {
 // The complexity is O(1).
 func (d *Deque[T]) Back() (T, bool) {
 	if d.len == 0 {
-		return d.tZero, false
+		return *d.tZero, false
 	}
 	return d.tail.v[d.tp-1], true
 }
@@ -295,11 +296,11 @@ func (d *Deque[T]) SlowPushBack(v T) {
 // The complexity is O(1).
 func (d *Deque[T]) PopFront() (T, bool) {
 	if d.len == 0 {
-		return d.tZero, false
+		return *d.tZero, false
 	}
 	vp := &d.head.v[d.hp]
 	v := *vp
-	*vp = d.tZero // Avoid memory leaks
+	*vp = *d.tZero // Avoid memory leaks
 	d.len--
 	switch {
 	case d.hp < d.hlp:
@@ -329,11 +330,11 @@ func (d *Deque[T]) PopFront() (T, bool) {
 
 func (d *Deque[T]) TryPopFront() (T, bool) {
 	if d.len == 0 {
-		return d.tZero, false
+		return *d.tZero, false
 	}
 	vp := &d.head.v[d.hp]
 	v := *vp
-	*vp = d.tZero // Avoid memory leaks
+	*vp = *d.tZero // Avoid memory leaks
 	d.len--
 	return v, true
 }
@@ -369,13 +370,13 @@ func (d *Deque[T]) UpdatePopFront() {
 // The complexity is O(1).
 func (d *Deque[T]) PopBack() (T, bool) {
 	if d.len == 0 {
-		return d.tZero, false
+		return *d.tZero, false
 	}
 	d.len--
 	d.tp--
 	vp := &d.tail.v[d.tp]
 	v := *vp
-	*vp = d.tZero // Avoid memory leaks
+	*vp = *d.tZero // Avoid memory leaks
 	switch {
 	case d.tp > 0:
 		// There's space before tp.

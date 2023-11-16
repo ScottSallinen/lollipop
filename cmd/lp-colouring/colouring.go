@@ -21,7 +21,9 @@ type VertexProperty struct {
 }
 
 type EdgeProperty struct {
-	graph.TimestampEdge
+	graph.WithTimestamp
+	graph.NoWeight
+	graph.NoRaw
 }
 
 type Mail struct {
@@ -162,7 +164,7 @@ func (*Colouring) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProper
 }
 
 // Note the mail from MailRetrieve isn't used; the MailRetrieve function itself applies the values into the vertex already -- in this case, updating the neighbour colour indexes.
-func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], _ Mail) (sent uint64) {
+func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], _ Mail) (sent uint64) {
 	best := src.Property.coloursIndexed.FirstUnused()
 
 	if src.Property.Colour == best {
@@ -183,9 +185,9 @@ func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty
 // OnEdgeAdd: Function called upon a new edge add (which also bundles a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: eidxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func (alg *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
+func (alg *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
 	// Update first. If we already targeted all neighbours, we can skip the rest.
-	if sent = alg.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx}, m); sent != 0 {
+	if sent = alg.OnUpdateVertex(g, gt, src, graph.Notification[Note]{Target: sidx}, m); sent != 0 {
 		return sent
 	}
 	// Target all new edges
@@ -205,9 +207,9 @@ func (alg *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 }
 
 // This function is to be called with a set of edge deletion events.
-func (alg *Colouring) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
+func (alg *Colouring) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
 	// Update first.
-	sent += alg.OnUpdateVertex(g, src, graph.Notification[Note]{Target: sidx}, m)
+	sent += alg.OnUpdateVertex(g, gt, src, graph.Notification[Note]{Target: sidx}, m)
 
 	for _, e := range deletedEdges {
 		// Just notify deleted edge; they will set our pos to EMPTY_VAL so they no longer will care about us.
