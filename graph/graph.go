@@ -33,7 +33,6 @@ const THREAD_ID_MASK = ((1 << THREAD_BITS) - 1) << THREAD_SHIFT
 const BASE_SIZE = 4096 * 4
 const GROW_LIMIT = 7             // Number of times certain buffers can grow (double in size)
 const MSG_MAX = 1024             // Max messages a thread MAY pull from the queue at a time, before cycling back to check other tasks. A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
-const QUERY_EMULATE_BSP = false  // (Only if NoConvergeForQuery) If enabled, queries block in a fashion that makes the system emulate a bulk synchronous design. Slower than async, but good for debugging.
 const TOPOLOGY_FIRST = false     // Should be false. Only process topology events (no algorithm-only events) until the topology is fully loaded. For testing how useful the topology hooks only are.
 const QUERY_NON_BLOCKING = false // Should be false. Determines if the input stream should be non blocked while waiting for a query result -- this way until we can make a better async state view. If a small rate or bundle size is used it could work (otherwise the system moves too fast).
 
@@ -77,6 +76,11 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	NumEdges        uint32                           // Thread's current total outgoing edge count (i.e., adds less deletes; ease of access here).
 	Command         chan Command                     // Incoming command channel.
 
+	VertexProperties []*[BUCKET_SIZE]V               // Per-Vertex: User defined properties.
+	VertexMap        map[RawType]uint32              // Per-Vertex: Raw (external) to internal ID.
+	VertexStructures []*[BUCKET_SIZE]VertexStructure // Supplemental vertex structure (see vertex.go). Tracks extra structural properties (e.g. internal to external id).
+	Response         chan Command                    // Response channel
+
 	NotificationQueue utils.RingBuffMPSC[Notification[N]] // Inbound notification queue for the thread.
 	NotificationBuff  utils.Deque[Notification[N]]        // Overfill buffer for notifications.
 
@@ -85,25 +89,22 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	MsgRecv           uint64            // Number of messages received by the thread.  A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
 	TopologyEventBuff []RawEdgeEvent[E] // Buffer for thread topology events that are ready to apply (been remitted).
 
-	VertexStructures  []*[BUCKET_SIZE]VertexStructure // Supplemental vertex structure (see vertex.go). Tracks extra structural properties (e.g. internal to external id).
-	VertexMap         map[RawType]uint32              // Per-Vertex: Raw (external) to internal ID.
-	VertexPendingBuff [][]uint32                      // Pending topology events; used for offsets into the TopologyEventBuff buffer.
-	NumUnique         uint64                          // Used for offset tracking. Number of unique vertices processed; after merging consecutive events for the same vertex. Starts at 1.
+	VertexPendingBuff [][]uint32 // Pending topology events; used for offsets into the TopologyEventBuff buffer.
+	NumUnique         uint64     // Used for offset tracking. Number of unique vertices processed; after merging consecutive events for the same vertex. Starts at 1.
 
-	NumOutAdds   uint32                                // Number of outgoing edges added by the thread.
-	NumOutDels   uint32                                // Number of outgoing edges deleted by the thread.
-	NumInEvents  uint64                                // Thread's total incoming event count. Tracked by the to-remit process. (unused)
-	ExpiredEdges []utils.Pair[uint32, RawEdgeEvent[E]] // Set of an edge for a vertex that will need to be removed.
-	LoopTimes    []time.Duration                       // For debugging.
+	NumOutAdds   uint32 // Number of outgoing edges added by the thread.
+	NumOutDels   uint32 // Number of outgoing edges deleted by the thread.
+	NumInEvents  uint64 // Thread's total incoming event count. Tracked by the to-remit process. (unused)
+	EventActions uint64 // Number of event actions (to or from remitter) performed by the thread.
+	AtEvent      uint64 // Max event index a thread is at.
 
 	TopologyQueue utils.GrowableRingBuff[RawEdgeEvent[E]]
 	FromEmitQueue utils.GrowableRingBuff[TopologyEvent[E]]
 	ToRemitQueue  utils.RingBuffSPSC[RawEdgeEvent[E]]
 
-	Response     chan Command // Response channel
-	EventActions uint64       // Number of event actions (to or from remitter) performed by the thread.
-	AtEvent      uint64       // Max event index a thread is at.
-	_            [5]uint64
+	ExpiredEdges []utils.Pair[uint32, RawEdgeEvent[E]] // Set of an edge for a vertex that will need to be removed.
+	LoopTimes    []time.Duration                       // For debugging.
+	_            [2]uint64
 }
 
 // Allocates everything needed for a new graph.
@@ -188,7 +189,7 @@ const (
 	BLOCK_TOP_ASYNC // Similar to BLOCK_TOP but does not wait for an ACK
 	BLOCK_ALL
 	BLOCK_ALG_IF_TOP // Init command, no ack
-	BSP_SYNC
+	TOP_SYNC
 	EPOCH
 )
 
@@ -319,7 +320,7 @@ func (g *Graph[V, E, M, N]) InEdgesStats() {
 	listInDegree := make([]int, 0, g.NodeVertexCount())
 	vertInEdges := make(map[uint32][]uint32, g.NodeVertexCount())
 
-	g.NodeForEachVertex(func(_, vidx uint32, vertex *Vertex[V, E]) {
+	g.NodeForEachVertex(func(_, vidx uint32, vertex *Vertex[V, E], prop *V) {
 		for _, e := range vertex.OutEdges {
 			target := e.Didx
 			vertInEdges[target] = append(vertInEdges[target], vidx)
@@ -338,7 +339,7 @@ func (g *Graph[V, E, M, N]) InEdgesStats() {
 
 // Debugging function to print the structure of the graph.
 func (g *Graph[V, E, M, N]) PrintStructure() {
-	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E]) {
+	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E], prop *V) {
 		pr := "[" + utils.V(internalId) + "] " + utils.V(g.NodeVertexRawID(internalId)) + ": "
 		el := ""
 		for _, e := range vertex.OutEdges {
@@ -351,8 +352,8 @@ func (g *Graph[V, E, M, N]) PrintStructure() {
 
 // Debugging function to print properties of the graph.
 func (g *Graph[V, E, M, N]) PrintVertexProps(prefix string) {
-	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E]) {
-		prefix += utils.V(g.NodeVertexRawID(internalId)) + ":" + utils.V(vertex.Property) + ", "
+	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E], prop *V) {
+		prefix += utils.V(g.NodeVertexRawID(internalId)) + ":" + utils.V(prop) + ", "
 	})
 	log.Info().Msg(prefix)
 }
@@ -371,8 +372,8 @@ func (g *Graph[V, E, M, N]) WriteVertexProps(dynamic bool) {
 	file := utils.CreateFile(filename)
 	w := bufio.NewWriter(file)
 
-	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E]) {
-		_, err := w.WriteString(utils.V(g.NodeVertexRawID(internalId)) + "," + utils.V(vertex.Property) + "\n")
+	g.NodeForEachVertex(func(_, internalId uint32, vertex *Vertex[V, E], prop *V) {
+		_, err := w.WriteString(utils.V(g.NodeVertexRawID(internalId)) + "," + utils.V(prop) + "\n")
 		if err != nil {
 			log.Panic().Err(err).Msg("Error writing to file.")
 		}
@@ -402,7 +403,7 @@ func CheckGraphStructureEquality[V VPI[V], E EPI[E], M MVI[M], N any](g1 *Graph[
 		log.Panic().Msg("Graphs have different vertex counts: " + utils.V(g1.NodeVertexCount()) + " vs " + utils.V(g2.NodeVertexCount()))
 	}
 
-	g1.NodeForEachVertex(func(i, v uint32, vertex *Vertex[V, E]) {
+	g1.NodeForEachVertex(func(i, v uint32, vertex *Vertex[V, E], prop *V) {
 		g1raw := g1.NodeVertexRawID(v)
 		_, g2v := g2.NodeVertexFromRaw(g1raw)
 

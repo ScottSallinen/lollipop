@@ -15,8 +15,8 @@ var oracleFile *os.File // File for oracle results
 func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], size uint32, interestArray bool) {
 	data := make([]float64, g.NodeVertexCount())
 	vIds := make([]uint32, g.NodeVertexCount())
-	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
-		data[i] = vertex.Property.Mass
+	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+		data[i] = prop.Mass
 		vIds[i] = v
 	})
 	topN := size
@@ -49,13 +49,13 @@ func (*PageRank) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty,
 	remain := 0.0
 	nEdges := 0
 	singletons := 0
-	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
 		nEdges += len(vertex.OutEdges)
-		sum += vertex.Property.Mass
-		if vertex.Property.Mass == 0 {
+		sum += prop.Mass
+		if prop.Mass == 0 {
 			singletons++
 		}
-		remain += vertex.Property.InFlow
+		remain += prop.InFlow
 	})
 	normFactor := float64(g.NodeVertexCount())
 	if NORMALIZE || PPR {
@@ -89,16 +89,16 @@ func (*PageRank) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Ma
 	numEdges := uint64(0)
 	singletons := 0
 
-	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
-		ib[i] = vertex.Property.Mass
+	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+		ib[i] = prop.Mass
 		numEdges += uint64(len(vertex.OutEdges))
-		if vertex.Property.Mass == 0 { // Ignore singletons
+		if prop.Mass == 0 { // Ignore singletons
 			singletons++
 		}
 	})
 
-	oracle.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
-		ia[i] = vertex.Property.Mass
+	oracle.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+		ia[i] = prop.Mass
 	})
 
 	log.Info().Msg("V " + utils.V(uint64(g.NodeVertexCount())) + " E " + utils.V(numEdges) + " Singletons " + utils.V(singletons))

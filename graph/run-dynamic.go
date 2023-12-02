@@ -95,7 +95,7 @@ func (g *Graph[V, E, M, N]) PrintEventRate(exit *bool) {
 	}
 }
 
-func (gt *GraphThread[V, E, M, N]) checkCommandsDynamic(blockTop, bspSync, blockAlgIfTop, epoch *bool) {
+func (gt *GraphThread[V, E, M, N]) checkCommandsDynamic(blockTop, topSync, blockAlgIfTop, epoch *bool) {
 	switch <-gt.Command {
 	case BLOCK_ALL:
 		gt.Response <- ACK
@@ -115,8 +115,8 @@ func (gt *GraphThread[V, E, M, N]) checkCommandsDynamic(blockTop, bspSync, block
 	case BLOCK_ALG_IF_TOP:
 		*blockAlgIfTop = true
 		// Init command, no ack needed.
-	case BSP_SYNC:
-		*bspSync = true
+	case TOP_SYNC:
+		*topSync = true
 		// We will ack later, after we have processed events.
 	case EPOCH:
 		*epoch = true
@@ -136,7 +136,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 	insDelOnExpire := g.Options.InsertDeleteOnExpire
 	pullUpToBase := uint64(BASE_SIZE)
 	blockTop := false
-	bspSync := false
+	topSync := false
 	blockAlgIfTop := false
 	epoch := false
 	var ok bool
@@ -150,7 +150,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		gt.LoopTimes = make([]time.Duration, DONE)
 	}
 	runtime.LockOSThread()
-	var onInEdgeAddFunc func(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], uint32, uint32, *TopologyEvent[E])
+	var onInEdgeAddFunc func(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, uint32, uint32, *TopologyEvent[E])
 	if aIN, ok := any(alg).(AlgorithmOnInEdgeAdd[V, E, M, N]); ok {
 		onInEdgeAddFunc = aIN.OnInEdgeAdd
 	}
@@ -163,7 +163,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 		}
 		if len(gt.Command) > 0 {
 			gt.Status = RECV_CMD
-			gt.checkCommandsDynamic(&blockTop, &bspSync, &blockAlgIfTop, &epoch)
+			gt.checkCommandsDynamic(&blockTop, &topSync, &blockAlgIfTop, &epoch)
 		}
 		if timeStates && tidx == 0 {
 			curr = time.Now()
@@ -236,7 +236,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 				}
 
 				// If we filled bundle then we loop back to ingest more events, rather than process algorithm messages, as the thread is behind.
-				if (topCount == pullUpToBase) || bspSync {
+				if (topCount == pullUpToBase) || topSync {
 					if uint64(gt.NumEdges)/(64) > pullUpToBase {
 						pullUpToBase = pullUpToBase * 2
 						if len(gt.TopologyEventBuff) < int(pullUpToBase) {
@@ -254,9 +254,9 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 					}
 					continue
 				}
-			} else if bspSync && remitCount == 0 {
-				// There is a request for synchronously syncing topology (blocking), acknowledge here as we have no more topology events to process.
-				bspSync = false
+			} else if topSync && remitCount == 0 {
+				// There is a request for syncing topology (blocking), acknowledge here as we have no more topology events to process.
+				topSync = false
 				gt.Response <- ACK
 			} else if remitCount == 0 && !epoch {
 				topFailed = true
@@ -296,6 +296,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 				}
 				epoch = false
 				completed = false
+				topFail, algFail = 0, 0
 			}
 			if completed && blockTop {
 				completed = false

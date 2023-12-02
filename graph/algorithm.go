@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"math"
 	"runtime/pprof"
 	"sync"
 	"sync/atomic"
@@ -12,31 +13,31 @@ import (
 
 // Basic algorithm template. Se cmd/lp-template for better descriptions.
 type Algorithm[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	OnUpdateVertex(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], n Notification[N], mail M) (sent uint64)
+	OnUpdateVertex(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, n Notification[N], mail M) (sent uint64)
 	MailMerge(incoming M, sidx uint32, existing *M) (newInfo bool)
-	MailRetrieve(existing *M, v *Vertex[V, E]) (outgoing M)
-	OnEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], sidx uint32, eidxStart int, mail M) (sent uint64)
-	OnEdgeDel(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], sidx uint32, deletedEdges []Edge[E], mail M) (sent uint64)
+	MailRetrieve(existing *M, v *Vertex[V, E], vp *V) (outgoing M)
+	OnEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, sidx uint32, eidxStart int, mail M) (sent uint64)
+	OnEdgeDel(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, sidx uint32, deletedEdges []Edge[E], mail M) (sent uint64)
 }
 
 type AlgorithmInitAllMail[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	InitAllMail(v *Vertex[V, E], internalId uint32, rawId RawType) (initialMail M)
+	InitAllMail(v *Vertex[V, E], vp *V, internalId uint32, rawId RawType) (initialMail M)
 }
 
 type AlgorithmInitAllNote[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	InitAllNote(v *Vertex[V, E], internalId uint32, rawId RawType) (initialNote N)
+	InitAllNote(v *Vertex[V, E], vp *V, internalId uint32, rawId RawType) (initialNote N)
 }
 
 type AlgorithmBaseVertexMailbox[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	BaseVertexMailbox(v *Vertex[V, E], internalId uint32, s *VertexStructure) (baseMail M)
+	BaseVertexMailbox(v *Vertex[V, E], vp *V, internalId uint32, s *VertexStructure) (baseMail M)
 }
 
 type AlgorithmOnInEdgeAdd[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vidx uint32, pos uint32, event *TopologyEvent[E])
+	OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *TopologyEvent[E])
 }
 
 type AlgorithmOnFinish[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	OnFinish(*Graph[V, E, M, N])
+	OnFinish(*Graph[V, E, M, N], *Graph[V, E, M, N], uint64)
 }
 
 type AlgorithmOnSuperStepConverged[V VPI[V], E EPI[E], M MVI[M], N any] interface {
@@ -52,7 +53,7 @@ type AlgorithmOnOracleCompare[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 }
 
 type AlgorithmOnApplyTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	OnApplyTimeSeries(tse chan TimeseriesEntry[V, E, M, N], wg *sync.WaitGroup)
+	OnApplyTimeSeries(tse TimeseriesEntry[V, E, M, N])
 }
 
 // Wrapper function that will block if the notification queue is full.
@@ -135,7 +136,7 @@ func Run[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]
 	log.Trace().Msg(", termination, " + utils.F("%.3f", algElapsed.Seconds()*1000) + ", total, " + utils.F("%.3f", gElapsed.Seconds()*1000))
 
 	if a, ok := any(alg).(AlgorithmOnFinish[V, E, M, N]); ok {
-		a.OnFinish(g)
+		a.OnFinish(g, g, math.MaxUint64)
 	}
 
 	if g.Options.CheckCorrectness {
@@ -193,36 +194,23 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 			blank.OnInEdgeAddFunc = aIN.OnInEdgeAdd
 		}
 		ConvergeDynamic[EP](blank, g, feederWg)
-		for t := 0; t < int(g.NumThreads); t++ {
-			g.TerminateVotes[t] = 0
-		}
+		g.ResetTerminationState()
 		if g.Options.Profile {
 			pprof.StopCPUProfile()
 		}
 	}
 
 	if g.Options.LogTimeseries {
-		loggingWait := new(sync.WaitGroup)
-		loggingWait.Add(1)
-		entries := make(chan TimeseriesEntry[V, E, M, N]) // No buffering!
 		// The LogTimeSeries is a separate thread that will pull information from the graph itself.
-		go LogTimeSeries(alg, g, entries)
-		// The ApplyTimeSeries is a separate thread that will actually log (to disk) the resultant data.
-		if a, ok := any(alg).(AlgorithmOnApplyTimeSeries[V, E, M, N]); ok {
-			go a.OnApplyTimeSeries(entries, loggingWait)
-		} else {
-			log.Warn().Msg("WARNING: Algorithm does not implement OnApplyTimeSeries, but asked to. This will still deep copy all of the vertex properties, and consume resources, but the logging is un-implemented.")
-			loggingWait.Done()
+		go LogTimeSeries(alg, g)
+		if _, ok := any(alg).(AlgorithmOnApplyTimeSeries[V, E, M, N]); !ok {
+			log.Warn().Msg("WARNING: Algorithm does not implement OnApplyTimeSeries, but asked to. Timeseries data logging is un-implemented.")
 		}
-
-		Run[EP](alg, g, feederWg, g.Options.Sync, g.Options.Dynamic)
-
-		close(g.LogEntryChan)
-		log.Debug().Msg("Waiting for logging to finish computing and writing to disk.")
-		loggingWait.Wait()
-	} else {
-		Run[EP](alg, g, feederWg, g.Options.Sync, g.Options.Dynamic)
 	}
+
+	Run[EP](alg, g, feederWg, g.Options.Sync, g.Options.Dynamic)
+
+	close(g.LogEntryChan)
 
 	g.ComputeGraphStats()
 
@@ -297,22 +285,22 @@ func CheckAssumptions[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorith
 
 // --------- Blank Algorithm, for loading a stream with no algorithm. ---------
 type blankAlg[V VPI[V], E EPI[E], M MVI[M], N any] struct {
-	OnInEdgeAddFunc func(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vidx uint32, pos uint32, event *TopologyEvent[E])
+	OnInEdgeAddFunc func(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *TopologyEvent[E])
 }
 
-func (e *blankAlg[V, E, M, N]) OnUpdateVertex(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], Notification[N], M) (s uint64) {
+func (e *blankAlg[V, E, M, N]) OnUpdateVertex(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, Notification[N], M) (s uint64) {
 	return
 }
-func (e *blankAlg[V, E, M, N]) MailMerge(M, uint32, *M) (b bool)     { return false }
-func (e *blankAlg[V, E, M, N]) MailRetrieve(*M, *Vertex[V, E]) (m M) { return }
-func (e *blankAlg[V, E, M, N]) OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vidx uint32, pos uint32, event *TopologyEvent[E]) {
+func (e *blankAlg[V, E, M, N]) MailMerge(M, uint32, *M) (b bool)         { return false }
+func (e *blankAlg[V, E, M, N]) MailRetrieve(*M, *Vertex[V, E], *V) (m M) { return }
+func (e *blankAlg[V, E, M, N]) OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *TopologyEvent[E]) {
 	if e.OnInEdgeAddFunc != nil {
-		e.OnInEdgeAddFunc(g, gt, v, vidx, pos, event)
+		e.OnInEdgeAddFunc(g, gt, v, vp, vidx, pos, event)
 	}
 }
-func (e *blankAlg[V, E, M, N]) OnEdgeAdd(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], uint32, int, M) (s uint64) {
+func (e *blankAlg[V, E, M, N]) OnEdgeAdd(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, uint32, int, M) (s uint64) {
 	return
 }
-func (e *blankAlg[V, E, M, N]) OnEdgeDel(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], uint32, []Edge[E], M) (s uint64) {
+func (e *blankAlg[V, E, M, N]) OnEdgeDel(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, uint32, []Edge[E], M) (s uint64) {
 	return
 }

@@ -13,10 +13,11 @@ import (
 func testGraphExpect(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], t *testing.T) {
 	expectations := []uint32{0, 1, 1, 0, 1, 1, 1, 0, 0, 0}
 	for i := range expectations {
-		internal, gV := g.NodeVertexFromRaw(graph.AsRawType(i))
-		if gV.Property.Value != expectations[i] {
+		internal, _ := g.NodeVertexFromRaw(graph.AsRawType(i))
+		gVprop := g.NodeVertexProperty(internal)
+		if gVprop.Value != expectations[i] {
 			g.PrintVertexProps("")
-			t.Fatal("vidx ", internal, " rawId ", i, " is ", gV.Property.Value, " expected ", expectations[i])
+			t.Fatal("vidx ", internal, " rawId ", i, " is ", gVprop.Value, " expected ", expectations[i])
 		}
 	}
 }
@@ -100,17 +101,18 @@ func TestDynamicCreation(t *testing.T) {
 		a := make([]uint32, gDyn.NodeVertexCount())
 		b := make([]uint32, gStatic.NodeVertexCount())
 
-		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
 			g1raw := gDyn.NodeVertexRawID(v)
-			_, g2values := gStatic.NodeVertexFromRaw(g1raw)
+			g2v, _ := gStatic.NodeVertexFromRaw(g1raw)
+			g2prop := gStatic.NodeVertexProperty(g2v)
 
-			a[i] = vertex.Property.Value
-			b[i] = g2values.Property.Value
+			a[i] = prop.Value
+			b[i] = g2prop.Value
 
-			if vertex.Property.Value != g2values.Property.Value {
+			if prop.Value != g2prop.Value {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
-				t.Fatal("Value not equal ", g1raw, " ", vertex.Property.Value, " ", g2values.Property.Value, " iteration ", count)
+				t.Fatal("Value not equal ", g1raw, " ", prop.Value, " ", g2prop.Value, " iteration ", count)
 			}
 		})
 	}

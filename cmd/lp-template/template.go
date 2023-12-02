@@ -57,7 +57,7 @@ func (Mail) New() (new Mail) {
 // Note that this mail goes through a regular flow; it is merged into a mailbox, checked for new info, and then the vertex can retrieve mail then update.
 // Because of this, note that it is not guaranteed that this mail will be the first information a vertex sees.
 // If more advanced requirements beyond the default constructor and this mail is necessary, use the BaseVertexMailbox below.
-func (*Template) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) Mail {
+func (*Template) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, internalId uint32, rawId graph.RawType) Mail {
 	return Mail{EMPTY_VAL}
 }
 
@@ -70,7 +70,7 @@ func (*Template) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty],
 // This is generally not a good idea to declare if it can be avoided, as it requires a full loop over vertices,
 // before any real algorithmic processing occurs for static graphs.
 // The returned mail will overwrite the "default constructor" mailbox for that vertex.
-func (*Template) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, s *graph.VertexStructure) Mail {
+func (*Template) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, internalId uint32, s *graph.VertexStructure) Mail {
 	return Mail{EMPTY_VAL}
 }
 
@@ -88,7 +88,7 @@ func (*Template) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo 
 // The view into the vertex here also presents an opportunity to optimize, e.g., move data into the vertex property.
 // The outgoing mail here is what is sent to the OnUpdateVertex immediately after.
 // This needs to be thread safe.
-func (*Template) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProperty, EdgeProperty]) (outgoing Mail) {
+func (*Template) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) (outgoing Mail) {
 	// example: outgoing.Value = utils.AtomicLoadFloat64(&existing.Value)
 	return outgoing
 }
@@ -97,7 +97,7 @@ func (*Template) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexPropert
 // The data is pulled using aggregate retrieve above before being handed to this function.
 // Note that there is not guaranteed to be any actual useful information, depending on the result of the retrieve.
 // Return the number of messages you sent.
-func (alg *Template) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], n graph.Notification[Note], m Mail) (sent uint64) {
+func (alg *Template) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
 	/*
 		// Example: send mail to all neighbours. Use the unique notification strategy.
 		// The mail is algorithm defined. Here, a simple example is sending our outgoing edge length to all our neighbours.
@@ -122,19 +122,19 @@ func (alg *Template) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty,
 // Function called when an in-edge is first observed at the destination vertex. This happens before the edge is given to the source vertex as an out-edge.
 // This should not be used to create algorithmic events, as this function can be called in advance (e.g., it may occur before the logical point in time the graph thread is at).
 // This advanced hook should only be used to adjust structural properties of the graph topology -- for example, adjusting the topEvent and the associated edge property.
-func (*Template) OnInEdgeAdd(_ *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], dst *graph.Vertex[VertexProperty, EdgeProperty], didx uint32, pos uint32, topEvent *graph.TopologyEvent[EdgeProperty]) {
+func (*Template) OnInEdgeAdd(_ *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], dst *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, didx uint32, pos uint32, topEvent *graph.TopologyEvent[EdgeProperty]) {
 }
 
 // Function called upon new edge(s) added to the vertex src. This also bundles a visit, including any new mail, from MailRetrieve for this vertex.
 // Ensure you handle this mail (it may be just calling OnUpdateVertex with the mail, but consider merging if possible -- e.g. you may target all vertices anyway).
 // The view here is **post** addition (the edges are already appended to the edge list).
 // Note: eidxStart is the first position of new edges in the src.OutEdges array. (Also note OutEdges may contain multiple edges with the same destination.)
-func (*Template) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
+func (*Template) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, sidx uint32, eidxStart int, m Mail) (sent uint64) {
 	return 0
 }
 
 // This function is to be called with a set of edge deletion events.
-func (*Template) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
+func (*Template) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
 	return 0
 }
 
@@ -148,7 +148,13 @@ func (*Template) OnSuperStepConverged(g *graph.Graph[VertexProperty, EdgePropert
 
 // Optional to declare.
 // If declared, this function is called after the algorithm is complete; in case any finalization step (e.g. normalization) is needed.
-// Otherwise, no need to declare.
-func (*Template) OnFinish(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
+// This function has a cost for querying: it implies the properties of all vertices are modified.
+// Due to this, if declared, the framework will require a ***COPY OF ALL VERTEX PROPERTIES*** for every query.
+// This is so that the future graph can continue with properties that were not "finished" yet.
+// The function has two views: the original graph, and a shallow copy: a place the framework is asking you to write to.
+// Specifically, if declared, the framework expects this function to also PERFORM the vertex property copy.
+// For example, if normalizing: "read" the un-normalized value from gOrigin, and "write" the normalized value into gWrite.
+// See PageRank for an example. (The copy is better done in here as finishing is likely to touch all vertices.)
+func (*Template) OnFinish(gOrigin *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gWrite *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], AtEvent uint64) {
 
 }

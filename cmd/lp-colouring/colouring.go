@@ -58,7 +58,7 @@ func comparePriority(p1, p2 uint32, id1, id2 uint32) bool {
 	return p1 < p2 || (p1 == p2 && id1 < id2)
 }
 
-func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, s *graph.VertexStructure) (m Mail) {
+func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, internalId uint32, s *graph.VertexStructure) (m Mail) {
 	m.Mutex = new(sync.RWMutex)
 	m.Pos = internalId // This is the vertex ID, set for the base mailbox of the vertex.
 	m.Colour = 0       // Used as wait count (if enabled) for the base mailbox of the vertex.
@@ -83,7 +83,7 @@ func (*Colouring) BaseVertexMailbox(vertex *graph.Vertex[VertexProperty, EdgePro
 }
 
 // Self mail (init). Needed, but the mail value itself is irrelevant -- it is uniquely identified as mail from itself to itself.
-func (*Colouring) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty], internalId uint32, rawId graph.RawType) (m Mail) {
+func (*Colouring) InitAllMail(vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, internalId uint32, rawId graph.RawType) (m Mail) {
 	return m
 }
 
@@ -138,8 +138,7 @@ func (*Colouring) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo
 	return false
 }
 
-func (*Colouring) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProperty, EdgeProperty]) (outgoing Mail) {
-	prop := &vertex.Property
+func (*Colouring) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) (outgoing Mail) {
 	ourColour := prop.Colour
 	prop.coloursIndexed.Zeroes()
 
@@ -164,18 +163,18 @@ func (*Colouring) MailRetrieve(existing *Mail, vertex *graph.Vertex[VertexProper
 }
 
 // Note the mail from MailRetrieve isn't used; the MailRetrieve function itself applies the values into the vertex already -- in this case, updating the neighbour colour indexes.
-func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], notif graph.Notification[Note], _ Mail) (sent uint64) {
-	best := src.Property.coloursIndexed.FirstUnused()
+func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, notif graph.Notification[Note], _ Mail) (sent uint64) {
+	best := prop.coloursIndexed.FirstUnused()
 
-	if src.Property.Colour == best {
+	if prop.Colour == best {
 		return 0 // If no change, nothing to do.
 	}
-	src.Property.Colour = best
+	prop.Colour = best
 
 	// Tell our new colour to all neighbours.
 	for _, e := range src.OutEdges {
 		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
-		if alg.MailMerge(Mail{Colour: src.Property.Colour, Pos: e.Pos}, notif.Target, &mailbox.Inbox) {
+		if alg.MailMerge(Mail{Colour: prop.Colour, Pos: e.Pos}, notif.Target, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}
 	}
@@ -185,9 +184,9 @@ func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty
 // OnEdgeAdd: Function called upon a new edge add (which also bundles a visit, including any new Data).
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: eidxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
-func (alg *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, eidxStart int, m Mail) (sent uint64) {
+func (alg *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, sidx uint32, eidxStart int, m Mail) (sent uint64) {
 	// Update first. If we already targeted all neighbours, we can skip the rest.
-	if sent = alg.OnUpdateVertex(g, gt, src, graph.Notification[Note]{Target: sidx}, m); sent != 0 {
+	if sent = alg.OnUpdateVertex(g, gt, src, prop, graph.Notification[Note]{Target: sidx}, m); sent != 0 {
 		return sent
 	}
 	// Target all new edges
@@ -198,7 +197,7 @@ func (alg *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		// Since we are always undirected, the other vertex will perform the opposite to us (priority-wise.)
 		if comparePriority(srcPriority, hash(didx), sidx, didx) {
 			mailbox, tidx := g.NodeVertexMailbox(didx)
-			if alg.MailMerge(Mail{Colour: src.Property.Colour, Pos: src.OutEdges[eidx].Pos}, sidx, &mailbox.Inbox) {
+			if alg.MailMerge(Mail{Colour: prop.Colour, Pos: src.OutEdges[eidx].Pos}, sidx, &mailbox.Inbox) {
 				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: didx}, mailbox, tidx))
 			}
 		}
@@ -207,9 +206,9 @@ func (alg *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 }
 
 // This function is to be called with a set of edge deletion events.
-func (alg *Colouring) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
+func (alg *Colouring) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, sidx uint32, deletedEdges []graph.Edge[EdgeProperty], m Mail) (sent uint64) {
 	// Update first.
-	sent += alg.OnUpdateVertex(g, gt, src, graph.Notification[Note]{Target: sidx}, m)
+	sent += alg.OnUpdateVertex(g, gt, src, prop, graph.Notification[Note]{Target: sidx}, m)
 
 	for _, e := range deletedEdges {
 		// Just notify deleted edge; they will set our pos to EMPTY_VAL so they no longer will care about us.

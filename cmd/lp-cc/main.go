@@ -12,8 +12,8 @@ func (*CC) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail,
 	uniqueComponents := make(map[uint32]bool)
 
 	// Make sure the labels inside connected components are consistent
-	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
-		ourValue := vertex.Property.Value
+	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+		ourValue := prop.Value
 		if ourValue == EMPTY_VAL {
 			log.Panic().Msg("vertex " + utils.V(g.NodeVertexRawID(v)) + " is not labelled")
 		}
@@ -22,8 +22,8 @@ func (*CC) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail,
 		}
 		for eidx := range vertex.OutEdges {
 			target := vertex.OutEdges[eidx].Didx
-			if g.NodeVertex(target).Property.Value != ourValue {
-				log.Panic().Msg("Connected vertex with different labels: " + utils.V(g.NodeVertex(target).Property.Value) + ", " + utils.V(ourValue))
+			if g.NodeVertexProperty(target).Value != ourValue {
+				log.Panic().Msg("Connected vertex with different labels: " + utils.V(g.NodeVertexProperty(target).Value) + ", " + utils.V(ourValue))
 			}
 		}
 	})

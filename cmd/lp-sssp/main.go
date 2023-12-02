@@ -25,7 +25,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		visitCount := 0
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 			vertex := &gt.Vertices[i]
-			ourValue := vertex.Property.Value
+			ourValue := gt.VertexProperty(i).Value
 			if ourValue < EMPTY_VAL {
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
 				visitCount++
@@ -51,7 +51,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 				// we were never visited.
 			} else {
 				for eidx := range vertex.OutEdges {
-					targetProp := g.NodeVertex(vertex.OutEdges[eidx].Didx).Property.Value
+					targetProp := g.NodeVertexProperty(vertex.OutEdges[eidx].Didx).Value
 					// Should not be worse than what we could provide.
 					if targetProp > (ourValue + vertex.OutEdges[eidx].Property.Weight) {
 						log.Panic().Msg("Unexpected neighbour weight: " + utils.V(targetProp) + ", vs our weight: " + utils.V(ourValue) + " with edge weight: " + utils.V(vertex.OutEdges[eidx].Property.Weight))

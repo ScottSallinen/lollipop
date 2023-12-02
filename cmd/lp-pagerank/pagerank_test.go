@@ -87,23 +87,24 @@ func DynamicCreation(undirected bool, t *testing.T) {
 
 		graph.CheckGraphStructureEquality(gDyn, gStatic)
 
-		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
 			g1raw := gDyn.NodeVertexRawID(v)
-			_, g2values := gStatic.NodeVertexFromRaw(g1raw)
+			g2v, _ := gStatic.NodeVertexFromRaw(g1raw)
+			g2prop := gStatic.NodeVertexProperty(g2v)
 
-			if !utils.FloatEquals(vertex.Property.Mass, g2values.Property.Mass, allowedVariance) {
+			if !utils.FloatEquals(prop.Mass, g2prop.Mass, allowedVariance) {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
 				PrintTopN(gStatic, 10, false)
 				PrintTopN(gDyn, 10, false)
-				t.Fatal("Value not equal", g1raw, vertex.Property.Mass, g2values.Property.Mass, "iteration", tCount)
+				t.Fatal("Value not equal", g1raw, prop.Mass, g2prop.Mass, "iteration", tCount)
 			}
-			if !utils.FloatEquals(vertex.Property.InFlow, g2values.Property.InFlow, allowedVariance) {
+			if !utils.FloatEquals(prop.InFlow, g2prop.InFlow, allowedVariance) {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
 				PrintTopN(gStatic, 10, false)
 				PrintTopN(gDyn, 10, false)
-				t.Fatal("InFlow not equal", g1raw, vertex.Property.InFlow, g2values.Property.InFlow, "iteration", tCount)
+				t.Fatal("InFlow not equal", g1raw, prop.InFlow, g2prop.InFlow, "iteration", tCount)
 			}
 		})
 	}
@@ -158,23 +159,24 @@ func DynamicWithDelete(undirected bool, t *testing.T) {
 
 		graph.CheckGraphStructureEquality(gDyn, gStatic)
 
-		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+		gDyn.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
 			g1raw := gDyn.NodeVertexRawID(v)
-			_, g2values := gStatic.NodeVertexFromRaw(g1raw)
+			g2v, _ := gStatic.NodeVertexFromRaw(g1raw)
+			g2prop := gStatic.NodeVertexProperty(g2v)
 
-			if !utils.FloatEquals(vertex.Property.Mass, g2values.Property.Mass, allowedVariance) {
+			if !utils.FloatEquals(prop.Mass, g2prop.Mass, allowedVariance) {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
 				PrintTopN(gStatic, 10, false)
 				PrintTopN(gDyn, 10, false)
-				t.Fatal("Value not equal", g1raw, vertex.Property.Mass, g2values.Property.Mass, "iteration", tCount)
+				t.Fatal("Value not equal", g1raw, prop.Mass, g2prop.Mass, "iteration", tCount)
 			}
-			if !utils.FloatEquals(vertex.Property.InFlow, g2values.Property.InFlow, allowedVariance) {
+			if !utils.FloatEquals(prop.InFlow, g2prop.InFlow, allowedVariance) {
 				gStatic.PrintVertexProps("S ")
 				gDyn.PrintVertexProps("D ")
 				PrintTopN(gStatic, 10, false)
 				PrintTopN(gDyn, 10, false)
-				t.Fatal("InFlow not equal", g1raw, vertex.Property.InFlow, g2values.Property.InFlow, "iteration", tCount)
+				t.Fatal("InFlow not equal", g1raw, prop.InFlow, g2prop.InFlow, "iteration", tCount)
 			}
 		})
 	}

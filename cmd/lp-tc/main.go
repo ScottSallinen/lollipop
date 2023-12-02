@@ -14,11 +14,11 @@ func (*TC) OnCheckCorrectness(g *graph.Graph[VertexProp, EdgeProp, Mail, Note]) 
 		ourTriangles := uint32(0)
 		// ourMapChecks := uint64(0)
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
-			ourTriangles += gt.Vertices[i].Property.NumLeader
-			// ourMapChecks += gt.Vertices[i].Property.MapChecks
+			ourTriangles += gt.VertexProperty(i).NumLeader
+			// ourMapChecks += gt.VertexProperty(i).MapChecks
 			// The vertex should have advanced their update position to the end of their edges.
-			if int(gt.Vertices[i].Property.UpdateAt) != len(gt.Vertices[i].OutEdges) {
-				log.Panic().Msg("Vertex " + utils.V(gt.VertexRawID(i)) + " has update pos at " + utils.V(gt.Vertices[i].Property.UpdateAt) + " but edge len is " + utils.V(len(gt.Vertices[i].OutEdges)))
+			if int(gt.VertexProperty(i).UpdateAt) != len(gt.Vertices[i].OutEdges) {
+				log.Panic().Msg("Vertex " + utils.V(gt.VertexRawID(i)) + " has update pos at " + utils.V(gt.VertexProperty(i).UpdateAt) + " but edge len is " + utils.V(len(gt.Vertices[i].OutEdges)))
 			}
 		}
 		// atomic.AddUint64(&TotalMapChecks, ourMapChecks)

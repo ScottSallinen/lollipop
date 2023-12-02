@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/ScottSallinen/lollipop/graph"
@@ -41,53 +40,49 @@ var tsDB = make([]NamedEntry, 0)
 var snapshotDB [][]utils.Pair[graph.RawType, uint32]
 var snapshotDBAll []map[graph.RawType]uint32
 
-func (*Colouring) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note], wg *sync.WaitGroup) {
-	for tse := range entries {
-		outEntry := NamedEntry{
-			Name:             tse.Name,
-			VertexCount:      uint64(tse.GraphView.NodeVertexCount()), // Upper bound / estimate (emit vertices may not actually exist yet -- singletons)
-			EdgeCount:        tse.EdgeCount,
-			EdgeDeletes:      tse.EdgeDeletes,
-			AtEventIndex:     tse.AtEventIndex,
-			Latency:          tse.Latency,
-			CurrentRuntime:   tse.CurrentRuntime,
-			AlgTimeSinceLast: tse.AlgTimeSinceLast,
-		}
-		if UseInterest {
-			outEntry.Entry = make([]utils.Pair[graph.RawType, uint32], len(INTEREST_ARRAY))
-			for i := range INTEREST_ARRAY {
-				outEntry.Entry[i] = utils.Pair[graph.RawType, uint32]{
-					First:  graph.AsRawType(INTEREST_ARRAY[i]),
-					Second: EMPTY_VAL,
-				}
-			}
-		} else {
-			outEntry.EntryAll = make(map[graph.RawType]uint32)
-		}
-
-		tse.GraphView.NodeForEachVertex(func(o, internalId uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
-			vertexStructure := tse.GraphView.NodeVertexStructure(internalId)
-			if vertexStructure.CreateEvent <= tse.AtEventIndex { // TODO: should probably have the framework provide a better way to address this.
-				outEntry.RealVertexCount++
-				if UseInterest {
-					if raw, ok := InterestMap[vertexStructure.RawId]; ok {
-						outEntry.Entry[raw].Second = vertex.Property.Colour
-					}
-				} else {
-					outEntry.EntryAll[vertexStructure.RawId] = vertex.Property.Colour
-				}
-			}
-		})
-
-		tse.GraphView = nil
-		tse.AlgWaitGroup.Done()
-
-		tsDB = append(tsDB, outEntry)
-		if WRITE_EVERY_UPDATE {
-			PrintTimeSeries(true, false)
-		}
+func (*Colouring) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
+	outEntry := NamedEntry{
+		Name:             tse.Name,
+		VertexCount:      uint64(tse.GraphView.NodeVertexCount()), // Upper bound / estimate (emit vertices may not actually exist yet -- singletons)
+		EdgeCount:        tse.EdgeCount,
+		EdgeDeletes:      tse.EdgeDeletes,
+		AtEventIndex:     tse.AtEventIndex,
+		Latency:          tse.Latency,
+		CurrentRuntime:   tse.CurrentRuntime,
+		AlgTimeSinceLast: tse.AlgTimeSinceLast,
 	}
-	wg.Done()
+	if UseInterest {
+		outEntry.Entry = make([]utils.Pair[graph.RawType, uint32], len(INTEREST_ARRAY))
+		for i := range INTEREST_ARRAY {
+			outEntry.Entry[i] = utils.Pair[graph.RawType, uint32]{
+				First:  graph.AsRawType(INTEREST_ARRAY[i]),
+				Second: EMPTY_VAL,
+			}
+		}
+	} else {
+		outEntry.EntryAll = make(map[graph.RawType]uint32)
+	}
+
+	tse.GraphView.NodeForEachVertex(func(o, internalId uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+		vertexStructure := tse.GraphView.NodeVertexStructure(internalId)
+		if vertexStructure.CreateEvent <= tse.AtEventIndex { // TODO: should probably have the framework provide a better way to address this.
+			outEntry.RealVertexCount++
+			if UseInterest {
+				if raw, ok := InterestMap[vertexStructure.RawId]; ok {
+					outEntry.Entry[raw].Second = prop.Colour
+				}
+			} else {
+				outEntry.EntryAll[vertexStructure.RawId] = prop.Colour
+			}
+		}
+	})
+
+	tse.GraphView = nil
+	tsDB = append(tsDB, outEntry)
+	if WRITE_EVERY_UPDATE {
+		PrintTimeSeries(true, false)
+	}
+
 }
 
 func PrintTimeSeries(fileOut bool, stdOut bool) {

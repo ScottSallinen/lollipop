@@ -3,7 +3,6 @@ package graph
 // Defines a vertex in a graph.
 // Data here is thread-local, inaccessible to others, and persistent.
 type Vertex[V VPI[V], E any] struct {
-	Property V         // Generic property type, can be variable per algorithm.
 	OutEdges []Edge[E] // Main outgoing edgelist.
 }
 
@@ -73,6 +72,12 @@ func (gt *GraphThread[V, E, M, N]) Vertex(internalOrOffset uint32) *Vertex[V, E]
 	return &gt.Vertices[(internalOrOffset & THREAD_MASK)]
 }
 
+func (gt *GraphThread[V, E, M, N]) VertexProperty(internalOrOffset uint32) *V {
+	idx := internalOrOffset & THREAD_MASK
+	bucket, bpos := idxToBucket(idx)
+	return &gt.VertexProperties[bucket][bpos]
+}
+
 // Wrapper for getting a vertex and its mailbox; okay to provide a vidx or just the thread-local offset.
 func (gt *GraphThread[V, E, M, N]) VertexAndMailbox(internalOrOffset uint32) (*Vertex[V, E], *VertexMailbox[M]) {
 	idx := internalOrOffset & THREAD_MASK
@@ -113,6 +118,12 @@ func (g *Graph[V, E, M, N]) NodeVertexFromRaw(rawId RawType) (uint32, *Vertex[V,
 func (g *Graph[V, E, M, N]) NodeVertex(internalId uint32) *Vertex[V, E] {
 	id, tidx := InternalExpand(internalId)
 	return &g.GraphThreads[tidx].Vertices[id]
+}
+
+func (g *Graph[V, E, M, N]) NodeVertexProperty(internalId uint32) *V {
+	id, tidx := InternalExpand(internalId)
+	bucket, bpos := idxToBucket(id)
+	return &g.GraphThreads[tidx].VertexProperties[bucket][bpos]
 }
 
 // Node level, vertex reference from internal index. Returns nil of the vertex does not exist.
@@ -160,13 +171,14 @@ func (g *Graph[V, E, M, N]) NodeVertexCount() int {
 
 // Node level, basic iteration over all vertices in the graph.
 // Gives an applicator an ordinal index i [0, |V|), the internal index, and a pointer, to the vertex.
-func (g *Graph[V, E, M, N]) NodeForEachVertex(applicator func(ordinal uint32, internalId uint32, vertex *Vertex[V, E])) {
+func (g *Graph[V, E, M, N]) NodeForEachVertex(applicator func(ordinal uint32, internalId uint32, vertex *Vertex[V, E], prop *V)) {
 	count := uint32(0)
 	for tidx := uint32(0); tidx < g.NumThreads; tidx++ {
 		gt := &g.GraphThreads[tidx]
 		threadOffset := (tidx << THREAD_SHIFT)
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
-			applicator(count, (threadOffset | i), &gt.Vertices[i])
+			bucket, bpos := idxToBucket(i)
+			applicator(count, (threadOffset | i), &gt.Vertices[i], &gt.VertexProperties[bucket][bpos])
 			count++
 		}
 	}
@@ -212,4 +224,31 @@ func (gt *GraphThread[V, E, M, N]) NodeCopyVerticesInto(other *[]Vertex[V, E]) {
 		(*other) = append((*other), make([]Vertex[V, E], diff)...)
 	}
 	copy(*other, gt.Vertices)
+}
+
+// For oracle comparison, copies vertex properties.
+func (gt *GraphThread[V, E, M, N]) NodeCopyVertexPropsInto(other *[]*[BUCKET_SIZE]V) {
+	diff := len(gt.VertexProperties) - len(*other)
+	if diff > 0 { // Other may be smaller, check if we must expand.
+		(*other) = append((*other), make([]*[BUCKET_SIZE]V, diff)...)
+
+	}
+	for b := 0; b < len(gt.VertexProperties); b++ {
+		if (*other)[b] == nil {
+			(*other)[b] = new([BUCKET_SIZE]V)
+		}
+		copy((*other)[b][:], gt.VertexProperties[b][:])
+	}
+}
+
+// Copies the size of the vertex property bucket to the other. Does not copy the buckets themselves.
+func (gt *GraphThread[V, E, M, N]) NodeAllocatePropertyBuckets(other *[]*[BUCKET_SIZE]V) {
+	diff := len(gt.VertexProperties) - len(*other)
+	if diff > 0 { // Check if we must expand.
+		(*other) = append((*other), make([]*[BUCKET_SIZE]V, diff)...)
+		// allocate new buckets
+		for i := 0; i < diff; i++ {
+			(*other)[len(*other)-diff+i] = new([BUCKET_SIZE]V)
+		}
+	}
 }

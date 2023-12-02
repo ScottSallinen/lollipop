@@ -13,9 +13,9 @@ const DEFAULT_WEIGHT = 1.0
 // Edge: Basic edge structure for a graph, with a user-defined property; can be empty struct{}
 // We make an unweighted graph simply have weights of 1 (default weight above).
 type Edge[E any] struct {
+	Property E // For some reason, it has to be first to avoid alignment issues with empty struct{} ? https://stackoverflow.com/questions/77225870/why-empty-struct-use-no-memory-and-why-empty-struct-will-use-memory-when-it-as
 	Didx     uint32
 	Pos      uint32 // Unique marker for the in-add-event index, given by the destination. (e.g., if two, it is the second incoming edge the target vertex had seen). Note for deletions, this number does NOT decrease or change, it will continue to increase as it is an event marker -- not exactly the "in-degree" position. It is however the effective in-degree if edges were (or are) never deleted. Note: the first bit is reserved as a flag, so the max value is 2B.
-	Property E
 }
 
 func (e Edge[E]) String() string {
@@ -43,19 +43,18 @@ type EPP[E any] interface {
 
 // TODO: Find a better way to do these for easier custom edges and edge parsing. (Is there a way to combine parsing and keep inlining?)
 
+type NoParse struct{} // No additional parsing: no timestamp, no weight, no raw.
+
+func (NoParse) ParseProperty([]string, int32, int32) {}
+
 /* ------------------ Empty Edge ------------------ */
 
-type EmptyEdge struct{}
-
-func (EmptyEdge) GetTimestamp() uint64                  { return 0 }
-func (EmptyEdge) GetEndTime() uint64                    { return 0 }
-func (EmptyEdge) GetWeight() float64                    { return DEFAULT_WEIGHT }
-func (EmptyEdge) GetRaw() (r RawType)                   { return r }
-func (*EmptyEdge) ReplaceTimestamp(uint64)              {}
-func (*EmptyEdge) ReplaceEndTime(uint64)                {}
-func (*EmptyEdge) ReplaceWeight(float64)                {}
-func (*EmptyEdge) ParseProperty([]string, int32, int32) {}
-func (*EmptyEdge) ReplaceRaw(r RawType)                 {}
+type EmptyEdge struct {
+	NoParse
+	NoTimestamp
+	NoWeight
+	NoRaw
+}
 
 /* ------------------ Edge Weight ------------------ */
 

@@ -20,7 +20,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 	}
 
 	if syncWithQuery { // Wait for all threads to sync to match the query before comparing to oracle
-		g.Broadcast(BSP_SYNC)
+		g.Broadcast(TOP_SYNC)
 		g.AwaitAck()
 	}
 	if broadcast {
@@ -34,6 +34,11 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 	var oracleGraph *Graph[V, E, M, N]
 
 	numVertices := g.NodeVertexCount()
+
+	maxAtEvent := uint64(0)
+	for t := 0; t < int(g.NumThreads); t++ {
+		maxAtEvent = utils.Max(maxAtEvent, g.GraphThreads[t].AtEvent)
+	}
 
 	if g.OracleCache == nil {
 		log.Debug().Msg("Initializing oracle graph")
@@ -56,6 +61,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			oracleGraph.GraphThreads[t].VertexStructures = g.GraphThreads[t].VertexStructures
 			// Copy base structures.
 			g.GraphThreads[t].NodeCopyVerticesInto(&oracleGraph.GraphThreads[t].Vertices)
+			g.GraphThreads[t].NodeCopyVertexPropsInto(&oracleGraph.GraphThreads[t].VertexProperties)
 			oracleGraph.GraphThreads[t].VertexMailboxes = g.GraphThreads[t].NodeCopyVertexMailboxes()
 			oracleGraph.GraphThreads[t].NumEdges = g.GraphThreads[t].NumEdges
 			oracleGraph.GraphThreads[t].NumOutDels = g.GraphThreads[t].NumOutDels
@@ -63,15 +69,15 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			numEdges += int(oracleGraph.GraphThreads[t].NumEdges)
 		}
 
-		oracleGraph.NodeForEachVertex(func(_, internalId uint32, oracleVertex *Vertex[V, E]) {
-			oracleVertex.Property = oracleVertex.Property.New()
+		oracleGraph.NodeForEachVertex(func(_, internalId uint32, oracleVertex *Vertex[V, E], oracleProp *V) {
+			*oracleProp = (*oracleProp).New()
 			mailbox, _ := oracleGraph.NodeVertexMailbox(internalId)
 			mailbox.Inbox = mailbox.Inbox.New()
 		})
 
-		if OCopy, ok := any(new(V)).(VPCopyOracle[V]); ok {
-			oracleGraph.NodeForEachVertex(func(_, internalId uint32, oracleVertex *Vertex[V, E]) {
-				OCopy.CopyForOracle(&oracleVertex.Property, &g.NodeVertex(internalId).Property)
+		if oCopy, ok := any(new(V)).(VPCopyOracle[V]); ok {
+			oracleGraph.NodeForEachVertex(func(_, internalId uint32, oracleVertex *Vertex[V, E], oracleProp *V) {
+				oCopy.CopyForOracle(oracleProp, g.NodeVertexProperty(internalId))
 			})
 		}
 
@@ -79,7 +85,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		oracleGraph.AlgTimer.Start()
 		ConvergeAsync(alg, oracleGraph, new(sync.WaitGroup))
 		if aOF, ok := any(alg).(AlgorithmOnFinish[V, E, M, N]); ok {
-			aOF.OnFinish(oracleGraph)
+			aOF.OnFinish(oracleGraph, oracleGraph, maxAtEvent)
 		}
 		msgSend := uint64(0)
 		for t := 0; t < int(oracleGraph.NumThreads); t++ {
@@ -103,16 +109,16 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 	// Result complete, now compare.
 	if aOOC, ok := any(alg).(AlgorithmOnOracleCompare[V, E, M, N]); ok {
 		if aOF, ok := any(alg).(AlgorithmOnFinish[V, E, M, N]); ok {
-			var gVertexStash []Vertex[V, E]
+			var gVertexPropStash []V
 			if finishOriginal {
-				gVertexStash = make([]Vertex[V, E], numVertices)
-				g.NodeForEachVertex(func(i, v uint32, vertex *Vertex[V, E]) {
-					gVertexStash[i].Property = vertex.Property
+				gVertexPropStash = make([]V, numVertices)
+				g.NodeForEachVertex(func(i, v uint32, vertex *Vertex[V, E], prop *V) {
+					gVertexPropStash[i] = *prop
 				})
 				// Here we can "finish" proper G immediately for comparison (i.e., normalization / sink adjustment)
 				// to compare a fully finished to the current state. Since the OnFinish is small in cost but big in effect,
 				// important to compare with it applied to both.
-				aOF.OnFinish(g)
+				aOF.OnFinish(g, g, maxAtEvent)
 			}
 
 			aOOC.OnOracleCompare(g, oracleGraph)
@@ -123,9 +129,9 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			}
 
 			if finishOriginal {
-				g.NodeForEachVertex(func(i, v uint32, vertex *Vertex[V, E]) {
+				g.NodeForEachVertex(func(i, v uint32, vertex *Vertex[V, E], prop *V) {
 					// Resetting the effect of the "early finish"
-					vertex.Property = gVertexStash[i].Property
+					*prop = gVertexPropStash[i]
 				})
 			}
 		} else {
@@ -181,10 +187,10 @@ func OracleGenericCompareValues[V VPI[V], E EPI[E], M MVI[M], N any, VT constrai
 	numEdges := g.NodeParallelFor(func(ordinalStart, _ uint32, givenGt *GraphThread[V, E, M, N]) int {
 		oracleGt := &oracle.GraphThreads[givenGt.Tidx]
 		for i := uint32(0); i < uint32(len(givenGt.Vertices)); i++ {
-			givenVertex := givenGt.Vertices[i]
-			oracleVertex := oracleGt.Vertices[i]
-			oracleValues[ordinalStart+i] = ValueOf(oracleVertex.Property)
-			givenGValues[ordinalStart+i] = ValueOf(givenVertex.Property)
+			givenProp := givenGt.VertexProperty(i)
+			oracleProp := oracleGt.VertexProperty(i)
+			oracleValues[ordinalStart+i] = ValueOf(*oracleProp)
+			givenGValues[ordinalStart+i] = ValueOf(*givenProp)
 		}
 		return int(givenGt.NumEdges)
 	})

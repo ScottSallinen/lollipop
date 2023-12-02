@@ -46,10 +46,10 @@ func (MailMsg) New() (m MailMsg) {
 	return m // Unused with this strategy.
 }
 
-func (*ColouringMsg) BaseVertexMailbox(src *graph.Vertex[VPropMsg, EPropMsg], internalId uint32, s *graph.VertexStructure) (m MailMsg) {
-	inEdgeAmount := int(s.InEventPos)                      // Note: this will be zero for dynamic graphs. For static, this should be equal to len(src.InEdges), as the graph is undirected.
-	src.Property.NbrScratch = make([]uint32, inEdgeAmount) // Make either way.
-	src.Property.Colour = EMPTY_VAL_MSG
+func (*ColouringMsg) BaseVertexMailbox(src *graph.Vertex[VPropMsg, EPropMsg], prop *VPropMsg, internalId uint32, s *graph.VertexStructure) (m MailMsg) {
+	inEdgeAmount := int(s.InEventPos)              // Note: this will be zero for dynamic graphs. For static, this should be equal to len(src.InEdges), as the graph is undirected.
+	prop.NbrScratch = make([]uint32, inEdgeAmount) // Make either way.
+	prop.Colour = EMPTY_VAL_MSG
 
 	if inEdgeAmount > 0 {
 		myPriority := hash(internalId)
@@ -57,23 +57,23 @@ func (*ColouringMsg) BaseVertexMailbox(src *graph.Vertex[VPropMsg, EPropMsg], in
 			didx := src.OutEdges[i].Didx
 			if comparePriority(hash(didx), myPriority, didx, internalId) {
 				src.OutEdges[i].Property.Priority = true
-				src.Property.NbrScratch[i] = MAGIC_VAL_MSG
+				prop.NbrScratch[i] = MAGIC_VAL_MSG
 				if UseWaitCount {
-					src.Property.WaitCount++ // If the edge has priority, we need to wait for it.
+					prop.WaitCount++ // If the edge has priority, we need to wait for it.
 				}
 			} else {
-				src.Property.NbrScratch[i] = EMPTY_VAL_MSG
+				prop.NbrScratch[i] = EMPTY_VAL_MSG
 			}
 		}
 	}
 	//if UseWaitCount {
-	//	src.Property.WaitCount++ // Wait for self.
+	//	prop.WaitCount++ // Wait for self.
 	//}
 	return m
 }
 
 // Self notification (init).
-func (*ColouringMsg) InitAllNote(src *graph.Vertex[VPropMsg, EPropMsg], internalId uint32, rawId graph.RawType) (n NoteMsg) {
+func (*ColouringMsg) InitAllNote(src *graph.Vertex[VPropMsg, EPropMsg], prop *VPropMsg, internalId uint32, rawId graph.RawType) (n NoteMsg) {
 	n.Pos = EMPTY_VAL_MSG
 	return n
 }
@@ -81,12 +81,11 @@ func (*ColouringMsg) InitAllNote(src *graph.Vertex[VPropMsg, EPropMsg], internal
 func (*ColouringMsg) MailMerge(incoming MailMsg, sidx uint32, existing *MailMsg) (newInfo bool) {
 	return true // For a pure-message-passing algorithm, tell the framework we always want to update.
 }
-func (*ColouringMsg) MailRetrieve(existing *MailMsg, src *graph.Vertex[VPropMsg, EPropMsg]) (m MailMsg) {
+func (*ColouringMsg) MailRetrieve(existing *MailMsg, src *graph.Vertex[VPropMsg, EPropMsg], prop *VPropMsg) (m MailMsg) {
 	return m // Unused with this strategy.
 }
 
-func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], notif graph.Notification[NoteMsg], _ MailMsg) (sent uint64) {
-	prop := &src.Property
+func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], prop *VPropMsg, notif graph.Notification[NoteMsg], _ MailMsg) (sent uint64) {
 
 	if notif.Note.Pos == EMPTY_VAL_MSG { // Initialization notification, not from an inbound edge.
 		//if UseWaitCount {
@@ -140,11 +139,11 @@ func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailM
 	return sent
 }
 
-func (alg *ColouringMsg) OnEdgeAdd(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], sidx uint32, eidxStart int, m MailMsg) (sent uint64) {
+func (alg *ColouringMsg) OnEdgeAdd(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], prop *VPropMsg, sidx uint32, eidxStart int, m MailMsg) (sent uint64) {
 	panic("TODO")
 }
 
-func (alg *ColouringMsg) OnEdgeDel(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], sidx uint32, deletedEdges []graph.Edge[EPropMsg], m MailMsg) (sent uint64) {
+func (alg *ColouringMsg) OnEdgeDel(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg], gt *graph.GraphThread[VPropMsg, EPropMsg, MailMsg, NoteMsg], src *graph.Vertex[VPropMsg, EPropMsg], prop *VPropMsg, sidx uint32, deletedEdges []graph.Edge[EPropMsg], m MailMsg) (sent uint64) {
 	panic("TODO")
 }
 
@@ -157,8 +156,8 @@ func (*ColouringMsg) OnCheckCorrectness(g *graph.Graph[VPropMsg, EPropMsg, MailM
 func ComputeGraphColouringMsgStat(g *graph.Graph[VPropMsg, EPropMsg, MailMsg, NoteMsg]) {
 	maxColour := uint32(0)
 	allColours := make([]uint32, 1, 64)
-	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VPropMsg, EPropMsg]) {
-		vColour := vertex.Property.Colour
+	g.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VPropMsg, EPropMsg], prop *VPropMsg) {
+		vColour := prop.Colour
 		if int(vColour) >= len(allColours) {
 			allColours = append(allColours, make([]uint32, int(vColour)+1-len(allColours))...)
 		}

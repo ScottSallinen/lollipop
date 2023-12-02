@@ -18,8 +18,8 @@ var SnapshotOracle = false
 func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	maxColour := uint32(0)
 	allColours := make([]uint32, 1, 64)
-	g.NodeForEachVertex(func(_, _ uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
-		vColour := vertex.Property.Colour
+	g.NodeForEachVertex(func(_, _ uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+		vColour := prop.Colour
 		if int(vColour) >= len(allColours) {
 			allColours = append(allColours, make([]uint32, int(vColour)+1-len(allColours))...)
 		}
@@ -35,8 +35,8 @@ func ComputeGraphColouringStat(g *graph.Graph[VertexProperty, EdgeProperty, Mail
 }
 
 func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
-	g.NodeForEachVertex(func(i, sidx uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
-		colour := vertex.Property.Colour
+	g.NodeForEachVertex(func(i, sidx uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+		colour := prop.Colour
 		rawId := g.NodeVertexRawID(sidx)
 		outDegree := uint32(len(vertex.OutEdges))
 		_, tidx := graph.InternalExpand(sidx)
@@ -52,7 +52,8 @@ func (*Colouring) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty
 		for _, e := range vertex.OutEdges {
 			didx := e.Didx
 			target := g.NodeVertex(didx)
-			if colour == target.Property.Colour && g.NodeVertexRawID(didx) != rawId {
+			targetProp := g.NodeVertexProperty(didx)
+			if colour == targetProp.Colour && g.NodeVertexRawID(didx) != rawId {
 				log.Error().Msg("An edge exists from vertex Source " + utils.V(sidx) + " [raw " + utils.V(rawId) + "] and Target " + utils.V(didx) + " [raw " + utils.V(g.NodeVertexRawID(didx)) + "] which have the same colour " + utils.V(colour))
 				mailbox, _ := g.NodeVertexMailbox(didx)
 				log.Error().Msg("Target has view of Source: " + utils.V(mailbox.Inbox.NbrScratch[e.Pos]))
@@ -100,15 +101,15 @@ func (*Colouring) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, M
 	if SnapshotOracle {
 		g = oracle
 	}
-	g.NodeForEachVertex(func(o, internalId uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
+	g.NodeForEachVertex(func(o, internalId uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
 		vertexStructure := g.NodeVertexStructure(internalId)
 		if vertexStructure.CreateEvent <= AtEventIndex {
 			if UseInterest {
 				if raw, ok := InterestMap[vertexStructure.RawId]; ok {
-					entry[raw].Second = vertex.Property.Colour
+					entry[raw].Second = prop.Colour
 				}
 			} else {
-				entryAll[vertexStructure.RawId] = vertex.Property.Colour
+				entryAll[vertexStructure.RawId] = prop.Colour
 			}
 		}
 	})

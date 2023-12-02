@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/ScottSallinen/lollipop/graph"
@@ -41,57 +40,53 @@ func init() {
 
 var tsDB = make([]NamedEntry, 0)
 
-func (*PageRank) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note], wg *sync.WaitGroup) {
-	for tse := range entries {
-		var outEntry NamedEntry
-		if logWaterfall {
-			data := make([]float64, tse.GraphView.NodeVertexCount())
-			externs := make([]graph.RawType, tse.GraphView.NodeVertexCount())
-			singletons := uint64(0)
+func (*PageRank) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
+	var outEntry NamedEntry
+	if logWaterfall {
+		data := make([]float64, tse.GraphView.NodeVertexCount())
+		externs := make([]graph.RawType, tse.GraphView.NodeVertexCount())
+		singletons := uint64(0)
 
-			tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty]) {
-				data[i] = vertex.Property.Mass
-				externs[i] = tse.GraphView.NodeVertexRawID(v)
-				if NORM_IGNORE_SINGLETONS { // Discarded by norm step
-					if len(vertex.OutEdges) == 0 && vertex.Property.Mass == 0 {
-						singletons++
-					}
-				}
-			})
-
-			topN := uint32(10)
-			var ranking []utils.Pair[uint32, float64]
-			res := make([]utils.Pair[graph.RawType, float64], topN)
-			if !USE_INTEREST_ARRAY {
-				if uint32(len(data)) < topN {
-					topN = uint32(len(data))
-				}
-				ranking = utils.FindTopNInArray(data, topN)
-				for i := range ranking {
-					res[i].First = externs[ranking[i].First]
-					res[i].Second = ranking[i].Second
-				}
-			} else {
-				for rawId := range INTEREST_ARRAY {
-					_, vertex := tse.GraphView.NodeVertexFromRaw(rawId)
-					if vertex != nil {
-						res = append(res, utils.Pair[graph.RawType, float64]{First: rawId, Second: vertex.Property.Mass})
-					}
+		tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+			data[i] = prop.Mass
+			externs[i] = tse.GraphView.NodeVertexRawID(v)
+			if NORM_IGNORE_SINGLETONS { // Discarded by norm step
+				if len(vertex.OutEdges) == 0 && prop.Mass == 0 {
+					singletons++
 				}
 			}
+		})
 
-			outEntry = NamedEntry{tse.Name, uint64(tse.GraphView.NodeVertexCount()), singletons, tse.EdgeCount, res, tse.Latency, tse.CurrentRuntime, tse.AlgTimeSinceLast}
+		topN := uint32(10)
+		var ranking []utils.Pair[uint32, float64]
+		res := make([]utils.Pair[graph.RawType, float64], topN)
+		if !USE_INTEREST_ARRAY {
+			if uint32(len(data)) < topN {
+				topN = uint32(len(data))
+			}
+			ranking = utils.FindTopNInArray(data, topN)
+			for i := range ranking {
+				res[i].First = externs[ranking[i].First]
+				res[i].Second = ranking[i].Second
+			}
 		} else {
-			outEntry = NamedEntry{tse.Name, uint64(tse.GraphView.NodeVertexCount()), 0, tse.EdgeCount, nil, tse.Latency, tse.CurrentRuntime, tse.AlgTimeSinceLast}
+			for rawId := range INTEREST_ARRAY {
+				vidx, vertex := tse.GraphView.NodeVertexFromRaw(rawId)
+				if vertex != nil {
+					res = append(res, utils.Pair[graph.RawType, float64]{First: rawId, Second: tse.GraphView.NodeVertexProperty(vidx).Mass})
+				}
+			}
 		}
-		tse.GraphView = nil
-		tse.AlgWaitGroup.Done()
-		tsDB = append(tsDB, outEntry)
-		if WRITE_EVERY_UPDATE {
-			PrintTimeSeries(true, false)
-		}
+
+		outEntry = NamedEntry{tse.Name, uint64(tse.GraphView.NodeVertexCount()), singletons, tse.EdgeCount, res, tse.Latency, tse.CurrentRuntime, tse.AlgTimeSinceLast}
+	} else {
+		outEntry = NamedEntry{tse.Name, uint64(tse.GraphView.NodeVertexCount()), 0, tse.EdgeCount, nil, tse.Latency, tse.CurrentRuntime, tse.AlgTimeSinceLast}
 	}
-	wg.Done()
+	tse.GraphView = nil
+	tsDB = append(tsDB, outEntry)
+	if WRITE_EVERY_UPDATE {
+		PrintTimeSeries(true, false)
+	}
 }
 
 // Spits out top10 for each point in time (entry).

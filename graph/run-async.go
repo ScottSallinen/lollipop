@@ -18,7 +18,8 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		g.NodeParallelFor(func(_, threadOffset uint32, gt *GraphThread[V, E, M, N]) int {
 			for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 				vertex, mailbox := gt.VertexAndMailbox(i)
-				mailbox.Inbox = aBVM.BaseVertexMailbox(vertex, (threadOffset | i), gt.VertexStructure(i))
+				prop := gt.VertexProperty(i)
+				mailbox.Inbox = aBVM.BaseVertexMailbox(vertex, prop, (threadOffset | i), gt.VertexStructure(i))
 			}
 			return 0
 		})
@@ -34,13 +35,13 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 					vertex, mailbox := gt.VertexAndMailbox(i)
 					rawId := gt.VertexRawID(i)
 					vidx := (threadOffset | i)
-
-					mail := aIAM.InitAllMail(vertex, vidx, rawId)
+					prop := gt.VertexProperty(i)
+					mail := aIAM.InitAllMail(vertex, prop, vidx, rawId)
 
 					if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
 						activity := atomic.LoadInt32(&mailbox.Activity)
-						mail = alg.MailRetrieve(&mailbox.Inbox, vertex)
-						sent += alg.OnUpdateVertex(g, gt, vertex, Notification[N]{Target: vidx, Activity: activity}, mail)
+						mail = alg.MailRetrieve(&mailbox.Inbox, vertex, prop)
+						sent += alg.OnUpdateVertex(g, gt, vertex, prop, Notification[N]{Target: vidx, Activity: activity}, mail)
 					}
 				}
 				gt.MsgSend += sent
@@ -54,8 +55,9 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 						vertex, mailbox := gt.VertexAndMailbox(i)
 						rawId := gt.VertexRawID(i)
 						vidx := (threadOffset | i)
+						prop := gt.VertexProperty(i)
 
-						note := aIAM.InitAllNote(vertex, vidx, rawId)
+						note := aIAM.InitAllNote(vertex, prop, vidx, rawId)
 
 						n := Notification[N]{Target: vidx, Note: note}
 						sent += g.EnsureSend(g.ActiveNotification(vidx, n, mailbox, uint32(gt.Tidx)))
@@ -90,9 +92,10 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 			mailbox, tidx := g.NodeVertexMailbox(vidx)
 
 			if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
-				mail = alg.MailRetrieve(&mailbox.Inbox, vertex)
+				prop := g.NodeVertexProperty(vidx)
+				mail = alg.MailRetrieve(&mailbox.Inbox, vertex, prop)
 				activity := atomic.LoadInt32(&mailbox.Activity)
-				sent := alg.OnUpdateVertex(g, &g.GraphThreads[tidx], vertex, Notification[N]{Target: vidx, Activity: activity}, mail)
+				sent := alg.OnUpdateVertex(g, &g.GraphThreads[tidx], vertex, prop, Notification[N]{Target: vidx, Activity: activity}, mail)
 				g.GraphThreads[tidx].MsgSend += sent
 			}
 		}
@@ -152,8 +155,9 @@ func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M,
 	for i := uint64(0); i < algCount; i++ {
 		vertex, mailbox := gt.VertexAndMailbox(gt.Notifications[i].Target)
 		gt.Notifications[i].Activity = atomic.AddInt32(&(mailbox.Activity), -1)
-		mail := alg.MailRetrieve(&(mailbox.Inbox), vertex)
-		sent += alg.OnUpdateVertex(g, gt, vertex, gt.Notifications[i], mail)
+		prop := gt.VertexProperty(gt.Notifications[i].Target)
+		mail := alg.MailRetrieve(&(mailbox.Inbox), vertex, prop)
+		sent += alg.OnUpdateVertex(g, gt, vertex, prop, gt.Notifications[i], mail)
 	}
 
 	if algCount != 0 { // Update send and receive counts.
@@ -182,8 +186,8 @@ func (gt *GraphThread[V, E, M, N]) checkCommandsAsync(epoch *bool) {
 		break
 	case BLOCK_ALG_IF_TOP:
 		log.Panic().Msg("There's no topology changes")
-	case BSP_SYNC:
-		log.Panic().Msg("Not supported yet")
+	case TOP_SYNC:
+		log.Panic().Msg("There's no topology changes")
 	case EPOCH:
 		*epoch = true
 		// Ack after complete.
