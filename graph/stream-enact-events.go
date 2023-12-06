@@ -135,7 +135,7 @@ func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E
 		//}
 
 		// Adjust the copied edge.
-		futureDelete := &(gt.ExpiredEdges[len(gt.ExpiredEdges)-int(changeCount+i)].Second)
+		futureDelete := &(gt.ExpiredEdges[(uint64(len(gt.ExpiredEdges)) - changeCount + i)].Second)
 		// TODO: this expiry copies the event idx of the original. Perhaps this whole process should be move to the emitter...
 		futureDelete.TypeAndEventIdx = ((futureDelete.TypeAndEventIdx >> EVENT_TYPE_BITS) << EVENT_TYPE_BITS) | uint64(DEL)
 		thisEdgeTime := futureDelete.Edge.Property.GetTimestamp()
