@@ -90,13 +90,13 @@ func (pr *PushRelabel) OnApplyTimeSeries(entries chan graph.TimeseriesEntry[Vert
 				sourceEvent := tse.GraphView.NodeVertexStructure(sourceId).CreateEvent
 				sinkEvent := tse.GraphView.NodeVertexStructure(sinkId).CreateEvent
 				if sourceEvent <= tse.AtEventIndex && sinkEvent <= tse.AtEventIndex { // Make sure they are created before this snapshot is captured
-					outEntry.CurrentMaxFlow = sink.Property.Excess
+					outEntry.CurrentMaxFlow = tse.GraphView.NodeVertexProperty(sinkId).Excess
 				}
 			}
 		}
 
 		tse.GraphView = nil
-		tse.AlgWaitGroup.Done()
+		tse.AlgWaitGroup.Done() // TODO ???
 
 		TsDB = append(TsDB, outEntry)
 		PrintTimeSeries(true, false)

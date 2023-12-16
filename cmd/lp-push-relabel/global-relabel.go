@@ -70,9 +70,9 @@ func (gr *GlobalRelabel) OnLift(g *Graph, pr *PushRelabel) {
 func (gr *GlobalRelabel) SyncGlobalRelabel(g *Graph, pr *PushRelabel) {
 	log.Info().Msg("SyncGlobalRelabel starts.")
 
-	source, sink := g.NodeVertex(pr.SourceId.Load()), g.NodeVertex(pr.SinkId.Load())
-	log.Info().Msg("Source sent: " + strconv.Itoa(int(pr.SourceSupply-source.Property.Excess)))
-	log.Info().Msg("Sink excess: " + strconv.Itoa(int(sink.Property.Excess)))
+	source, sink := g.NodeVertexProperty(pr.SourceId.Load()), g.NodeVertexProperty(pr.SinkId.Load())
+	log.Info().Msg("Source sent: " + strconv.Itoa(int(pr.SourceSupply-source.Excess)))
+	log.Info().Msg("Sink excess: " + strconv.Itoa(int(sink.Excess)))
 
 	gr.t0 = time.Now()
 	gr.CurrentPhase = DRAIN_MSG
@@ -157,9 +157,9 @@ func resetHeights(g *Graph) {
 
 func sendMsgToSpecialHeightVerticesNoDeletes(g *Graph, pr *PushRelabel) (sent uint64) {
 	sourceId, sinkId := pr.SourceId.Load(), pr.SinkId.Load()
-	source, sink := g.NodeVertex(sourceId), g.NodeVertex(sinkId)
-	source.Property.updateHeightPos(uint32(pr.VertexCount.GetMaxVertexCount()))
-	sink.Property.updateHeightPos(0)
+	source, sink := g.NodeVertexProperty(sourceId), g.NodeVertexProperty(sinkId)
+	source.updateHeightPos(uint32(pr.VertexCount.GetMaxVertexCount()))
+	sink.updateHeightPos(0)
 	sMailbox, sTidx := g.NodeVertexMailbox(sourceId)
 	tMailbox, tTidx := g.NodeVertexMailbox(sinkId)
 	sent += g.EnsureSend(g.ActiveNotification(sourceId, graph.Notification[Note]{Target: sourceId, Note: Note{PosType: EmptyValue}}, sMailbox, sTidx))

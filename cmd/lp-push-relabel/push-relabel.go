@@ -200,16 +200,16 @@ func (pr *PushRelabel) InitAllNote(_ *Vertex, _ uint32, _ graph.RawType) (initia
 	return Note{PosType: EmptyValue}
 }
 
-func (pr *PushRelabel) BaseVertexMailbox(v *Vertex, internalId uint32, s *graph.VertexStructure) (m Mail) {
+func (pr *PushRelabel) BaseVertexMailbox(v *Vertex, vp *VertexProp, internalId uint32, s *graph.VertexStructure) (m Mail) {
 	if s.RawId == pr.SourceRawId {
-		v.Property.Type = Source
+		vp.Type = Source
 		pr.SourceId.Store(internalId)
 	} else if s.RawId == pr.SinkRawId {
-		v.Property.Type = Sink
+		vp.Type = Sink
 		pr.SinkId.Store(internalId)
 	}
-	v.Property.resetHeights(&pr.VertexCount)
-	v.Property.UnknownPosCount = EmptyValue // Make as uninitialized
+	vp.resetHeights(&pr.VertexCount)
+	vp.UnknownPosCount = EmptyValue // Make as uninitialized
 	return m
 }
 

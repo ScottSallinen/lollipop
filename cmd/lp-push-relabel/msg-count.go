@@ -87,10 +87,10 @@ func (tmc *ThreadMsgCounter[N]) LogProgress(pr *PushRelabel, g *Graph) {
 	SourceSent, SinkReceived := int64(0), int64(0)
 	sourceId, sinkId := pr.SourceId.Load(), pr.SinkId.Load()
 	if sourceId != EmptyValue {
-		SourceSent = pr.SourceSupply - g.NodeVertex(sourceId).Property.Excess
+		SourceSent = pr.SourceSupply - g.NodeVertexProperty(sourceId).Excess
 	}
 	if sinkId != EmptyValue {
-		SinkReceived = g.NodeVertex(sinkId).Property.Excess
+		SinkReceived = g.NodeVertexProperty(sinkId).Excess
 	}
 	EdgesAdded := uint32(0)
 	for t := 0; t < int(g.NumThreads); t++ {
