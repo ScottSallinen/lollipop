@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +18,33 @@ import (
 )
 
 func LineDequeuer(queueChan chan string, lineList *[]string, deqWg *sync.WaitGroup) {
+	var builder strings.Builder
+	fields := make([]string, 0)
 	for qElem := range queueChan {
+		if shiftWeight > 0 {
+			if len(fields) == 0 {
+				fields = make([]string, len(strings.Fields(qElem)))
+			}
+			utils.FastFields(fields, []byte(qElem))
+			oldWeight, err := strconv.Atoi(fields[wPos])
+			if err != nil {
+				panic(err)
+			}
+			newWeight := oldWeight / shiftWeight
+			if newWeight > 0 {
+				fields[wPos] = strconv.Itoa(newWeight)
+				builder.Reset()
+				for fi := range fields {
+					builder.WriteString(fields[fi])
+					if fi != len(fields)-1 {
+						builder.WriteString(" ")
+					}
+				}
+				qElem = builder.String()
+			} else {
+				continue
+			}
+		}
 		*lineList = append(*lineList, qElem)
 	}
 	deqWg.Done()
@@ -98,6 +125,8 @@ func (s IndexedStrings) Swap(i, j int) {
 }
 
 var tsPos = 0
+var wPos = 0
+var shiftWeight = 0
 
 func (s IndexedStrings) Less(i, j int) bool {
 	fields := make([]string, graph.MAX_ELEMS_PER_EDGE)
@@ -116,15 +145,20 @@ func main() {
 	gPtr := flag.String("g", "data/test.txt", "Graph file")
 	sortPtr := flag.Bool("sort", false, "Sort by timestamp instead of default shuffle.")
 	tPosPtr := flag.Int("pt", 2, "Absolute position of timestamp (when sorting by timestamp). Example: [src, dst, timestamp]: use 2.")
+	wPosPtr := flag.Int("pw", -1, "Absolute position of weight. Example: [src, dst, weight]: use 2. Set to -1 if the graph has no weights.")
+	swPtr := flag.Int("sw", 0, "Divide the weight of each edge by this number then remove edges with a weight of 0. Set to 0 to disable this.")
 	tPtr := flag.Int("t", runtime.NumCPU(), "Thread count")
 	flag.Parse()
+
+	tsPos = *tPosPtr
+	wPos = *wPosPtr
+	shiftWeight = *swPtr
 
 	lineList := LoadLineList(*gPtr, *tPtr)
 	rand.NewSource(time.Now().UTC().UnixNano())
 	suffix := ".shuffled"
 
 	if *sortPtr {
-		tsPos = *tPosPtr
 		idxStr := IndexedStrings{lineList, make([]int, len(lineList))}
 		for i := range idxStr.Idx {
 			idxStr.Idx[i] = i
@@ -143,7 +177,7 @@ func main() {
 
 	log.Info().Msg("Writing lines: " + utils.V(len(lineList)))
 
-	f := utils.OpenFile(*gPtr + suffix)
+	f := utils.CreateFile(*gPtr + suffix)
 
 	defer f.Close()
 	for line := range lineList {
