@@ -9,10 +9,10 @@ import (
 // /*
 type RawType uint32
 
-// Maps a raw type within the given length. Modulo is fine for integer raw types.
-func (r RawType) Within(len uint32) uint32 {
-	return uint32(r) % len
-}
+// // Maps a raw type within the given length. Modulo is fine for integer raw types.
+// func (r RawType) Within(len uint32) uint32 {
+// 	return uint32(r) % len
+// }
 
 func (r RawType) String() string {
 	return strconv.Itoa(int(r))

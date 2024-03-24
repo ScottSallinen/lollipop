@@ -240,7 +240,7 @@ func ConvergeDynamicThread[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Alg
 					if uint64(gt.NumEdges)/(64) > pullUpToBase {
 						pullUpToBase = pullUpToBase * 2
 						if len(gt.TopologyEventBuff) < int(pullUpToBase) {
-							gt.TopologyEventBuff = make([]RawEdgeEvent[E], pullUpToBase)
+							gt.TopologyEventBuff = make([]InternalTopologyEvent[E], pullUpToBase)
 						}
 						log.Debug().Msg("T[" + utils.F("%02d", tidx) + "] increasing buffer size to " + utils.V(pullUpToBase))
 					}

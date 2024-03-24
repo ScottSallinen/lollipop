@@ -51,13 +51,13 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 		oracleGraph.Options.TimeseriesEdgeCount = false
 		oracleGraph.InitMails = g.InitMails
 		oracleGraph.InitNotes = g.InitNotes
+		oracleGraph.VertexMap = g.VertexMap
 		oracleGraph.Init()
 
 		log.Debug().Msg("Copying vertices: " + utils.V(numVertices))
 		numEdges := 0
 		for t := 0; t < int(g.NumThreads); t++ {
 			// Ok to shallow copy, we do not edit.
-			oracleGraph.GraphThreads[t].VertexMap = g.GraphThreads[t].VertexMap
 			oracleGraph.GraphThreads[t].VertexStructures = g.GraphThreads[t].VertexStructures
 			// Copy base structures.
 			g.GraphThreads[t].NodeCopyVerticesInto(&oracleGraph.GraphThreads[t].Vertices)

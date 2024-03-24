@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"math"
 	"math/rand"
 	"sort"
 	"sync/atomic"
@@ -11,23 +12,37 @@ import (
 	"github.com/ScottSallinen/lollipop/utils"
 )
 
-// New vertex handler during graph construction. Hooks algorithm events (default constructors).
-func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], rawId RawType, eventIdx uint64) (vidx uint32) {
-	idx := uint32(len(gt.Vertices))
-	vidx = (uint32(gt.Tidx) << THREAD_SHIFT) + idx
+func CreateVertexIfNeeded[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], rawId RawType, eventIdx uint64, vidx uint32) {
+	idx, tidx := InternalExpand(vidx)
+	if tidx != uint32(gt.Tidx) {
+		log.Panic().Msg("")
+	}
+	bucket, pos := idxToBucket(idx)
+	if int(idx) >= len(gt.Vertices) || bucket >= uint32(len(gt.VertexMailboxes)) || gt.VertexStructures[bucket][pos].CreateEvent == math.MaxUint64 {
+		newVertex(alg, g, gt, rawId, eventIdx, vidx)
+	}
+	g.NodeVertex(vidx) // REMOVE
+}
 
-	gt.VertexMap[rawId] = vidx
+// New vertex handler during graph construction. Hooks algorithm events (default constructors).
+func newVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], rawId RawType, eventIdx uint64, vidx uint32) {
+	idx, _ := InternalExpand(vidx)
+
+	if int(idx) >= len(gt.Vertices) {
+		gt.Vertices = append(gt.Vertices, make([]Vertex[V, E], int(idx)+1-len(gt.Vertices))...)
+	}
 
 	bucket, pos := idxToBucket(idx)
-	if bucket >= uint32(len(gt.VertexMailboxes)) {
+	for bucket >= uint32(len(gt.VertexMailboxes)) {
 		gt.VertexMailboxes = append(gt.VertexMailboxes, new([BUCKET_SIZE]VertexMailbox[M]))
 		gt.VertexStructures = append(gt.VertexStructures, new([BUCKET_SIZE]VertexStructure))
 		gt.VertexProperties = append(gt.VertexProperties, new([BUCKET_SIZE]V))
+		for p := 0; p < BUCKET_SIZE; p++ {
+			gt.VertexStructures[len(gt.VertexMailboxes)-1][p].CreateEvent = math.MaxUint64
+		}
 	}
 	gt.VertexMailboxes[bucket][pos].Inbox = gt.VertexMailboxes[bucket][pos].Inbox.New()
 	gt.VertexProperties[bucket][pos] = gt.VertexProperties[bucket][pos].New()
-
-	gt.Vertices = append(gt.Vertices, Vertex[V, E]{})
 
 	gt.VertexStructures[bucket][pos] = VertexStructure{
 		PendingIdx:  0,
@@ -36,7 +51,7 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 		RawId:       rawId,
 	}
 
-	v := &gt.Vertices[idx]
+	v := &gt.Vertices[idx] // gt.Vertices should have been resized inCreateVertexIfNeeded
 	mailbox := &gt.VertexMailboxes[bucket][pos]
 
 	// TODO: Optimize? This is a runtime type check that hits every time. Maybe we can do better.
@@ -54,7 +69,7 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 			}
 		} else {
 			if mail, vidxInit = g.InitMails[rawId]; !vidxInit {
-				return vidx
+				return
 			}
 		}
 
@@ -71,7 +86,7 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 			}
 		} else {
 			if note, vidxInit = g.InitNotes[rawId]; !vidxInit {
-				return vidx
+				return
 			}
 		}
 		n := Notification[N]{Target: vidx, Note: note}
@@ -79,37 +94,39 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 		sent := g.EnsureSend(g.ActiveNotification(vidx, n, mailbox, tidx))
 		g.GraphThreads[tidx].MsgSend += sent
 	}
-	return vidx
 }
 
 // Checks the incoming from-emit queue, and passes anything to the remitter.
 func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], onInEdgeAddFunc func(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, uint32, uint32, *TopologyEvent[E])) (closed bool, count uint64) {
-	var ok bool
-	var didx uint32
-	var event TopologyEvent[E]
-
 	spaceAvailable := gt.ToRemitQueue.EnqCheckRange()
 	for ; count < spaceAvailable; count++ {
-		if event, ok = gt.FromEmitQueue.Accept(); !ok {
+		event, ok := gt.FromEmitQueue.Accept()
+		if !ok {
 			break
 		}
-		if didx, ok = gt.VertexMap[event.DstRaw]; !ok {
-			didx = NewVertex(alg, g, gt, event.DstRaw, event.EventIdx())
-		}
+		didx := event.Edge.Didx
+		CreateVertexIfNeeded(alg, g, gt, event.DstRaw, event.EventIdx(), didx)
 
 		pos := ^uint32(0)
 		if event.EventType() == ADD {
 			vs := gt.VertexStructure(didx)
 			pos = vs.InEventPos
 			if onInEdgeAddFunc != nil {
-				onInEdgeAddFunc(g, gt, gt.Vertex(didx), gt.VertexProperty(didx), didx, pos, &event)
+				tEvent := TopologyEvent[E]{
+					TypeAndEventIdx: event.TypeAndEventIdx,
+					SrcRaw:          event.SrcRaw,
+					DstRaw:          event.DstRaw,
+					EdgeProperty:    event.Edge.Property,
+				}
+				onInEdgeAddFunc(g, gt, gt.Vertex(didx), gt.VertexProperty(didx), didx, pos, &tEvent)
 			}
 			vs.InEventPos++
 			gt.NumInEvents++ // Thread total; unused.
 		}
 
 		// Will always succeed (range check is lte current space)
-		gt.ToRemitQueue.Offer(RawEdgeEvent[E]{TypeAndEventIdx: event.TypeAndEventIdx, SrcRaw: event.SrcRaw, DstRaw: event.DstRaw, Edge: Edge[E]{Property: event.EdgeProperty, Didx: didx, Pos: pos}})
+		event.Edge.Pos = pos
+		gt.ToRemitQueue.Offer(event)
 	}
 	if spaceAvailable != 0 && count == 0 {
 		closed = gt.FromEmitQueue.IsClosed()
@@ -119,6 +136,7 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 
 // Injects expired edges into the topology event buffer. To be done after the topology event buffer has been remapped with internal source ids.
 func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount uint64, uniqueCount uint64, delOnExpire uint64) (newUniqueCount uint64) {
+	// TODO: Vertex Add events may not have edge timestamps
 	latestTime := gt.TopologyEventBuff[changeCount-1].Edge.Property.GetTimestamp() // Unless there are out of order events...?
 
 	if latestTime == 0 && g.warnZeroTimestamp == 0 && atomic.CompareAndSwapUint64(&g.warnZeroTimestamp, 0, 1) {
@@ -210,18 +228,16 @@ func (gt *GraphThread[V, E, M, N]) checkInsertPending(sidx uint32, pending uint3
 func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount uint64, delOnExpire uint64) (addEvents uint32, delEvents uint32) {
 	uniqueCount := uint64(0)
 	canCheckTimestamp := (g.Options.TimestampPos != 0) || g.Options.LogicalTime
-	var ok bool
-	var sidx uint32
 
 	for i := uint64(0); i < changeCount; i++ {
-		if sidx, ok = gt.VertexMap[gt.TopologyEventBuff[i].SrcRaw]; !ok {
-			sidx = NewVertex(alg, g, gt, gt.TopologyEventBuff[i].SrcRaw, gt.TopologyEventBuff[i].EventIdx())
-		}
+		event := &gt.TopologyEventBuff[i]
+		sidx := event.SrcIdx
+		CreateVertexIfNeeded(alg, g, gt, event.SrcRaw, event.EventIdx(), sidx)
 
 		uniqueCount = gt.checkInsertPending(sidx, uint32(i), uniqueCount)
 
-		if delOnExpire > 0 && gt.TopologyEventBuff[i].EventType() == ADD {
-			gt.ExpiredEdges = append(gt.ExpiredEdges, utils.Pair[uint32, RawEdgeEvent[E]]{First: sidx, Second: gt.TopologyEventBuff[i]})
+		if delOnExpire > 0 && event.EventType() == ADD {
+			gt.ExpiredEdges = append(gt.ExpiredEdges, utils.Pair[uint32, InternalTopologyEvent[E]]{First: sidx, Second: *event})
 		}
 	}
 	gt.AtEvent = gt.TopologyEventBuff[changeCount-1].EventIdx()
@@ -237,7 +253,7 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 	// Next, range over the new graph events. Here we range over vertices.
 	for u := uint64(0); u < uniqueCount; u++ {
 		pendIdx := gt.VertexPendingBuff[u]
-		sidx = pendIdx[0] // First entry is the source vertex internalId.
+		sidx := pendIdx[0] // First entry is the source vertex internalId.
 		src, mailbox := gt.VertexAndMailbox(sidx)
 		prop := gt.VertexProperty(sidx)
 

@@ -53,6 +53,10 @@ func idxToBucket(idx uint32) (b, p uint32) {
 	return b, p
 }
 
+func InternalCompress(threadId, threadInternalIndex uint32) (internalId uint32) {
+	return (threadId << THREAD_SHIFT) | threadInternalIndex
+}
+
 // Expands an internal index into the thread-local index, and the responsible thread id.
 func InternalExpand(internalId uint32) (idx, tidx uint32) {
 	idx = internalId & THREAD_MASK
@@ -63,6 +67,10 @@ func InternalExpand(internalId uint32) (idx, tidx uint32) {
 // Checks if two internal IDs are on the same graph thread.
 func SameTidx(internalId uint32, otherInternalId uint32) bool {
 	return (internalId & THREAD_ID_MASK) == (otherInternalId & THREAD_ID_MASK)
+}
+
+func IdxToTidx(internalId uint32) uint32 {
+	return internalId >> THREAD_SHIFT
 }
 
 // ------------------ Thread level functions ------------------ //
@@ -108,7 +116,7 @@ func (gt *GraphThread[V, E, M, N]) VertexRawID(internalOrOffset uint32) RawType 
 
 // Node level, vertex reference from Raw ID.
 func (g *Graph[V, E, M, N]) NodeVertexFromRaw(rawId RawType) (uint32, *Vertex[V, E]) {
-	if internalId, ok := g.GraphThreads[rawId.Within(g.NumThreads)].VertexMap[rawId]; ok {
+	if internalId, ok := g.VertexMap[rawId]; ok {
 		return internalId, g.NodeVertex(internalId)
 	}
 	return 0, nil

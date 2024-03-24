@@ -64,6 +64,9 @@ type Graph[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	warnSelectDelete    uint64                              // Detection of deletions that are selective; used for a unique notification.
 	warnBackPressure    uint64                              // Detection of back-pressure on the notification queue; used for a unique notification.
 	warnZeroTimestamp   uint64                              // Detection of zero timestamp; used for a unique notification.
+
+	VertexMap          map[RawType]uint32 // Per-Vertex: Raw (external) to internal ID.
+	ThreadVertexCounts [THREAD_MAX]uint32 // number of vertices assigned to each thread
 }
 
 // Graph Thread. Elements here are typically thread-local only (though queues/channels have in/out positions).
@@ -76,18 +79,18 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	NumEdges        uint32                           // Thread's current total outgoing edge count (i.e., adds less deletes; ease of access here).
 	Command         chan Command                     // Incoming command channel.
 
-	VertexProperties []*[BUCKET_SIZE]V               // Per-Vertex: User defined properties.
-	VertexMap        map[RawType]uint32              // Per-Vertex: Raw (external) to internal ID.
+	VertexProperties []*[BUCKET_SIZE]V // Per-Vertex: User defined properties.
+	// VertexMap        map[RawType]uint32              // Per-Vertex: Raw (external) to internal ID.
 	VertexStructures []*[BUCKET_SIZE]VertexStructure // Supplemental vertex structure (see vertex.go). Tracks extra structural properties (e.g. internal to external id).
 	Response         chan Command                    // Response channel
 
 	NotificationQueue utils.RingBuffMPSC[Notification[N]] // Inbound notification queue for the thread.
 	NotificationBuff  utils.Deque[Notification[N]]        // Overfill buffer for notifications.
 
-	Notifications     []Notification[N] // Regular buffer for notifications. A notification represents a vertex is 'active' as it has work to do (e.g. has mail in its inbox, or the notification itself is important).
-	MsgSend           uint64            // Number of messages sent by the thread. A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
-	MsgRecv           uint64            // Number of messages received by the thread.  A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
-	TopologyEventBuff []RawEdgeEvent[E] // Buffer for thread topology events that are ready to apply (been remitted).
+	Notifications     []Notification[N]          // Regular buffer for notifications. A notification represents a vertex is 'active' as it has work to do (e.g. has mail in its inbox, or the notification itself is important).
+	MsgSend           uint64                     // Number of messages sent by the thread. A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
+	MsgRecv           uint64                     // Number of messages received by the thread.  A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
+	TopologyEventBuff []InternalTopologyEvent[E] // Buffer for thread topology events that are ready to apply (been remitted).
 
 	VertexPendingBuff [][]uint32 // Pending topology events; used for offsets into the TopologyEventBuff buffer.
 	NumUnique         uint64     // Used for offset tracking. Number of unique vertices processed; after merging consecutive events for the same vertex. Starts at 1.
@@ -98,12 +101,12 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	EventActions uint64 // Number of event actions (to or from remitter) performed by the thread.
 	AtEvent      uint64 // Max event index a thread is at.
 
-	TopologyQueue utils.GrowableRingBuff[RawEdgeEvent[E]]
-	FromEmitQueue utils.GrowableRingBuff[TopologyEvent[E]]
-	ToRemitQueue  utils.RingBuffSPSC[RawEdgeEvent[E]]
+	TopologyQueue utils.GrowableRingBuff[InternalTopologyEvent[E]]
+	FromEmitQueue utils.GrowableRingBuff[InternalTopologyEvent[E]]
+	ToRemitQueue  utils.RingBuffSPSC[InternalTopologyEvent[E]]
 
-	ExpiredEdges []utils.Pair[uint32, RawEdgeEvent[E]] // Set of an edge for a vertex that will need to be removed.
-	LoopTimes    []time.Duration                       // For debugging.
+	ExpiredEdges []utils.Pair[uint32, InternalTopologyEvent[E]] // Set of an edge for a vertex that will need to be removed.
+	LoopTimes    []time.Duration                                // For debugging.
 	_            [2]uint64
 }
 
@@ -122,6 +125,7 @@ func (g *Graph[V, E, M, N]) Init() {
 	}
 
 	g.SuperStepWaiter.Init(int(g.NumThreads))
+	g.VertexMap = make(map[RawType]uint32, (g.NumThreads * BASE_SIZE * 4))
 
 	notifQueueSize := BASE_SIZE
 	if g.Options.QueueMultiplier > 0 {
@@ -135,7 +139,7 @@ func (g *Graph[V, E, M, N]) Init() {
 		gt.Response = make(chan Command, 1)
 		gt.NumUnique = 1 // 0 is reserved for comparison against zeroed allocation.
 
-		gt.TopologyEventBuff = make([]RawEdgeEvent[E], BASE_SIZE*64)
+		gt.TopologyEventBuff = make([]InternalTopologyEvent[E], BASE_SIZE*64)
 		gt.Notifications = make([]Notification[N], MSG_MAX)
 
 		gt.NotificationQueue.Init(uint64(notifQueueSize) * uint64(THREAD_MAX/g.NumThreads))
@@ -145,7 +149,7 @@ func (g *Graph[V, E, M, N]) Init() {
 		gt.FromEmitQueue.Init(BASE_SIZE, GROW_LIMIT)
 		gt.ToRemitQueue.Init(BASE_SIZE * 4 * THREAD_MAX) // TODO: size?
 
-		gt.ExpiredEdges = make([]utils.Pair[uint32, RawEdgeEvent[E]], 0, 512)
+		gt.ExpiredEdges = make([]utils.Pair[uint32, InternalTopologyEvent[E]], 0, 512)
 		gt.VertexPendingBuff = make([][]uint32, 1024)
 		for i := uint32(0); i < 1024; i++ {
 			g.GraphThreads[t].VertexPendingBuff[i] = make([]uint32, 0, 512)
@@ -154,7 +158,7 @@ func (g *Graph[V, E, M, N]) Init() {
 		gt.Vertices = make([]Vertex[V, E], 0, (BASE_SIZE * 4))
 		gt.VertexMailboxes = make([]*[BUCKET_SIZE]VertexMailbox[M], 0, (BASE_SIZE*4)/BUCKET_SIZE)
 		gt.VertexStructures = make([]*[BUCKET_SIZE]VertexStructure, 0, (BASE_SIZE*4)/BUCKET_SIZE)
-		gt.VertexMap = make(map[RawType]uint32, (BASE_SIZE * 4))
+		// gt.VertexMap = make(map[RawType]uint32, (BASE_SIZE * 4))
 	}
 
 	g.TerminateData = make([]int64, g.NumThreads)
