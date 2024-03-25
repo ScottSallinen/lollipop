@@ -60,6 +60,7 @@ func (*SSSPM) OnUpdateVertex(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], gt 
 
 	for _, e := range src.OutEdges { // Send an update to all neighbours.
 		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		message := NoteMsg(prop.Value + e.Property.Weight)
 		sent += g.EnsureSend(g.ActiveNotification(n.Target, graph.Notification[NoteMsg]{Note: message, Target: e.Didx}, mailbox, tidx))
 	}
@@ -77,6 +78,7 @@ func (*SSSPM) OnEdgeAdd(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], gt *grap
 	}
 	for ; eidx < len(src.OutEdges); eidx++ {
 		mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[eidx].Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		message := NoteMsg(prop.Value + src.OutEdges[eidx].Property.Weight)
 		sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[NoteMsg]{Note: message, Target: src.OutEdges[eidx].Didx}, mailbox, tidx))
 	}

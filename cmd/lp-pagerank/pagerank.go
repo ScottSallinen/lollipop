@@ -41,7 +41,9 @@ type VertexProperty struct {
 }
 
 type EdgeProperty struct {
-	graph.EmptyEdge
+	graph.WithTimestamp
+	graph.NoRaw
+	graph.NoWeight
 }
 
 type Mail struct {
@@ -89,6 +91,7 @@ func (alg *PageRank) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty,
 			distribute := Mail{(toDistribute / float64(len(src.OutEdges)))}
 			for _, e := range src.OutEdges {
 				mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+				g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 				if alg.MailMerge(distribute, notif.Target, &mailbox.Inbox) {
 					sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 				}
@@ -120,6 +123,7 @@ func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail
 		// Previously existing edges [0, new) get this adjustment.
 		for eidx := 0; eidx < eidxStart; eidx++ {
 			mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[eidx].Didx)
+			g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 			if alg.MailMerge(prevEGet, sidx, &mailbox.Inbox) {
 				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, mailbox, tidx))
 			}
@@ -130,6 +134,7 @@ func (alg *PageRank) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail
 	// New edges [new, len) get this adjustment
 	for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
 		mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[eidx].Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		if alg.MailMerge(newEGet, sidx, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, mailbox, tidx))
 		}
@@ -155,6 +160,7 @@ func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail
 
 		for _, e := range src.OutEdges {
 			mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+			g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 			if alg.MailMerge(Mail{distDelta + distribute}, sidx, &mailbox.Inbox) {
 				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 			}
@@ -164,6 +170,7 @@ func (alg *PageRank) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mail
 	distOldEdges := -1.0 * distAllPrev / (float64(len(src.OutEdges) + len(deletedEdges)))
 	for _, e := range deletedEdges {
 		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		if alg.MailMerge(Mail{distOldEdges}, sidx, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}

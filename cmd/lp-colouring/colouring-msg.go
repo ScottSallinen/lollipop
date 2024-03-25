@@ -133,6 +133,7 @@ func (alg *ColouringMsg) OnUpdateVertex(g *graph.Graph[VPropMsg, EPropMsg, MailM
 
 			n := graph.Notification[NoteMsg]{Target: didx, Note: NoteMsg{Pos: src.OutEdges[eidx].Pos, Colour: prop.Colour, Priority: priority}}
 			mailbox, tidx := g.NodeVertexMailbox(didx)
+			g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 			sent += g.EnsureSend(g.ActiveNotification(notif.Target, n, mailbox, tidx))
 		}
 	}

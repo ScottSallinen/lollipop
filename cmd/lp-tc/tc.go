@@ -85,6 +85,7 @@ func (alg *TC) OnUpdateVertex(g *graph.Graph[VertexProp, EdgeProp, Mail, Note], 
 				continue // Ignore discarded and even events, they will never lead a triangle.
 			}
 			mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[e].Didx)
+			g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 			// If we have edges that come in time logically after this edge, the destination should not form a triangle with it. We end at e.
 			sent += g.EnsureSend(g.ActiveNotification(notif.Target, graph.Notification[Note]{Target: src.OutEdges[e].Didx, Note: Note{src.OutEdges[start:e], src.OutEdges[e].Pos}}, mailbox, tidx))
 		}
@@ -119,6 +120,7 @@ func (alg *TC) OnEdgeAdd(g *graph.Graph[VertexProp, EdgeProp, Mail, Note], gt *g
 				continue // Ignore discarded and even events, they will never lead a triangle.
 			}
 			mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[e].Didx)
+			g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 			// If we have edges that come in time logically after this edge, the destination should not form a triangle with it. We end at e.
 			sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[e].Didx, Note: Note{src.OutEdges[start:e], src.OutEdges[e].Pos}}, mailbox, tidx))
 		}
@@ -129,6 +131,7 @@ func (alg *TC) OnEdgeAdd(g *graph.Graph[VertexProp, EdgeProp, Mail, Note], gt *g
 			continue // Ignore discarded and even events, they will never lead a triangle.
 		}
 		mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[e].Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		end := utils.Min(int(prop.UpdateAt), e) // If we updated above, we must take the smaller.
 		sent += g.EnsureSend(g.ActiveNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[e].Didx, Note: Note{src.OutEdges[:end], src.OutEdges[e].Pos}}, mailbox, tidx))
 	}

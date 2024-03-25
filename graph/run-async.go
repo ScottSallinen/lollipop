@@ -78,6 +78,7 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 				}
 				n := Notification[N]{Target: vidx, Note: note}
 				mailbox, tidx := g.NodeVertexMailbox(vidx)
+				g.UpdateMsgStat(tidx, tidx)
 				sent := g.EnsureSend(g.ActiveNotification(vidx, n, mailbox, tidx))
 				g.GraphThreads[tidx].MsgSend += sent
 			}
@@ -90,6 +91,7 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 				continue
 			}
 			mailbox, tidx := g.NodeVertexMailbox(vidx)
+			g.UpdateMsgStat(tidx, tidx)
 
 			if newInfo := alg.MailMerge(mail, vidx, &mailbox.Inbox); newInfo {
 				prop := g.NodeVertexProperty(vidx)

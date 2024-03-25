@@ -2,6 +2,9 @@ package graph
 
 import (
 	"bufio"
+	"encoding/csv"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -91,6 +94,11 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	MsgSend           uint64                     // Number of messages sent by the thread. A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
 	MsgRecv           uint64                     // Number of messages received by the thread.  A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
 	TopologyEventBuff []InternalTopologyEvent[E] // Buffer for thread topology events that are ready to apply (been remitted).
+
+	MsgSendLocal  uint64
+	MsgRecvLocal  uint64
+	MsgSendRemote uint64
+	MsgRecvRemote uint64
 
 	VertexPendingBuff [][]uint32 // Pending topology events; used for offsets into the TopologyEventBuff buffer.
 	NumUnique         uint64     // Used for offset tracking. Number of unique vertices processed; after merging consecutive events for the same vertex. Starts at 1.
@@ -217,6 +225,16 @@ func (g *Graph[V, E, M, N]) ExecuteQuery(entry uint64) {
 	}
 }
 
+func (g *Graph[V, E, M, N]) UpdateMsgStat(sTidx, dTidx uint32) {
+	if sTidx == dTidx {
+		g.GraphThreads[sTidx].MsgRecvLocal += 1
+		g.GraphThreads[sTidx].MsgSendLocal += 1
+	} else {
+		g.GraphThreads[sTidx].MsgSendRemote += 1
+		g.GraphThreads[dTidx].MsgRecvRemote += 1
+	}
+}
+
 type GraphThreadStatus uint16
 
 const (
@@ -257,6 +275,22 @@ func (s GraphThreadStatus) String() string {
 }
 
 // --------------- Misc Graph Helper Functions ---------------
+
+func (g *Graph[V, E, M, N]) SavePartitioningStats() {
+	utils.CreateFile("partitioning-stats.csv")
+	outFile := utils.CreateFile("partitioning-stats.csv")
+	defer outFile.Close()
+
+	writer := csv.NewWriter(io.MultiWriter(os.Stdout, outFile))
+	defer writer.Flush()
+
+	writer.Write([]string{"thread", "vertices", "out_edges", "in_edges", "noti_sent", "noti_recv", "msg_sent_local", "msg_recv_local", "msg_sent_remote", "msg_recv_remote"})
+	for tidx := 0; tidx < int(g.NumThreads); tidx++ {
+		t := &g.GraphThreads[tidx]
+		writer.Write([]string{utils.V(tidx), utils.V(len(t.Vertices)), utils.V(t.NumEdges), utils.V(t.NumInEvents),
+			utils.V(t.MsgSend), utils.V(t.MsgRecv), utils.V(t.MsgSendLocal), utils.V(t.MsgRecvLocal), utils.V(t.MsgSendRemote), utils.V(t.MsgRecvRemote)})
+	}
+}
 
 // Prints some statistics of the graph
 func (g *Graph[V, E, M, N]) ComputeGraphStats() {

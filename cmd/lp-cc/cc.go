@@ -60,6 +60,7 @@ func (alg *CC) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail,
 	// Send an update to all neighbours.
 	for _, e := range src.OutEdges {
 		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		if alg.MailMerge(Mail(prop.Value), notif.Target, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}
@@ -77,6 +78,7 @@ func (alg *CC) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note
 	// Otherwise, we need to target just the new edges.
 	for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
 		mailbox, tidx := g.NodeVertexMailbox(src.OutEdges[eidx].Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		if alg.MailMerge(Mail(prop.Value), sidx, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: src.OutEdges[eidx].Didx}, mailbox, tidx))
 		}

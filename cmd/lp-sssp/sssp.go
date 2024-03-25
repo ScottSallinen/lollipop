@@ -54,6 +54,7 @@ func (alg *SSSP) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 	// Send an update to all neighbours.
 	for _, e := range src.OutEdges {
 		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		if alg.MailMerge(Mail(prop.Value+e.Property.Weight), n.Target, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}
@@ -74,6 +75,7 @@ func (alg *SSSP) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, No
 		for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
 			target := src.OutEdges[eidx].Didx
 			mailbox, tidx := g.NodeVertexMailbox(target)
+			g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 			if alg.MailMerge(Mail(prop.Value+src.OutEdges[eidx].Property.Weight), sidx, &mailbox.Inbox) {
 				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: target}, mailbox, tidx))
 			}

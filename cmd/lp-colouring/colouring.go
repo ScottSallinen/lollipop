@@ -174,6 +174,7 @@ func (alg *Colouring) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty
 	// Tell our new colour to all neighbours.
 	for _, e := range src.OutEdges {
 		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		if alg.MailMerge(Mail{Colour: prop.Colour, Pos: e.Pos}, notif.Target, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(notif.Target, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}
@@ -197,6 +198,7 @@ func (alg *Colouring) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		// Since we are always undirected, the other vertex will perform the opposite to us (priority-wise.)
 		if comparePriority(srcPriority, hash(didx), sidx, didx) {
 			mailbox, tidx := g.NodeVertexMailbox(didx)
+			g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 			if alg.MailMerge(Mail{Colour: prop.Colour, Pos: src.OutEdges[eidx].Pos}, sidx, &mailbox.Inbox) {
 				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: didx}, mailbox, tidx))
 			}
@@ -214,6 +216,7 @@ func (alg *Colouring) OnEdgeDel(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		// Just notify deleted edge; they will set our pos to EMPTY_VAL so they no longer will care about us.
 		// We do not try to greedily re-colour here, as the undirected counterpart will notify us of their deletion, causing us to update.
 		mailbox, tidx := g.NodeVertexMailbox(e.Didx)
+		g.UpdateMsgStat(uint32(gt.Tidx), tidx)
 		if alg.MailMerge(Mail{Colour: EMPTY_VAL, Pos: e.Pos}, sidx, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}

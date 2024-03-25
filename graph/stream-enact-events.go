@@ -91,6 +91,7 @@ func newVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 		}
 		n := Notification[N]{Target: vidx, Note: note}
 		mailbox, tidx := g.NodeVertexMailbox(vidx)
+		g.UpdateMsgStat(tidx, tidx)
 		sent := g.EnsureSend(g.ActiveNotification(vidx, n, mailbox, tidx))
 		g.GraphThreads[tidx].MsgSend += sent
 	}

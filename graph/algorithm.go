@@ -213,6 +213,7 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 	close(g.LogEntryChan)
 
 	g.ComputeGraphStats()
+	g.SavePartitioningStats()
 
 	if g.Options.OracleCompare { // Graph is finished.
 		CompareToOracle(alg, g, false, true, false, false)
