@@ -16,8 +16,7 @@ type VertexProperty struct {
 }
 
 type EdgeProperty struct {
-	graph.WithWeight
-	graph.NoTimestamp
+	graph.TimestampWeightedEdge
 	graph.NoRaw
 }
 

@@ -18,8 +18,7 @@ type VPMsg struct {
 }
 
 type EPMsg struct {
-	graph.WithWeight
-	graph.NoTimestamp
+	graph.TimestampWeightedEdge
 	graph.NoRaw
 }
 
