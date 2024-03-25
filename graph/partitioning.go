@@ -9,6 +9,8 @@ import (
 
 var numVertices uint32 = 0
 var numEvents uint64 = 0
+var threadVertexCounts = make([]uint64, THREAD_MAX)
+var threadOutEdgeCounts = make([]uint64, THREAD_MAX)
 
 const PARTITIONING_BATCH_SIZE = 1024
 
@@ -31,14 +33,34 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkIndividual(eventBatch []Topol
 // Individual placement
 
 func (g *Graph[V, E, M, N]) FindVertexPlacement(edgeEvent TopologyEvent[E], undirected bool) (srcId uint32, dstId uint32) {
-	return g.FindVertexPlacementBetter(edgeEvent, undirected)
+	srcId, dstId = g.FindVertexPlacementBetter(edgeEvent, undirected)
+	threadOutEdgeCounts[IdxToTidx(srcId)] += 1
+	return
 }
 
 // Complex ones
 
-func (g *Graph[V, E, M, N]) FindVertexPlacementBetter(edgeEvent TopologyEvent[E], undirected bool) (srcId uint32, dstId uint32) {
-	numEvents += 1
+func (g *Graph[V, E, M, N]) FindVertexPlacementMinLoad(edgeEvent TopologyEvent[E], undirected bool) (srcId uint32, dstId uint32) {
+	srcId, srcOk := g.VertexMap[edgeEvent.SrcRaw]
+	dstId, dstOk := g.VertexMap[edgeEvent.DstRaw]
+	if !srcOk && !dstOk {
+		// min load thread
+		tMinLoad := g.findMinLoad(LOAD_ADJUSTMENT_NONE)
+		srcId = g.addMapping(tMinLoad, edgeEvent.SrcRaw)
+		dstId = g.addMapping(tMinLoad, edgeEvent.DstRaw)
+	} else if srcOk != dstOk {
+		if srcOk {
+			tMinLoad := g.findMinLoad(LOAD_ADJUSTMENT_NONE)
+			dstId = g.addMapping(tMinLoad, edgeEvent.DstRaw)
+		} else {
+			tMinLoad := g.findMinLoad(LOAD_ADJUSTMENT_NONE)
+			srcId = g.addMapping(tMinLoad, edgeEvent.SrcRaw)
+		}
+	}
+	return
+}
 
+func (g *Graph[V, E, M, N]) FindVertexPlacementBetter(edgeEvent TopologyEvent[E], undirected bool) (srcId uint32, dstId uint32) {
 	srcId, srcOk := g.VertexMap[edgeEvent.SrcRaw]
 	dstId, dstOk := g.VertexMap[edgeEvent.DstRaw]
 	if !srcOk && !dstOk {
@@ -53,7 +75,7 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBetter(edgeEvent TopologyEvent[E]
 			tMinLoad := g.findMinLoad(func(tidx uint32, load float64) float64 {
 				load /= avgLoad
 				if tidx == srcTidx {
-					load -= 0.2
+					load -= 0.1 // Explore
 				}
 				return load
 			})
@@ -63,7 +85,7 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBetter(edgeEvent TopologyEvent[E]
 			tMinLoad := g.findMinLoad(func(tidx uint32, load float64) float64 {
 				load /= avgLoad
 				if tidx == dstTidx {
-					load -= 0.2
+					load -= 0.1 // Explore
 				}
 				return load
 			})
@@ -75,6 +97,7 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBetter(edgeEvent TopologyEvent[E]
 
 func (g *Graph[V, E, M, N]) FindVertexPlacementFennelLike(edgeEvent TopologyEvent[E], undirected bool) (srcId uint32, dstId uint32) {
 	// Load balancing is pretty bad with these two parameters
+	numEvents += 1
 	alpha := math.Sqrt(float64(g.NumThreads)) * float64(numEvents) / math.Pow(float64(numVertices), 1.5)
 	gamma := 1.5
 
@@ -165,17 +188,22 @@ func (g *Graph[V, E, M, N]) addMapping(tidx uint32, rawId RawType) (internalId u
 	g.ThreadVertexCounts[tidx] += 1
 	g.VertexMap[rawId] = internalId
 	numVertices += 1
+	threadVertexCounts[tidx] += 1
 	return internalId
 }
 
 // Load functions
 
 func (gt *GraphThread[V, E, M, N]) GetLoad() (load float64) {
-	return gt.getLoadNumVertices()
+	return gt.getLoadNumEdges() // Explore
 }
 
 func (gt *GraphThread[V, E, M, N]) getLoadNumVertices() (load float64) {
-	return float64(len(gt.Vertices))
+	return float64(threadVertexCounts[gt.Tidx])
+}
+
+func (gt *GraphThread[V, E, M, N]) getLoadNumEdges() (load float64) {
+	return float64(threadOutEdgeCounts[gt.Tidx])
 }
 
 func (g *Graph[V, E, M, N]) findMinLoad(adjustLoad func(uint32, float64) float64) (tMinLoad uint32) {

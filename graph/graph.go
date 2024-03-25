@@ -290,6 +290,17 @@ func (g *Graph[V, E, M, N]) SavePartitioningStats() {
 		writer.Write([]string{utils.V(tidx), utils.V(len(t.Vertices)), utils.V(t.NumEdges), utils.V(t.NumInEvents),
 			utils.V(t.MsgSend), utils.V(t.MsgRecv), utils.V(t.MsgSendLocal), utils.V(t.MsgRecvLocal), utils.V(t.MsgSendRemote), utils.V(t.MsgRecvRemote)})
 	}
+
+	totalMsg, totalMsgRemote := 0, 0
+	for tidx := 0; tidx < int(g.NumThreads); tidx++ {
+		t := &g.GraphThreads[tidx]
+		totalMsg += int(t.MsgSendLocal + t.MsgSendRemote)
+		totalMsgRemote += int(t.MsgSendRemote)
+	}
+
+	log.Info().Msg("Total Msg: " + utils.V(totalMsg) + " Total Remote Msg: " + utils.V(totalMsgRemote) + " Ratio: " + utils.V(float64(totalMsgRemote)/float64(totalMsg)))
+
+	// TODO: load balancing - SD of vertices, edges, total msg sent/recv
 }
 
 // Prints some statistics of the graph
