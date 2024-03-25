@@ -198,23 +198,40 @@ func Emitter[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N
 	totalRetried := 0
 	putFails := 0
 	gtPutFails := 0
-	var closed bool
+	eventBatch := make([]TopologyEvent[E], PARTITIONING_BATCH_SIZE)
+	eventBatchPlacement := make([]utils.Pair[uint32, uint32], PARTITIONING_BATCH_SIZE)
+	eventBatchIdx := 0
+	closed := false
 
-outer:
-	for {
+	for !closed {
+	batch:
 		// Round robin through threads, same how the threads are assigned to positions in the event log, so we receive in order.
-		for i := 0; i < len(edgeQueues); i++ {
-			event, ok, pos := edgeQueues[i].GetFast()
-			if !ok {
-				if event, closed, retried = edgeQueues[i].GetSlow(pos); closed {
-					break outer
+		for {
+			for i := 0; i < len(edgeQueues); i++ {
+				event, ok, pos := edgeQueues[i].GetFast()
+				if !ok {
+					if event, closed, retried = edgeQueues[i].GetSlow(pos); closed {
+						break batch
+					}
+					totalRetried += retried
 				}
-				totalRetried += retried
-			}
-			event.TypeAndEventIdx |= (eventIdx << EVENT_TYPE_BITS)
-			eventIdx++
+				event.TypeAndEventIdx |= (eventIdx << EVENT_TYPE_BITS)
+				eventIdx++
 
-			srcId, dstId := g.FindVertexPlacement(event, undirected, &gtPutFails)
+				eventBatch[eventBatchIdx] = event
+				eventBatchIdx++
+				if eventBatchIdx == PARTITIONING_BATCH_SIZE {
+					break batch
+				}
+			}
+		}
+
+		g.FindVertexPlacementBulk(eventBatch, eventBatchPlacement, eventBatchIdx, undirected)
+
+		for i := 0; i < eventBatchIdx; i++ {
+			event := eventBatch[i]
+			srcId, dstId := eventBatchPlacement[i].First, eventBatchPlacement[i].Second
+			// srcId, dstId := g.FindVertexPlacement(event, undirected, &gtPutFails)
 			srcTidx, dstTidx := IdxToTidx(srcId), IdxToTidx(dstId)
 
 			internalEvent := InternalTopologyEvent[E]{TypeAndEventIdx: event.TypeAndEventIdx, SrcRaw: event.SrcRaw, DstRaw: event.DstRaw, SrcIdx: srcId, Edge: Edge[E]{
@@ -222,10 +239,10 @@ outer:
 				Didx:     dstId,
 				Pos:      ^uint32(0),
 			}}
-			if pos, ok = g.GraphThreads[dstTidx].FromEmitQueue.PutFast(internalEvent); !ok {
+			if pos, ok := g.GraphThreads[dstTidx].FromEmitQueue.PutFast(internalEvent); !ok {
 				gtPutFails += g.GraphThreads[dstTidx].FromEmitQueue.PutSlow(internalEvent, pos)
 			}
-			if pos, ok = order.PutFast(dstTidx); !ok {
+			if pos, ok := order.PutFast(dstTidx); !ok {
 				putFails += order.PutSlow(dstTidx, pos)
 			}
 
@@ -249,14 +266,16 @@ outer:
 					EP(&uEvent.Edge.Property).ReplaceTimestamp(eventIdx)
 				}
 				eventIdx++
-				if pos, ok = g.GraphThreads[srcTidx].FromEmitQueue.PutFast(uEvent); !ok {
+				if pos, ok := g.GraphThreads[srcTidx].FromEmitQueue.PutFast(uEvent); !ok {
 					gtPutFails += g.GraphThreads[srcTidx].FromEmitQueue.PutSlow(uEvent, pos)
 				}
-				if pos, ok = order.PutFast(srcTidx); !ok {
+				if pos, ok := order.PutFast(srcTidx); !ok {
 					putFails += order.PutSlow(srcTidx, pos)
 				}
 			}
 		}
+
+		eventBatchIdx = 0
 	}
 
 	if g.Options.DebugLevel >= 3 {
@@ -376,10 +395,9 @@ func (g *Graph[V, E, M, N]) StreamRemitOnly() (order *utils.GrowableRingBuff[uin
 
 // For testing. Direct add
 func (g *Graph[V, E, M, N]) SendAdd(srcRaw RawType, dstRaw RawType, EdgeProperty E, order *utils.GrowableRingBuff[uint32]) {
-	fails := 0
 	event := TopologyEvent[E]{TypeAndEventIdx: uint64(ADD), SrcRaw: srcRaw, DstRaw: dstRaw, EdgeProperty: EdgeProperty}
 
-	srcId, dstId := g.FindVertexPlacement(event, false, &fails)
+	srcId, dstId := g.FindVertexPlacement(event, false)
 	internalEvent := InternalTopologyEvent[E]{TypeAndEventIdx: event.TypeAndEventIdx, SrcRaw: event.SrcRaw, DstRaw: event.DstRaw, SrcIdx: srcId, Edge: Edge[E]{
 		Property: event.EdgeProperty,
 		Didx:     dstId,
@@ -397,10 +415,9 @@ func (g *Graph[V, E, M, N]) SendAdd(srcRaw RawType, dstRaw RawType, EdgeProperty
 
 // For testing. Direct delete
 func (g *Graph[V, E, M, N]) SendDel(srcRaw RawType, dstRaw RawType, EdgeProperty E, order *utils.GrowableRingBuff[uint32]) {
-	fails := 0
 	event := TopologyEvent[E]{TypeAndEventIdx: uint64(DEL), SrcRaw: srcRaw, DstRaw: dstRaw, EdgeProperty: EdgeProperty}
 
-	srcId, dstId := g.FindVertexPlacement(event, false, &fails)
+	srcId, dstId := g.FindVertexPlacement(event, false)
 	internalEvent := InternalTopologyEvent[E]{TypeAndEventIdx: event.TypeAndEventIdx, SrcRaw: event.SrcRaw, DstRaw: event.DstRaw, SrcIdx: srcId, Edge: Edge[E]{
 		Property: event.EdgeProperty,
 		Didx:     dstId,
