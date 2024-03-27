@@ -227,11 +227,11 @@ func (g *Graph[V, E, M, N]) ExecuteQuery(entry uint64) {
 
 func (g *Graph[V, E, M, N]) UpdateMsgStat(sTidx, dTidx uint32) {
 	if sTidx == dTidx {
-		g.GraphThreads[sTidx].MsgRecvLocal += 1
-		g.GraphThreads[sTidx].MsgSendLocal += 1
+		atomic.AddUint64(&g.GraphThreads[sTidx].MsgRecvLocal, 1)
+		atomic.AddUint64(&g.GraphThreads[sTidx].MsgSendLocal, 1)
 	} else {
-		g.GraphThreads[sTidx].MsgSendRemote += 1
-		g.GraphThreads[dTidx].MsgRecvRemote += 1
+		atomic.AddUint64(&g.GraphThreads[sTidx].MsgSendRemote, 1)
+		atomic.AddUint64(&g.GraphThreads[dTidx].MsgRecvRemote, 1)
 	}
 }
 
@@ -291,16 +291,24 @@ func (g *Graph[V, E, M, N]) SavePartitioningStats() {
 			utils.V(t.MsgSend), utils.V(t.MsgRecv), utils.V(t.MsgSendLocal), utils.V(t.MsgRecvLocal), utils.V(t.MsgSendRemote), utils.V(t.MsgRecvRemote)})
 	}
 
-	totalMsg, totalMsgRemote := 0, 0
+	totalMsg, totalMsgRemote, numEdges := 0, 0, uint32(0)
+	maxThreadMsgRecv, maxThreadRemoteMsgRecv := uint64(0), uint64(0)
+	maxThreadVertices, maxThreadEdges := 0, uint32(0)
 	for tidx := 0; tidx < int(g.NumThreads); tidx++ {
 		t := &g.GraphThreads[tidx]
+		numEdges += t.NumEdges
 		totalMsg += int(t.MsgSendLocal + t.MsgSendRemote)
 		totalMsgRemote += int(t.MsgSendRemote)
+		maxThreadMsgRecv = utils.Max(maxThreadMsgRecv, t.MsgRecvLocal+t.MsgRecvRemote)
+		maxThreadRemoteMsgRecv = utils.Max(maxThreadRemoteMsgRecv, t.MsgRecvRemote)
+		maxThreadVertices = utils.Max(maxThreadVertices, len(t.Vertices))
+		maxThreadEdges = utils.Max(maxThreadEdges, t.NumEdges)
 	}
-
 	log.Info().Msg("Total Msg: " + utils.V(totalMsg) + " Total Remote Msg: " + utils.V(totalMsgRemote) + " Ratio: " + utils.V(float64(totalMsgRemote)/float64(totalMsg)))
-
-	// TODO: load balancing - SD of vertices, edges, total msg sent/recv
+	log.Info().Msg("maxThreadMsgRecv (ratio to avg): " + utils.V(maxThreadMsgRecv) + " (" + utils.V(float64(maxThreadMsgRecv)/(float64(totalMsg)/float64(g.NumThreads))) +
+		") maxThreadRemoteMsgRecv (ratio to avg): " + utils.V(maxThreadRemoteMsgRecv) + " (" + utils.V(float64(maxThreadRemoteMsgRecv)/(float64(totalMsgRemote)/float64(g.NumThreads))) + ")")
+	log.Info().Msg("maxThreadVertices (ratio to avg): " + utils.V(maxThreadVertices) + " (" + utils.V(float64(maxThreadVertices)/(float64(g.NodeVertexCount())/float64(g.NumThreads))) +
+		") maxThreadEdges (ratio to avg): " + utils.V(maxThreadEdges) + " (" + utils.V(float64(maxThreadEdges)/(float64(numEdges)/float64(g.NumThreads))) + ")")
 }
 
 // Prints some statistics of the graph

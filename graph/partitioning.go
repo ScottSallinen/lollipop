@@ -75,7 +75,7 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBetter(edgeEvent TopologyEvent[E]
 			tMinLoad := g.findMinLoad(func(tidx uint32, load float64) float64 {
 				load /= avgLoad
 				if tidx == srcTidx {
-					load -= 0.1 // Explore
+					load -= 1 // Explore
 				}
 				return load
 			})
@@ -85,7 +85,7 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBetter(edgeEvent TopologyEvent[E]
 			tMinLoad := g.findMinLoad(func(tidx uint32, load float64) float64 {
 				load /= avgLoad
 				if tidx == dstTidx {
-					load -= 0.1 // Explore
+					load -= 1 // Explore
 				}
 				return load
 			})
