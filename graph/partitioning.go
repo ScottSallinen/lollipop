@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"log"
 	"math"
 	"math/rand"
 
@@ -20,13 +21,78 @@ var LOAD_ADJUSTMENT_NONE = func(_ uint32, load float64) float64 {
 
 // Bulk placement
 
-func (g *Graph[V, E, M, N]) FindVertexPlacementBulk(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], numEvents int, undirected bool) {
-	g.FindVertexPlacementBulkIndividual(eventBatch, eventBatchPlacement, numEvents, undirected)
+func (g *Graph[V, E, M, N]) FindVertexPlacementBulk(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool) {
+	if undirected {
+		log.Panic("undirected is not supported")
+	}
+	g.FindVertexPlacementBulkFennel(eventBatch, eventBatchPlacement, batchNumEvents, undirected)
 }
 
-func (g *Graph[V, E, M, N]) FindVertexPlacementBulkIndividual(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], numEvents int, undirected bool) {
-	for i := 0; i < numEvents; i++ {
+func (g *Graph[V, E, M, N]) FindVertexPlacementBulkIndividual(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool) {
+	for i := 0; i < batchNumEvents; i++ {
 		eventBatchPlacement[i].First, eventBatchPlacement[i].Second = g.FindVertexPlacement(eventBatch[i], undirected)
+	}
+}
+
+func (g *Graph[V, E, M, N]) FindVertexPlacementBulkFennel(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool) {
+	// Load balancing is pretty bad with these two parameters?
+	numEvents += uint64(batchNumEvents)
+	alpha := math.Sqrt(float64(g.NumThreads)) * float64(numEvents) / math.Pow(float64(numVertices), 1.5)
+	gamma := 1.5
+
+	vertices := make(map[RawType][]uint32)
+	for i := 0; i < batchNumEvents; i++ {
+		srcId, srcOk := g.VertexMap[eventBatch[i].SrcRaw]
+		dstId, dstOk := g.VertexMap[eventBatch[i].DstRaw]
+		if !srcOk && !dstOk {
+			if _, ok := vertices[eventBatch[i].SrcRaw]; !ok {
+				vertices[eventBatch[i].SrcRaw] = nil
+			}
+			if _, ok := vertices[eventBatch[i].DstRaw]; !ok {
+				vertices[eventBatch[i].DstRaw] = nil
+			}
+		} else if srcOk && !dstOk {
+			vertices[eventBatch[i].DstRaw] = append(vertices[eventBatch[i].DstRaw], IdxToTidx(srcId))
+		} else if !srcOk && dstOk {
+			vertices[eventBatch[i].SrcRaw] = append(vertices[eventBatch[i].SrcRaw], IdxToTidx(dstId))
+		}
+	}
+
+	threadLoads := make([]float64, g.NumThreads)
+	threadCommons := make([]float64, g.NumThreads)
+	for t := 0; t < int(g.NumThreads); t++ {
+		threadLoads[t] = alpha * gamma * math.Pow(g.GraphThreads[t].GetLoad(), gamma-1)
+	}
+	for vRaw, nbrs := range vertices {
+		for t := range threadCommons {
+			threadCommons[t] = 0
+		}
+		for _, nbr := range nbrs {
+			threadCommons[nbr] += 1
+		}
+
+		minTidx, minLoad := uint32(0), math.MaxFloat64
+		for t := uint32(0); t < g.NumThreads; t++ {
+			load := threadLoads[t] - threadCommons[t]
+			if load < minLoad {
+				minTidx, minLoad = t, load
+			}
+		}
+		g.addMapping(minTidx, vRaw)
+	}
+
+	for i := 0; i < batchNumEvents; i++ {
+		srcId, ok := g.VertexMap[eventBatch[i].SrcRaw]
+		if !ok {
+			panic("")
+		}
+		dstId, ok := g.VertexMap[eventBatch[i].DstRaw]
+		if !ok {
+			panic("")
+		}
+		threadOutEdgeCounts[IdxToTidx(srcId)] += 1
+		threadOutEdgeCounts[IdxToTidx(dstId)] += 1
+		eventBatchPlacement[i].First, eventBatchPlacement[i].Second = srcId, dstId
 	}
 }
 
@@ -112,9 +178,9 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementFennelLike(edgeEvent TopologyEven
 		if srcOk {
 			srcTidx := IdxToTidx(srcId)
 			tMinLoad := g.findMinLoad(func(tidx uint32, load float64) float64 {
-				load = -alpha * gamma * math.Pow(load, gamma-1)
+				load = alpha * gamma * math.Pow(load, gamma-1)
 				if tidx == srcTidx {
-					load += 1
+					load -= 1
 				}
 				return load
 			})
@@ -122,9 +188,9 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementFennelLike(edgeEvent TopologyEven
 		} else {
 			dstTidx := IdxToTidx(dstId)
 			tMinLoad := g.findMinLoad(func(tidx uint32, load float64) float64 {
-				load = -alpha * gamma * math.Pow(load, gamma-1)
+				load = alpha * gamma * math.Pow(load, gamma-1)
 				if tidx == dstTidx {
-					load += 1
+					load -= 1
 				}
 				return load
 			})
