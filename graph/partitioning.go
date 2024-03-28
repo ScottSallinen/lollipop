@@ -4,6 +4,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/utils"
 )
@@ -13,7 +14,7 @@ var numEvents uint64 = 0
 var threadVertexCounts = make([]uint64, THREAD_MAX)
 var threadOutEdgeCounts = make([]uint64, THREAD_MAX)
 
-const PARTITIONING_BATCH_SIZE = 1024
+const PARTITIONING_BATCH_SIZE = 1
 
 var LOAD_ADJUSTMENT_NONE = func(_ uint32, load float64) float64 {
 	return load
@@ -25,7 +26,7 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulk(eventBatch []TopologyEvent[E
 	if undirected {
 		log.Panic("undirected is not supported")
 	}
-	g.FindVertexPlacementBulkFennel(eventBatch, eventBatchPlacement, batchNumEvents, undirected)
+	g.FindVertexPlacementBulkIndividual(eventBatch, eventBatchPlacement, batchNumEvents, undirected)
 }
 
 func (g *Graph[V, E, M, N]) FindVertexPlacementBulkIndividual(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool) {
@@ -322,6 +323,7 @@ func (g *Graph[V, E, M, N]) addMapping(tidx uint32, rawId RawType) (internalId u
 // Load functions
 
 func (gt *GraphThread[V, E, M, N]) GetLoad() (load float64) {
+	// TODO: considering mixing different criteria
 	return gt.getLoadNumEdges() // Explore
 }
 
@@ -331,6 +333,10 @@ func (gt *GraphThread[V, E, M, N]) getLoadNumVertices() (load float64) {
 
 func (gt *GraphThread[V, E, M, N]) getLoadNumEdges() (load float64) {
 	return float64(threadOutEdgeCounts[gt.Tidx])
+}
+
+func (gt *GraphThread[V, E, M, N]) getLoadNumMessages() (load float64) {
+	return float64(atomic.LoadUint64(&gt.MsgRecvLocal) + atomic.LoadUint64(&gt.MsgRecvRemote))
 }
 
 func (g *Graph[V, E, M, N]) findMinLoad(adjustLoad func(uint32, float64) float64) (tMinLoad uint32) {
