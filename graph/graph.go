@@ -309,6 +309,21 @@ func (g *Graph[V, E, M, N]) SavePartitioningStats() {
 		") maxThreadRemoteMsgRecv (ratio to avg): " + utils.V(maxThreadRemoteMsgRecv) + " (" + utils.V(float64(maxThreadRemoteMsgRecv)/(float64(totalMsgRemote)/float64(g.NumThreads))) + ")")
 	log.Info().Msg("maxThreadVertices (ratio to avg): " + utils.V(maxThreadVertices) + " (" + utils.V(float64(maxThreadVertices)/(float64(g.NodeVertexCount())/float64(g.NumThreads))) +
 		") maxThreadEdges (ratio to avg): " + utils.V(maxThreadEdges) + " (" + utils.V(float64(maxThreadEdges)/(float64(numEdges)/float64(g.NumThreads))) + ")")
+
+	totalEdgeCuts := g.NodeParallelFor(func(ordinalStart, internalId uint32, gt *GraphThread[V, E, M, N]) int {
+		edgeCuts := 0
+		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
+			vertex := &gt.Vertices[i]
+			for eidx := range vertex.OutEdges {
+				e := &vertex.OutEdges[eidx]
+				if IdxToTidx(e.Didx) != uint32(gt.Tidx) {
+					edgeCuts++
+				}
+			}
+		}
+		return edgeCuts
+	})
+	log.Info().Msg("Edge Cuts: " + utils.V(float64(totalEdgeCuts)/float64(numEdges)))
 }
 
 // Prints some statistics of the graph
