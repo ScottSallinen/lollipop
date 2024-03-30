@@ -129,6 +129,15 @@ type TimestampWeightedEdge struct {
 	NoRaw
 }
 
+func (e *TimestampWeightedEdge) ParseProperty(fields []string, wPos, tPos int32) {
+	if wPos >= 0 {
+		e.Weight, _ = strconv.ParseFloat(fields[wPos], 32)
+	}
+	if tPos >= 0 {
+		e.Ts, _ = strconv.ParseUint(fields[tPos], 10, 64)
+	}
+}
+
 /* ------------------ TimeRange Edge ------------------ */
 
 type TimeRangeEdge struct {

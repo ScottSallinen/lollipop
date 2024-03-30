@@ -144,11 +144,11 @@ func (gr *GlobalRelabel) resumeExecution(g *Graph, pr *PushRelabel) (sent uint64
 
 func resetHeights(g *Graph) {
 	g.NodeParallelFor(func(ordinalStart, threadOffset uint32, gt *graph.GraphThread[VertexProp, EdgeProp, Mail, Note]) (accumulated int) {
-		for i := 0; i < len(gt.Vertices); i++ {
-			v := &gt.Vertices[i].Property
-			v.HeightPos, v.HeightNeg = MaxHeight, MaxHeight
-			for j := range v.Nbrs {
-				v.Nbrs[j].HeightPos, v.Nbrs[j].HeightNeg = MaxHeight, MaxHeight
+		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
+			vp := gt.VertexProperty(i)
+			vp.HeightPos, vp.HeightNeg = MaxHeight, MaxHeight
+			for j := range vp.Nbrs {
+				vp.Nbrs[j].HeightPos, vp.Nbrs[j].HeightNeg = MaxHeight, MaxHeight
 			}
 		}
 		return 0
@@ -169,10 +169,10 @@ func sendMsgToSpecialHeightVerticesNoDeletes(g *Graph, pr *PushRelabel) (sent ui
 
 func sendMsgToSpecialHeightVerticesWithDeletes(g *Graph, pr *PushRelabel) (sent uint64) {
 	sent = uint64(g.NodeParallelFor(func(ordinalStart, threadOffset uint32, gt *graph.GraphThread[VertexProp, EdgeProp, Mail, Note]) (sent int) {
-		for i := 0; i < len(gt.Vertices); i++ {
-			v := &gt.Vertices[i].Property
-			if v.Type != Normal || v.Excess < 0 {
-				v.HeightPosChanged, v.HeightNegChanged = v.resetHeights(&pr.VertexCount)
+		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
+			vp := gt.VertexProperty(i)
+			if vp.Type != Normal || vp.Excess < 0 {
+				vp.HeightPosChanged, vp.HeightNegChanged = vp.resetHeights(&pr.VertexCount)
 
 				noti := graph.Notification[Note]{Target: threadOffset | uint32(i), Note: Note{PosType: EmptyValue}}
 				mailbox, tidx := g.NodeVertexMailbox(noti.Target)
@@ -188,9 +188,9 @@ func sendMsgToSpecialHeightVerticesWithDeletes(g *Graph, pr *PushRelabel) (sent 
 func sendMsgToActiveVertices(g *Graph) (sent uint64) {
 	sentAtomic := atomic.Uint64{}
 	activeVertices := g.NodeParallelFor(func(ordinalStart, threadOffset uint32, gt *graph.GraphThread[VertexProp, EdgeProp, Mail, Note]) (accumulated int) {
-		for i := 0; i < len(gt.Vertices); i++ {
-			v := &gt.Vertices[i].Property
-			if v.Excess != 0 {
+		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
+			vp := gt.VertexProperty(i)
+			if vp.Excess != 0 {
 				id := threadOffset | uint32(i)
 				mailbox, tidx := g.NodeVertexMailbox(id)
 				sentAtomic.Add(g.EnsureSend(g.ActiveNotification(id, graph.Notification[Note]{Target: id, Note: Note{PosType: EmptyValue}}, mailbox, tidx)))

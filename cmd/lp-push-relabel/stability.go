@@ -31,14 +31,14 @@ func (pr *PushRelabel) getFlowSnapshot(g *Graph, AtEventIndex uint64, lastSnapsh
 	sourceId := pr.SourceId.Load()
 
 	vertexCount := int64(0)
-	g.NodeForEachVertex(func(o, internalId uint32, v *Vertex) {
+	g.NodeForEachVertex(func(i, internalId uint32, v *Vertex, vp *VertexProp) {
 		vertexStructure := g.NodeVertexStructure(internalId)
 		if vertexStructure.CreateEvent <= AtEventIndex {
 			vertexCount += 1
 			NbrIds := make(map[uint32]struct{})
 			ResCapMap, ResCapSum := make(map[uint32]int64), int64(0)
 			EdgeCapMap, EdgeCapSum := make(map[uint32]int64), int64(0)
-			for _, n := range v.Property.Nbrs {
+			for _, n := range vp.Nbrs {
 				if n.ResCapOut != 0 {
 					AssertC(n.ResCapOut > 0)
 					ResCapMap[n.Didx] += n.ResCapOut
@@ -47,7 +47,7 @@ func (pr *PushRelabel) getFlowSnapshot(g *Graph, AtEventIndex uint64, lastSnapsh
 				}
 			}
 			for _, e := range v.OutEdges {
-				if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == sourceId || v.Property.Type == Sink {
+				if e.Didx == internalId || e.Property.Weight <= 0 || e.Didx == sourceId || vp.Type == Sink {
 					continue
 				}
 				EdgeCapMap[e.Didx] += int64(e.Property.Weight)
@@ -69,13 +69,13 @@ func (pr *PushRelabel) getFlowSnapshot(g *Graph, AtEventIndex uint64, lastSnapsh
 			}
 
 			Flow := int64(0)
-			if v.Property.Type == Source {
-				AssertC(int64(v.Property.Excess) == ResCapSum)
-				AssertC(InFlowSum == 0 && EdgeCapSum-int64(v.Property.Excess) == OutFlowSum)
+			if vp.Type == Source {
+				AssertC(int64(vp.Excess) == ResCapSum)
+				AssertC(InFlowSum == 0 && EdgeCapSum-int64(vp.Excess) == OutFlowSum)
 				Flow = OutFlowSum
-			} else if v.Property.Type == Sink {
-				AssertC(EdgeCapSum+int64(v.Property.Excess) == ResCapSum)
-				AssertC(OutFlowSum == 0 && int64(v.Property.Excess) == InFlowSum)
+			} else if vp.Type == Sink {
+				AssertC(EdgeCapSum+int64(vp.Excess) == ResCapSum)
+				AssertC(OutFlowSum == 0 && int64(vp.Excess) == InFlowSum)
 				Flow = InFlowSum
 			} else {
 				AssertC(ResCapSum == EdgeCapSum)

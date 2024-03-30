@@ -10,8 +10,8 @@ import (
 
 type TestGraph struct {
 	Path         string
-	TimestampPos int32
-	WeightPos    int32
+	TimestampPos int8
+	WeightPos    int8
 	VertexCount  uint64 // Optional
 }
 
