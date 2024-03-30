@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"log"
 	"math"
 	"math/rand"
 	"sync/atomic"
@@ -23,9 +22,6 @@ var LOAD_ADJUSTMENT_NONE = func(_ uint32, load float64) float64 {
 // Bulk placement
 
 func (g *Graph[V, E, M, N]) FindVertexPlacementBulk(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool) {
-	if undirected {
-		log.Panic("undirected is not supported")
-	}
 	g.FindVertexPlacementBulkIndividual(eventBatch, eventBatchPlacement, batchNumEvents, undirected)
 }
 
@@ -91,7 +87,9 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkBetter(eventBatch []TopologyE
 			panic("")
 		}
 		threadOutEdgeCounts[IdxToTidx(srcId)] += 1
-		threadOutEdgeCounts[IdxToTidx(dstId)] += 1
+		if undirected {
+			threadOutEdgeCounts[IdxToTidx(dstId)] += 1
+		}
 		eventBatchPlacement[i].First, eventBatchPlacement[i].Second = srcId, dstId
 	}
 }
@@ -153,7 +151,9 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkFennel(eventBatch []TopologyE
 			panic("")
 		}
 		threadOutEdgeCounts[IdxToTidx(srcId)] += 1
-		threadOutEdgeCounts[IdxToTidx(dstId)] += 1
+		if undirected {
+			threadOutEdgeCounts[IdxToTidx(dstId)] += 1
+		}
 		eventBatchPlacement[i].First, eventBatchPlacement[i].Second = srcId, dstId
 	}
 }
@@ -161,8 +161,11 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkFennel(eventBatch []TopologyE
 // Individual placement
 
 func (g *Graph[V, E, M, N]) FindVertexPlacement(edgeEvent TopologyEvent[E], undirected bool) (srcId uint32, dstId uint32) {
-	srcId, dstId = g.FindVertexPlacementBetter(edgeEvent, undirected)
+	srcId, dstId = g.FindVertexPlacementMinLoad(edgeEvent, undirected)
 	threadOutEdgeCounts[IdxToTidx(srcId)] += 1
+	if undirected {
+		threadOutEdgeCounts[IdxToTidx(dstId)] += 1
+	}
 	return
 }
 
@@ -323,7 +326,6 @@ func (g *Graph[V, E, M, N]) addMapping(tidx uint32, rawId RawType) (internalId u
 // Load functions
 
 func (gt *GraphThread[V, E, M, N]) GetLoad() (load float64) {
-	// TODO: considering mixing different criteria
 	return gt.getLoadNumEdges() // Explore
 }
 
