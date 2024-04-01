@@ -23,6 +23,7 @@ var LOAD_ADJUSTMENT_NONE = func(_ uint32, load float64) float64 {
 
 func (g *Graph[V, E, M, N]) FindVertexPlacementBulk(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool) {
 	g.FindVertexPlacementBulkIndividual(eventBatch, eventBatchPlacement, batchNumEvents, undirected)
+	// g.FindVertexPlacementBulkBetter(eventBatch, eventBatchPlacement, batchNumEvents, undirected)
 }
 
 func (g *Graph[V, E, M, N]) FindVertexPlacementBulkIndividual(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool) {
@@ -32,6 +33,9 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkIndividual(eventBatch []Topol
 }
 
 func (g *Graph[V, E, M, N]) FindVertexPlacementBulkBetter(eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool) {
+	if undirected {
+		panic("not supported")
+	}
 	// Load balancing is pretty bad with these two parameters?
 	numEvents += uint64(batchNumEvents)
 
@@ -55,9 +59,8 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkBetter(eventBatch []TopologyE
 
 	threadLoads := make([]float64, g.NumThreads)
 	threadCommons := make([]float64, g.NumThreads)
-	avgLoad := g.getAvgLoad()
 	for t := 0; t < int(g.NumThreads); t++ {
-		threadLoads[t] = g.GraphThreads[t].GetLoad() / avgLoad
+		threadLoads[t] = g.GraphThreads[t].GetLoad() / g.getAvgLoad()
 	}
 	for vRaw, nbrs := range vertices {
 		for t := range threadCommons {
@@ -75,6 +78,7 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkBetter(eventBatch []TopologyE
 			}
 		}
 		g.addMapping(minTidx, vRaw)
+		threadOutEdgeCounts[minTidx] += uint64(len(nbrs))
 	}
 
 	for i := 0; i < batchNumEvents; i++ {
@@ -85,10 +89,6 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkBetter(eventBatch []TopologyE
 		dstId, ok := g.VertexMap[eventBatch[i].DstRaw]
 		if !ok {
 			panic("")
-		}
-		threadOutEdgeCounts[IdxToTidx(srcId)] += 1
-		if undirected {
-			threadOutEdgeCounts[IdxToTidx(dstId)] += 1
 		}
 		eventBatchPlacement[i].First, eventBatchPlacement[i].Second = srcId, dstId
 	}
@@ -161,7 +161,7 @@ func (g *Graph[V, E, M, N]) FindVertexPlacementBulkFennel(eventBatch []TopologyE
 // Individual placement
 
 func (g *Graph[V, E, M, N]) FindVertexPlacement(edgeEvent TopologyEvent[E], undirected bool) (srcId uint32, dstId uint32) {
-	srcId, dstId = g.FindVertexPlacementMinLoad(edgeEvent, undirected)
+	srcId, dstId = g.FindVertexPlacementBetter(edgeEvent, undirected) // Explore
 	threadOutEdgeCounts[IdxToTidx(srcId)] += 1
 	if undirected {
 		threadOutEdgeCounts[IdxToTidx(dstId)] += 1
