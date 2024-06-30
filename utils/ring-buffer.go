@@ -47,6 +47,10 @@ func (rb *RingBuffSPSC[T]) Close() {
 	atomic.StoreUint64(&rb.status, 1)
 }
 
+func (rb *RingBuffSPSC[T]) IsClosed() bool {
+	return atomic.LoadUint64(&rb.status) == 1
+}
+
 // To be called by dequeuer after after it sees close (and has dequeued everything).
 func (rb *RingBuffSPSC[T]) End() {
 	rb.enqEntries = nil
@@ -555,5 +559,152 @@ func (rb *GrowableRingBuff[T]) GetSlow(pos uint64) (item T, closed bool, fails i
 			}
 			BackOff(fails) // Empty
 		}
+	}
+}
+
+// ---------------------------- MPSC Token Ring Buffer ----------------------------
+
+type RingBuffTokenMPSC[T any] struct {
+	_          [0]atomic.Int64
+	enqueue    uint64
+	enqMask    uint64
+	enqEntries []PosElement[T]
+	_          [3]uint64
+	dequeue    uint64
+	deqMask    uint64
+	deqEntries []PosElement[T]
+	status     uint64
+	_          [2]uint64
+}
+
+// Will allocate and initialize the ring buffer with the specified size.
+func (rb *RingBuffTokenMPSC[T]) Init(size uint64) {
+	size = RoundUpPow(size)
+	rb.enqMask = (size - 1)
+	rb.deqMask = rb.enqMask
+	rb.deqEntries = make([]PosElement[T], size)
+	for i := 0; i < int(size); i++ {
+		rb.deqEntries[i].position = uint64(i)
+	}
+	rb.enqEntries = rb.deqEntries
+}
+
+// Returns the total capacity of the ring buffer. Call this if you are the dequeuer (to avoid loading the enqueuer cache line).
+func (rb *RingBuffTokenMPSC[T]) DeqCap() uint64 {
+	return rb.deqMask + 1
+}
+
+// Returns the total capacity of the ring buffer. Call this if you are the enqueuer (to avoid loading the dequeuer cache line).
+func (rb *RingBuffTokenMPSC[T]) EnqCap() uint64 {
+	return rb.enqMask + 1
+}
+
+// Might not be accurate if there are concurrent accesses. Should only be used for an estimate.
+// Loads both cache lines!
+func (rb *RingBuffTokenMPSC[T]) Len() uint64 {
+	return atomic.LoadUint64(&rb.enqueue) - atomic.LoadUint64(&rb.dequeue)
+}
+
+// Should be called by the enqueuer.
+func (rb *RingBuffTokenMPSC[T]) Close() {
+	atomic.StoreUint64(&rb.status, 1)
+}
+
+func (rb *RingBuffTokenMPSC[T]) IsClosed() bool {
+	return atomic.LoadUint64(&rb.status) == 1
+}
+
+// To be called by dequeuer after after it sees close (and has dequeued everything).
+func (rb *RingBuffTokenMPSC[T]) End() {
+	rb.enqEntries = nil
+	rb.deqEntries = nil
+}
+
+// Dequeuer: How many elements available to dequeue
+func (rb *RingBuffTokenMPSC[T]) DeqCheckRange() uint64 {
+	return atomic.LoadUint64(&rb.enqueue) - rb.dequeue
+}
+
+// Total number of items that have been enqueued (including those that have been dequeued).
+func (rb *RingBuffTokenMPSC[T]) Height() uint64 {
+	return atomic.LoadUint64(&rb.enqueue)
+}
+
+// Dequeuer: Return the next item, or false if empty.
+func (rb *RingBuffTokenMPSC[T]) Accept() (item T, ok bool) {
+	pos := rb.dequeue
+	n := &rb.deqEntries[pos&rb.deqMask]
+	if atomic.LoadUint64(&n.position) == (pos + 1) {
+		item = n.element
+		rb.dequeue++
+		atomic.StoreUint64(&n.position, (pos + 1 + rb.deqMask))
+		return item, true
+	}
+	return item, false
+}
+
+// Dequeuer: Return the next item, or false if empty. Does not advance the dequeue position.
+func (rb *RingBuffTokenMPSC[T]) Peek() (item T, ok bool) {
+	pos := rb.dequeue
+	n := &rb.deqEntries[pos&rb.deqMask]
+	if atomic.LoadUint64(&n.position) == (pos + 1) {
+		item = n.element
+		return item, true
+	}
+	return item, false
+}
+
+// Dequeuer: Blocking get of the item part 1, MOVES FORWARD, must call GetSlowSC if !ok.
+func (rb *RingBuffTokenMPSC[T]) GetFast() (item T, ok bool, pos uint64) {
+	n := &rb.deqEntries[rb.dequeue&rb.deqMask]
+	rb.dequeue++
+	pos = rb.dequeue
+	if atomic.LoadUint64(&n.position) == pos {
+		item = n.element
+		atomic.StoreUint64(&n.position, (pos + rb.deqMask))
+		return item, true, pos
+	}
+	return item, false, pos
+}
+
+// Dequeuer: Blocking get of the item part 2, from the position (from GetFast). Blocks until retrieved.
+func (rb *RingBuffTokenMPSC[T]) GetSlow(pos uint64) (item T, closed bool, fails int) {
+	n := &rb.deqEntries[(pos-1)&rb.deqMask]
+	for ; ; fails++ {
+		if atomic.LoadUint64(&n.position) == pos {
+			item = n.element
+			atomic.StoreUint64(&n.position, (pos + rb.deqMask))
+			return item, false, fails
+		}
+		if atomic.LoadUint64(&rb.status) == 1 {
+			return item, true, fails
+		}
+		BackOff(fails) // Empty
+	}
+}
+
+// (MultipleProducers) Enqueuer: Add of the item part 1, call PutSlowMP if !ok.
+func (rb *RingBuffTokenMPSC[T]) PutFast(item T, token uint64) (ok bool) {
+	n := &rb.enqEntries[token&rb.enqMask]
+	if atomic.LoadUint64(&n.position) == token {
+		n.element = item
+		atomic.StoreUint64(&n.position, token+1)
+		AtomicMaxUint64(&rb.enqueue, token+1)
+		return true
+	}
+	return false
+}
+
+// (MultipleProducers) Enqueuer: Blocking add of the item part 2, to the token position (from PutFastMP). Blocks until added.
+func (rb *RingBuffTokenMPSC[T]) PutSlow(item T, token uint64) (fails int) {
+	n := &rb.enqEntries[token&rb.enqMask]
+	for ; ; fails++ {
+		if atomic.LoadUint64(&n.position) == token {
+			n.element = item
+			atomic.StoreUint64(&n.position, token+1)
+			AtomicMaxUint64(&rb.enqueue, token+1)
+			return
+		}
+		BackOff(fails) // Full
 	}
 }

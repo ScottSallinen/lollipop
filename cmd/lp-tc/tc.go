@@ -93,7 +93,7 @@ func (alg *TC) OnUpdateVertex(g *graph.Graph[VertexProp, EdgeProp, Mail, Note], 
 }
 
 // Function called when an in-edge is first observed at the destination vertex. This happens before the edge is given to the source vertex as an out-edge.
-func (*TC) OnInEdgeAdd(_ *graph.Graph[VertexProp, EdgeProp, Mail, Note], _ *graph.GraphThread[VertexProp, EdgeProp, Mail, Note], dst *graph.Vertex[VertexProp, EdgeProp], dstProp *VertexProp, _ uint32, pos uint32, topEvent *graph.TopologyEvent[EdgeProp]) {
+func (*TC) OnInEdgeAdd(_ *graph.Graph[VertexProp, EdgeProp, Mail, Note], _ *graph.GraphThread[VertexProp, EdgeProp, Mail, Note], dst *graph.Vertex[VertexProp, EdgeProp], dstProp *VertexProp, _ uint32, pos uint32, topEvent *graph.InputEvent[EdgeProp]) {
 	if topEvent.DstRaw == topEvent.SrcRaw {
 		topEvent.EdgeProperty.Raw = EMPTY // Self edge. For this algorithm, we discard these. (Note this creates a "hole" in the edges.)
 	} else if _, in := dstProp.MapEdgesToPos[topEvent.SrcRaw]; !in { // Update my (in) edges, mapping them to their logical position.

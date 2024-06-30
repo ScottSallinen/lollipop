@@ -22,7 +22,7 @@ type MyEdge struct {
 }
 
 func Benchmark_Load_RB_Bufio(b *testing.B) {
-	edgeQueue := new(utils.RingBuffSPSC[TopologyEvent[MyEdge]])
+	edgeQueue := new(utils.RingBuffSPSC[InputEvent[MyEdge]])
 	edgeQueue.Init(uint64(target))
 	go discardInput(edgeQueue)
 
@@ -38,7 +38,7 @@ func Benchmark_Load_RB_Bufio(b *testing.B) {
 }
 
 func Benchmark_Load_RB_Scan(b *testing.B) {
-	edgeQueue := new(utils.RingBuffSPSC[TopologyEvent[MyEdge]])
+	edgeQueue := new(utils.RingBuffSPSC[InputEvent[MyEdge]])
 	edgeQueue.Init(uint64(target))
 	go discardInput(edgeQueue)
 
@@ -78,7 +78,7 @@ func Benchmark_Load_Zenq_Scan(b *testing.B) {
 
 // Why so slow?
 func Benchmark_Load_Chan_Scan(b *testing.B) {
-	edgeQueue := make(chan TopologyEvent[MyEdge], (uint32(target)))
+	edgeQueue := make(chan InputEvent[MyEdge], (uint32(target)))
 	go discardInputChan(edgeQueue)
 
 	file := utils.OpenFile(fileName)
@@ -94,8 +94,8 @@ func Benchmark_Load_Chan_Scan(b *testing.B) {
 	file.Close()
 }
 
-func stream_RB_bufio[EP EPP[E], E EPI[E]](scanner *bufio.Scanner, edgeQueue *utils.RingBuffSPSC[TopologyEvent[E]], n int) (lines uint64) {
-	var sc TopologyEvent[E]
+func stream_RB_bufio[EP EPP[E], E EPI[E]](scanner *bufio.Scanner, edgeQueue *utils.RingBuffSPSC[InputEvent[E]], n int) (lines uint64) {
+	var sc InputEvent[E]
 	var b []byte
 	fields := make([]string, MAX_ELEMS_PER_EDGE)
 
@@ -118,8 +118,8 @@ func stream_RB_bufio[EP EPP[E], E EPI[E]](scanner *bufio.Scanner, edgeQueue *uti
 	return lines
 }
 
-func stream_RB_scan[EP EPP[E], E EPI[E]](file *os.File, s *utils.FastFileLines, edgeQueue *utils.RingBuffSPSC[TopologyEvent[E]], n int) (lines uint64) {
-	var sc TopologyEvent[E]
+func stream_RB_scan[EP EPP[E], E EPI[E]](file *os.File, s *utils.FastFileLines, edgeQueue *utils.RingBuffSPSC[InputEvent[E]], n int) (lines uint64) {
+	var sc InputEvent[E]
 	var b []byte
 	fields := make([]string, MAX_ELEMS_PER_EDGE)
 
@@ -146,8 +146,8 @@ func stream_RB_scan[EP EPP[E], E EPI[E]](file *os.File, s *utils.FastFileLines, 
 	return lines
 }
 
-func stream_chan_scan[EP EPP[E], E EPI[E]](file *os.File, s *utils.FastFileLines, edgeQueue chan TopologyEvent[E], n int) (lines uint64) {
-	var sc TopologyEvent[E]
+func stream_chan_scan[EP EPP[E], E EPI[E]](file *os.File, s *utils.FastFileLines, edgeQueue chan InputEvent[E], n int) (lines uint64) {
+	var sc InputEvent[E]
 	var b []byte
 	fields := make([]string, MAX_ELEMS_PER_EDGE)
 
@@ -206,13 +206,13 @@ func discardInputZenq(edgeQueue *zenq.ZenQ[TopologyEvent[MyEdge]]) {
 }
 */
 
-func discardInputChan(edgeQueue chan TopologyEvent[MyEdge]) {
+func discardInputChan(edgeQueue chan InputEvent[MyEdge]) {
 	for range edgeQueue {
 		// do nothing
 	}
 }
 
-func discardInput(edgeQueue *utils.RingBuffSPSC[TopologyEvent[MyEdge]]) {
+func discardInput(edgeQueue *utils.RingBuffSPSC[InputEvent[MyEdge]]) {
 	retried := 0
 	totalRetried := 0
 	var ok bool

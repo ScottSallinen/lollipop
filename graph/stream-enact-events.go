@@ -82,43 +82,86 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 	return vidx
 }
 
-// Checks the incoming from-emit queue, and passes anything to the remitter.
-func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], onInEdgeAddFunc func(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, uint32, uint32, *TopologyEvent[E])) (closed bool, count uint64) {
-	var ok bool
-	var didx uint32
-	var event TopologyEvent[E]
+// Checks the incoming from-emit queue, and remits to the other thread.
+func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], onInEdgeAddFunc func(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, uint32, uint32, *InputEvent[E]), topologyFlushedUpTo uint64) (closed bool, count uint64, largest uint64, failed bool, wantsQueryNow bool) {
 
-	spaceAvailable := gt.ToRemitQueue.EnqCheckRange()
-	for ; count < spaceAvailable; count++ {
-		if event, ok = gt.FromEmitQueue.Accept(); !ok {
+	// If we failed to remit last time, we try again with the stashed event.
+	if gt.FailedRemit {
+		if ok := g.GraphThreads[gt.InputEvent.SrcRaw.Within(g.NumThreads)].FromRemitQueue.PutFast(gt.RemitEvent, gt.RemitEvent.Order); !ok {
+			log.Debug().Msg("T[" + utils.F("%02d", gt.Tidx) + "] Failed to remit event again ")
+			return false, 0, 0, true, false
+		}
+		gt.TopologyEventBuff[gt.InputEvent.ThreadOrderDst-topologyFlushedUpTo] = RawEdgeEvent[E]{TypeAndEventIdx: gt.InputEvent.TypeAndEventIdx, Sidx: gt.RemitEvent.Edge.Didx, Edge: gt.RemitEvent.Edge}
+		gt.FailedRemit = false
+		largest = gt.InputEvent.ThreadOrderDst
+		count++
+	}
+
+	var vidx uint32
+	var ok bool
+	for ; ; count++ {
+		if gt.InputEvent, ok = gt.FromEmitQueue.Accept(); !ok {
 			break
 		}
-		if didx, ok = gt.VertexMap[event.DstRaw]; !ok {
-			didx = NewVertex(alg, g, gt, event.DstRaw, event.EventIdx())
+
+		if gt.InputEvent.EventType() == QUERY {
+			// Break, and don't come back until we answer the query!
+			return false, count, largest, false, true
+		}
+
+		if vidx, ok = gt.VertexMap[gt.InputEvent.DstRaw]; !ok {
+			vidx = NewVertex(alg, g, gt, gt.InputEvent.DstRaw, gt.InputEvent.EventIdx())
+			//log.Debug().Msg("T[" + utils.F("%02d", gt.Tidx) + "] Created vertex for rawId: " + utils.V(myRaw) + " with internal id: " + utils.V(vidx))
 		}
 
 		pos := ^uint32(0)
-		if event.EventType() == ADD {
-			vs := gt.VertexStructure(didx)
-			pos = vs.InEventPos
-			if onInEdgeAddFunc != nil {
-				onInEdgeAddFunc(g, gt, gt.Vertex(didx), gt.VertexProperty(didx), didx, pos, &event)
+		if gt.InputEvent.EventType() == ADD {
+			vs := gt.VertexStructure(vidx)
+			if gt.InputEvent.EventIdx()%2 == 1 { // We are the original source, they are the original destination.
+				if g.Options.Undirected { // For undirected, we make the edge both ways, so we are also a destination.
+					pos = vs.InEventPos
+					if onInEdgeAddFunc != nil {
+						onInEdgeAddFunc(g, gt, gt.Vertex(vidx), gt.VertexProperty(vidx), vidx, pos, &gt.InputEvent)
+					}
+					vs.InEventPos++
+				}
+			} else { // They are the original source, we are the original destination.
+				pos = vs.InEventPos
+				if onInEdgeAddFunc != nil {
+					onInEdgeAddFunc(g, gt, gt.Vertex(vidx), gt.VertexProperty(vidx), vidx, pos, &gt.InputEvent)
+				}
+				vs.InEventPos++
 			}
-			vs.InEventPos++
-			gt.NumInEvents++ // Thread total; unused.
 		}
 
-		// Will always succeed (range check is lte current space)
-		gt.ToRemitQueue.Offer(RawEdgeEvent[E]{TypeAndEventIdx: event.TypeAndEventIdx, SrcRaw: event.SrcRaw, DstRaw: event.DstRaw, Edge: Edge[E]{Property: event.EdgeProperty, Didx: didx, Pos: pos}})
+		// Stash the event first.
+		gt.RemitEvent = RemitEvent[E]{TypeAndEventIdx: gt.InputEvent.TypeAndEventIdx, Order: gt.InputEvent.ThreadOrderSrc, Edge: Edge[E]{Property: gt.InputEvent.EdgeProperty, Didx: vidx, Pos: pos}}
+		// If we dont have room, we fail.
+		if (gt.InputEvent.ThreadOrderDst - topologyFlushedUpTo) >= uint64(len(gt.TopologyEventBuff)) {
+			//log.Debug().Msg("T[" + utils.F("%02d", gt.Tidx) + "] Could not insert event, will try again next time ")
+			gt.FailedRemit = true
+			return false, count, largest, true, false
+		}
+		// If we can't remit, we fail.
+		if ok = g.GraphThreads[gt.InputEvent.SrcRaw.Within(g.NumThreads)].FromRemitQueue.PutFast(gt.RemitEvent, gt.InputEvent.ThreadOrderSrc); !ok {
+			//log.Debug().Msg("T[" + utils.F("%02d", gt.Tidx) + "] Could not emplace event, will try again next time ")
+			gt.FailedRemit = true
+			return false, count, largest, true, false
+		}
+		gt.TopologyEventBuff[gt.InputEvent.ThreadOrderDst-topologyFlushedUpTo] = RawEdgeEvent[E]{TypeAndEventIdx: gt.InputEvent.TypeAndEventIdx, Sidx: vidx, Edge: gt.RemitEvent.Edge}
+		largest = gt.InputEvent.ThreadOrderDst
 	}
-	if spaceAvailable != 0 && count == 0 {
+
+	if count == 0 {
 		closed = gt.FromEmitQueue.IsClosed()
 	}
-	return closed, count
+	return closed, count, largest, false, false
 }
 
 // Injects expired edges into the topology event buffer. To be done after the topology event buffer has been remapped with internal source ids.
 func InjectExpired[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount uint64, uniqueCount uint64, delOnExpire uint64) (newUniqueCount uint64) {
+	log.Panic().Msg("InjectExpired is not updated yet.")
+
 	latestTime := gt.TopologyEventBuff[changeCount-1].Edge.Property.GetTimestamp() // Unless there are out of order events...?
 
 	if latestTime == 0 && g.warnZeroTimestamp == 0 && atomic.CompareAndSwapUint64(&g.warnZeroTimestamp, 0, 1) {
@@ -207,16 +250,16 @@ func (gt *GraphThread[V, E, M, N]) checkInsertPending(sidx uint32, pending uint3
 }
 
 // Main function to enact topology events. Will look through the topology event buffer and apply changes to the graph.
-func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount uint64, delOnExpire uint64) (addEvents uint32, delEvents uint32) {
+func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], changeCount uint64, delOnExpire uint64, undirected bool) (addEvents uint32, delEvents uint32) {
 	uniqueCount := uint64(0)
 	canCheckTimestamp := (g.Options.TimestampPos != 0) || g.Options.LogicalTime
-	var ok bool
 	var sidx uint32
 
 	for i := uint64(0); i < changeCount; i++ {
-		if sidx, ok = gt.VertexMap[gt.TopologyEventBuff[i].SrcRaw]; !ok {
-			sidx = NewVertex(alg, g, gt, gt.TopologyEventBuff[i].SrcRaw, gt.TopologyEventBuff[i].EventIdx())
+		if !undirected && gt.TopologyEventBuff[i].EventIdx()%2 == 0 {
+			continue // Skip even events for directed graphs.
 		}
+		sidx = gt.TopologyEventBuff[i].Sidx
 
 		uniqueCount = gt.checkInsertPending(sidx, uint32(i), uniqueCount)
 
@@ -402,15 +445,15 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 }
 
 // For testing. Injects deletes into a given topology change list (of implicit adds), but retains the final structure.
-func InjectDeletesRetainFinalStructure[E EPI[E]](sc []TopologyEvent[E], chance float64) (returnSC []TopologyEvent[E]) {
-	availableAdds := make([]TopologyEvent[E], len(sc))
-	var previousAdds []TopologyEvent[E]
+func InjectDeletesRetainFinalStructure[E EPI[E]](sc []InputEvent[E], chance float64) (returnSC []InputEvent[E]) {
+	availableAdds := make([]InputEvent[E], len(sc))
+	var previousAdds []InputEvent[E]
 
 	copy(availableAdds, sc)
 	utils.Shuffle(availableAdds)
 
 	for eventIdx := uint64(0); len(availableAdds) > 0; eventIdx++ {
-		var current TopologyEvent[E]
+		var current InputEvent[E]
 		if len(previousAdds) > 0 && rand.Float64() < chance {
 			current, previousAdds = utils.RemoveRandomElement(previousAdds)
 			availableAdds = append(availableAdds, current)

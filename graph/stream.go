@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -16,6 +17,7 @@ type EventType uint32
 const (
 	ADD EventType = iota // Implicit, 0, means add.
 	DEL
+	QUERY // Signals a query. Would be sent to all threads.
 	// UPDATE // not used yet. Update *which* edge? To revisit with more consideration with multi-graphs, which is the assumed mode right now
 )
 
@@ -24,12 +26,12 @@ const EVENT_TYPE_MASK = (1 << EVENT_TYPE_BITS) - 1
 const REMITTER_MIN_SLEEP_TIME_NANO = 10_000_000 // 10ms
 
 // TypeAndEventIdx & EVENT_TYPE_MASK
-func (t TopologyEvent[E]) EventType() EventType {
+func (t InputEvent[E]) EventType() EventType {
 	return EventType(t.TypeAndEventIdx & EVENT_TYPE_MASK)
 }
 
 // TypeAndEventIdx >> EVENT_TYPE_BITS
-func (t TopologyEvent[E]) EventIdx() uint64 {
+func (t InputEvent[E]) EventIdx() uint64 {
 	return uint64(t.TypeAndEventIdx >> EVENT_TYPE_BITS)
 }
 
@@ -43,12 +45,24 @@ func (e RawEdgeEvent[E]) EventIdx() uint64 {
 	return uint64(e.TypeAndEventIdx >> EVENT_TYPE_BITS)
 }
 
+// TypeAndEventIdx & EVENT_TYPE_MASK
+func (e RemitEvent[E]) EventType() EventType {
+	return EventType(e.TypeAndEventIdx & EVENT_TYPE_MASK)
+}
+
+// TypeAndEventIdx >> EVENT_TYPE_BITS
+func (e RemitEvent[E]) EventIdx() uint64 {
+	return uint64(e.TypeAndEventIdx >> EVENT_TYPE_BITS)
+}
+
 func (t EventType) String() string {
 	switch t {
 	case ADD:
 		return "ADD"
 	case DEL:
 		return "DEL"
+	case QUERY:
+		return "QUERY"
 	//case UPDATE:
 	//	return "UPDATE"
 	default:
@@ -57,128 +71,62 @@ func (t EventType) String() string {
 }
 
 // A basic topology event that refers to the external, raw identifiers.
-type TopologyEvent[E EPI[E]] struct {
-	TypeAndEventIdx uint64
-	SrcRaw          RawType
-	DstRaw          RawType
-	EdgeProperty    E
+type InputEvent[E EPI[E]] struct {
+	TypeAndEventIdx uint64  // Type for add, del, etc. EventIdx is global total order.
+	SrcRaw          RawType // External, raw identifiers.
+	DstRaw          RawType // External, raw identifiers.
+	EdgeProperty    E       // The property of the edge, as supplied by external input.
+	ThreadOrderSrc  uint64  // For src thread, the emmiter tracked index.
+	ThreadOrderDst  uint64  // For dst thread, the emmiter tracked index.
 }
 
 // A topology event that has had the edge remapped to the internal index.
 type RawEdgeEvent[E EPI[E]] struct {
 	TypeAndEventIdx uint64
-	SrcRaw          RawType
-	DstRaw          RawType // Unused at the moment (Didx is known in the Edge). Could be changed out for something else.
+	Sidx            uint32  // Source internal ID
 	Edge            Edge[E] // Didx, Pos, Property
 }
 
-func (t TopologyEvent[E]) String() string {
-	return "{Type: " + utils.V(t.EventType()) + ", EventIdx: " + utils.V(t.EventIdx()) + ", SrcRaw: " + utils.V(t.SrcRaw) + ", DstRaw: " + utils.V(t.DstRaw) + ", EdgeProperty: " + utils.V(t.EdgeProperty) + "}"
+type RemitEvent[E EPI[E]] struct {
+	TypeAndEventIdx uint64
+	Order           uint64
+	Edge            Edge[E] // Didx, Pos, Property
+}
+
+func (t InputEvent[E]) String() string {
+	return "{Type: " + utils.V(t.EventType()) + ", EventIdx: " + utils.V(t.EventIdx()) + ", SrcRaw: " + utils.V(t.SrcRaw) + ", DstRaw: " + utils.V(t.DstRaw) + ", EdgeProperty: " + utils.V(t.EdgeProperty) + ", ThreadOrderSrc: " + utils.V(t.ThreadOrderSrc) + ", ThreadOrderDst: " + utils.V(t.ThreadOrderDst) + "}"
 }
 
 func (e RawEdgeEvent[E]) String() string {
-	return "{Type: " + utils.V(e.EventType()) + ", EventIdx: " + utils.V(e.EventIdx()) + ", SrcRaw: " + utils.V(e.SrcRaw) + ", Edge: " + e.Edge.String() + "}"
-}
-
-// Retrieves order from the emitter, then looks for the remitted events; then puts to the topology event queues.
-// Has some added logic to check if we should interrupt to ask a query.
-func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (remitted uint64) {
-	runtime.LockOSThread()
-	nextTarget := g.Options.TimeSeriesInterval
-	targetRate := g.Options.TargetRate // events per second
-	queryByEventCount := g.Options.LogTimeseries && g.Options.TimeseriesEdgeCount
-	queryByTimeStamp := g.Options.LogTimeseries && !g.Options.TimeseriesEdgeCount
-	retried := 0
-	totalRetriedOrder := 0
-	totalRetriedThreads := 0
-	totalPutFails := 0
-	targetEventCount := uint64(0)
-	var event RawEdgeEvent[E]
-	var target uint32
-	var ok bool
-	var closed bool
-	var pos uint64
-	THREADS := g.NumThreads
-
-	for {
-		if target, ok, pos = order.GetFast(); !ok {
-			if target, closed, retried = order.GetSlow(pos); closed {
-				break
-			}
-			totalRetriedOrder += retried
-		}
-		if event, ok, pos = g.GraphThreads[target].ToRemitQueue.GetFast(); !ok {
-			event, _, retried = g.GraphThreads[target].ToRemitQueue.GetSlow(pos)
-			totalRetriedThreads += retried
-		}
-		targetIdx := event.SrcRaw.Within(THREADS)
-		if pos, ok = g.GraphThreads[targetIdx].TopologyQueue.PutFast(event); !ok {
-			totalPutFails += g.GraphThreads[targetIdx].TopologyQueue.PutSlow(event, pos)
-		}
-
-		//log.Debug().Msg("Remitter " + utils.V(event))
-
-		remitted++
-
-		// Check to interrupt to ask a query if we've reached the next target
-		if queryByEventCount && remitted >= nextTarget {
-			nextTarget += g.Options.TimeSeriesInterval
-			g.ExecuteQuery(remitted)
-		} else if queryByTimeStamp {
-			thisTimestamp := event.Edge.Property.GetTimestamp()
-			if thisTimestamp >= nextTarget {
-				nextTarget = thisTimestamp + g.Options.TimeSeriesInterval
-				g.ExecuteQuery(thisTimestamp)
-			}
-		}
-
-		if targetRate != 0 && remitted > targetEventCount {
-			targetEventCount = uint64(g.Watch.Elapsed().Seconds() * targetRate)
-			if remitted > targetEventCount { // Going too fast
-				extraEventCount := remitted - targetEventCount
-				sleepTime := float64(extraEventCount) / targetRate * float64(time.Nanosecond)
-				sleepTime = utils.Max(REMITTER_MIN_SLEEP_TIME_NANO, sleepTime)
-				time.Sleep(time.Duration(sleepTime))
-				targetEventCount = uint64(g.Watch.Elapsed().Seconds() * targetRate)
-			}
-		}
-	}
-
-	if g.Options.DebugLevel >= 3 {
-		log.Debug().Msg("Remitter retried " + utils.F("%10d", totalRetriedOrder) + " (get order)")
-		log.Debug().Msg("Remitter retried " + utils.F("%10d", totalRetriedThreads) + " (get TRE)")
-		gLeft := make([]int, g.NumThreads)
-		for i := 0; i < int(g.NumThreads); i++ {
-			gLeft[i] = int(g.GraphThreads[i].TopologyQueue.MaxGrow)
-		}
-		log.Debug().Msg("Remitter retried " + utils.F("%10d", totalPutFails) + " (put S)     Grows left: " + utils.V(gLeft))
-	}
-
-	// When all events have been remitted, we can close the TopologyQueues.
-	for t := 0; t < int(g.NumThreads); t++ {
-		g.GraphThreads[t].TopologyQueue.Close()
-	}
-	order.End()
-	runtime.UnlockOSThread()
-	return remitted
+	return "{Type: " + utils.V(e.EventType()) + ", EventIdx: " + utils.V(e.EventIdx()) + ", Edge: " + e.Edge.String()
 }
 
 // Emitter is one thread that presents events in linear order to the system.
 // It sends corresponding TopologyEvent to the FromEmitQueue queue of the source vertex's thread.
-func Emitter[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], edgeQueues []utils.RingBuffSPSC[TopologyEvent[E]], order *utils.GrowableRingBuff[uint32]) {
+func Emitter[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], edgeQueues []utils.RingBuffSPSC[InputEvent[E]]) (lines uint64) {
 	runtime.LockOSThread()
+	pid := syscall.Getpid()
+	syscall.Setpriority(syscall.PRIO_PROCESS, pid, 19)
 	undirected := g.Options.Undirected
 	logicalTime := g.Options.LogicalTime
-	eventIdx := uint64(0)
+	queryByEventCount := g.Options.LogTimeseries && g.Options.TimeseriesEdgeCount
+	queryByTimeStamp := g.Options.LogTimeseries && !g.Options.TimeseriesEdgeCount
+	nextTarget := g.Options.TimeSeriesInterval
+	if !undirected {
+		nextTarget += g.Options.TimeSeriesInterval
+	}
+	targetRate := g.Options.TargetRate // events per second
+	targetEventCount := uint64(0)
+	globalEventIdx := uint64(0)
 	retried := 0
 	totalRetried := 0
-	putFails := 0
 	gtPutFails := 0
-	var event TopologyEvent[E]
+	var event InputEvent[E]
 	var ok bool
 	var closed bool
 	var pos uint64
 	THREADS := g.NumThreads
+	threadOrders := make([]uint64, THREADS)
 
 outer:
 	for {
@@ -190,35 +138,76 @@ outer:
 				}
 				totalRetried += retried
 			}
-			event.TypeAndEventIdx |= (eventIdx << EVENT_TYPE_BITS)
-			eventIdx++
+			event.TypeAndEventIdx |= (globalEventIdx << EVENT_TYPE_BITS)
+			globalEventIdx++
+			dstTargetTidx := event.DstRaw.Within(THREADS)
+			srcTargetTidx := event.SrcRaw.Within(THREADS)
+			event.ThreadOrderDst = threadOrders[dstTargetTidx]
+			threadOrders[dstTargetTidx]++
+			event.ThreadOrderSrc = threadOrders[srcTargetTidx]
+			threadOrders[srcTargetTidx]++
 
-			targetTidx := event.DstRaw.Within(THREADS)
-			if pos, ok = g.GraphThreads[targetTidx].FromEmitQueue.PutFast(event); !ok {
-				gtPutFails += g.GraphThreads[targetTidx].FromEmitQueue.PutSlow(event, pos)
+			// Send to the destination thread.
+			if pos, ok = g.GraphThreads[dstTargetTidx].FromEmitQueue.PutFast(event); !ok {
+				gtPutFails += g.GraphThreads[dstTargetTidx].FromEmitQueue.PutSlow(event, pos)
 			}
 
-			if pos, ok = order.PutFast(targetTidx); !ok {
-				putFails += order.PutSlow(targetTidx, pos)
+			// Increment event.
+			event.TypeAndEventIdx &= EVENT_TYPE_MASK
+			event.TypeAndEventIdx |= (globalEventIdx << EVENT_TYPE_BITS)
+			if logicalTime {
+				EP(&event.EdgeProperty).ReplaceTimestamp(globalEventIdx)
+			}
+			// Swap src and dst for inverse of the edge.
+			event.SrcRaw, event.DstRaw = event.DstRaw, event.SrcRaw
+			event.ThreadOrderDst, event.ThreadOrderSrc = event.ThreadOrderSrc, event.ThreadOrderDst
+			EP(&event.EdgeProperty).ReplaceRaw(event.DstRaw)
+			globalEventIdx++
+
+			// Send to the source thread.
+			if pos, ok = g.GraphThreads[srcTargetTidx].FromEmitQueue.PutFast(event); !ok {
+				gtPutFails += g.GraphThreads[srcTargetTidx].FromEmitQueue.PutSlow(event, pos)
 			}
 
-			//log.Debug().Msg("Emitter " + utils.V(event) + " to " + utils.V(targetTidx))
+			// Check to interrupt to ask a query if we've reached the next target
+			if queryByEventCount {
+				if globalEventIdx >= nextTarget {
+					nextTarget += g.Options.TimeSeriesInterval
+					if !undirected {
+						nextTarget += g.Options.TimeSeriesInterval
+					}
+					// All threads receive the request for query at this point in time.
+					event = InputEvent[E]{TypeAndEventIdx: uint64(QUERY)}
+					for t := 0; t < int(g.NumThreads); t++ {
+						if pos, ok := g.GraphThreads[t].FromEmitQueue.PutFast(event); !ok {
+							g.GraphThreads[t].FromEmitQueue.PutSlow(event, pos)
+						}
+					}
+					g.LogEntryChan <- globalEventIdx
+				}
+			} else if queryByTimeStamp {
+				thisTimestamp := event.EdgeProperty.GetTimestamp()
+				if thisTimestamp >= nextTarget {
+					nextTarget = thisTimestamp + g.Options.TimeSeriesInterval
+					// All threads receive the request for query at this point in time.
+					event = InputEvent[E]{TypeAndEventIdx: uint64(QUERY)}
+					for t := 0; t < int(g.NumThreads); t++ {
+						if pos, ok := g.GraphThreads[t].FromEmitQueue.PutFast(event); !ok {
+							g.GraphThreads[t].FromEmitQueue.PutSlow(event, pos)
+						}
+					}
+					g.LogEntryChan <- globalEventIdx
+				}
+			}
 
-			if undirected {
-				uTargetTidx := event.SrcRaw.Within(THREADS)
-				uEventIdx := event.TypeAndEventIdx & EVENT_TYPE_MASK
-				uEventIdx |= (eventIdx << EVENT_TYPE_BITS)
-				uEvent := TopologyEvent[E]{TypeAndEventIdx: uEventIdx, SrcRaw: event.DstRaw, DstRaw: event.SrcRaw, EdgeProperty: event.EdgeProperty}
-				EP(&uEvent.EdgeProperty).ReplaceRaw(event.SrcRaw)
-				if logicalTime {
-					EP(&uEvent.EdgeProperty).ReplaceTimestamp(eventIdx)
-				}
-				eventIdx++
-				if pos, ok = g.GraphThreads[uTargetTidx].FromEmitQueue.PutFast(uEvent); !ok {
-					gtPutFails += g.GraphThreads[uTargetTidx].FromEmitQueue.PutSlow(uEvent, pos)
-				}
-				if pos, ok = order.PutFast(uTargetTidx); !ok {
-					putFails += order.PutSlow(uTargetTidx, pos)
+			if targetRate != 0 && globalEventIdx > targetEventCount {
+				targetEventCount = uint64(g.Watch.Elapsed().Seconds() * targetRate)
+				if globalEventIdx > targetEventCount { // Going too fast
+					extraEventCount := globalEventIdx - targetEventCount
+					sleepTime := float64(extraEventCount) / targetRate * float64(time.Nanosecond)
+					sleepTime = utils.Max(REMITTER_MIN_SLEEP_TIME_NANO, sleepTime)
+					time.Sleep(time.Duration(sleepTime))
+					targetEventCount = uint64(g.Watch.Elapsed().Seconds() * targetRate)
 				}
 			}
 		}
@@ -234,25 +223,29 @@ outer:
 			gLeft[t] = int(g.GraphThreads[t].FromEmitQueue.MaxGrow)
 		}
 		log.Debug().Msg("Emitter  retried " + utils.F("%10d", gtPutFails) + " (put FEE)   Grows left: " + utils.V(gLeft))
-		log.Debug().Msg("Emitter  retried " + utils.F("%10d", putFails) + " (put order) Grows left: " + utils.V(order.MaxGrow))
 	}
 
 	for t := 0; t < int(g.NumThreads); t++ {
 		g.GraphThreads[t].FromEmitQueue.Close()
 	}
-	order.Close()
 	runtime.UnlockOSThread()
+	if !undirected {
+		return globalEventIdx / 2
+	}
+	return globalEventIdx
 }
 
-func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqCount uint64, edgeQueue *utils.RingBuffSPSC[TopologyEvent[E]], wPos int32, tPos int32, transpose bool, undirected bool, logicalTime bool) {
+func FileEdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqCount uint64, edgeQueue *utils.RingBuffSPSC[InputEvent[E]], wPos int32, tPos int32, transpose bool, undirected bool, logicalTime bool) {
 	runtime.LockOSThread()
+	pid := syscall.Getpid()
+	syscall.Setpriority(syscall.PRIO_PROCESS, pid, 18)
 	file := utils.OpenFile(name)
 	fieldsBuff := [MAX_ELEMS_PER_EDGE]string{}
 	fields := fieldsBuff[:]
 	scanner := utils.FastFileLines{}
 	scannerBuff := [4096 * 16]byte{}
 	scanner.Buf = scannerBuff[:]
-	var event TopologyEvent[E]
+	var event InputEvent[E]
 	var b []byte
 	var remaining []string
 	parseProp := wPos >= 0 || tPos >= 0
@@ -302,26 +295,20 @@ func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqC
 }
 
 // Starts to read edges stored in the file. When it returns, all edges are read.
-func LoadGraphStream[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], wg *sync.WaitGroup) {
+func LoadFileGraphStream[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N], wg *sync.WaitGroup) {
 	loadThreads := uint64(g.Options.LoadThreads)
 
 	log.Info().Msg("Input stream from " + g.Options.Name + " with " + utils.V(loadThreads) + " load threads")
 
-	order := new(utils.GrowableRingBuff[uint32])
-	order.Init(BASE_SIZE*uint64(g.NumThreads), GROW_LIMIT)
-
 	// Launch the Edge Enqueue threads.
-	edgeQueues := make([]utils.RingBuffSPSC[TopologyEvent[E]], loadThreads)
+	edgeQueues := make([]utils.RingBuffSPSC[InputEvent[E]], loadThreads)
 	for i := uint64(0); i < loadThreads; i++ {
 		edgeQueues[i].Init(BASE_SIZE * 8) // Small seems fine
-		go EdgeEnqueueToEmitter[EP](g.Options.Name, i, loadThreads, &edgeQueues[i], int32(g.Options.WeightPos-1), int32(g.Options.TimestampPos-1), g.Options.Transpose, g.Options.Undirected, g.Options.LogicalTime)
+		go FileEdgeEnqueueToEmitter[EP](g.Options.Name, i, loadThreads, &edgeQueues[i], int32(g.Options.WeightPos-1), int32(g.Options.TimestampPos-1), g.Options.Transpose, g.Options.Undirected, g.Options.LogicalTime)
 	}
 
-	// Launch the Emitter thread.
-	go Emitter[EP](g, edgeQueues, order)
-
-	// This thread becomes the Remitter thread.
-	lines := g.Remitter(order)
+	// This thread becomes the Emitter.
+	lines := Emitter[EP](g, edgeQueues)
 
 	time := g.Watch.Elapsed()
 	log.Info().Msg("Streamed " + utils.V(lines) + " events in (ms): " + utils.V(time.Milliseconds()))
@@ -331,36 +318,30 @@ func LoadGraphStream[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V,
 
 // ---------------------------- For testing ----------------------------
 
-// For testing. Launches a remitter only; so you can be an emitter.
-func (g *Graph[V, E, M, N]) StreamRemitOnly() (order *utils.GrowableRingBuff[uint32]) {
-	order = new(utils.GrowableRingBuff[uint32])
-	order.Init(BASE_SIZE*uint64(g.NumThreads), GROW_LIMIT)
-	go g.Remitter(order)
-	return order
+// For testing. Not optimized. Lets you use one custom stream to build the graph.
+// TODO: this won't play nice with the backoff strategy!
+func TestGraphStream[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N]) (edgeQueue *utils.RingBuffSPSC[InputEvent[E]]) {
+	edgeQueues := make([]utils.RingBuffSPSC[InputEvent[E]], 1)
+	edgeQueues[0].Init(BASE_SIZE * 8) // Small seems fine
+
+	go Emitter[EP](g, edgeQueues)
+	return &edgeQueues[0]
 }
 
 // For testing. Direct add
-func (g *Graph[V, E, M, N]) SendAdd(srcRaw RawType, dstRaw RawType, EdgeProperty E, order *utils.GrowableRingBuff[uint32]) {
+func (g *Graph[V, E, M, N]) SendAdd(srcRaw RawType, dstRaw RawType, EdgeProperty E, edgeQueue *utils.RingBuffSPSC[InputEvent[E]]) {
 	typeAndEventIdx := uint64(ADD)
-	sc := TopologyEvent[E]{TypeAndEventIdx: typeAndEventIdx, SrcRaw: RawType(srcRaw), DstRaw: RawType(dstRaw), EdgeProperty: EdgeProperty}
-	targetIdx := dstRaw.Within(g.NumThreads)
-	if pos, ok := g.GraphThreads[targetIdx].FromEmitQueue.PutFast(sc); !ok {
-		g.GraphThreads[targetIdx].FromEmitQueue.PutSlow(sc, pos)
-	}
-	if pos, ok := order.PutFast(targetIdx); !ok {
-		order.PutSlow(targetIdx, pos)
+	event := InputEvent[E]{TypeAndEventIdx: typeAndEventIdx, SrcRaw: RawType(srcRaw), DstRaw: RawType(dstRaw), EdgeProperty: EdgeProperty}
+	if pos, ok := edgeQueue.PutFast(event); !ok {
+		edgeQueue.PutSlow(event, pos)
 	}
 }
 
 // For testing. Direct delete
-func (g *Graph[V, E, M, N]) SendDel(srcRaw RawType, dstRaw RawType, EdgeProperty E, order *utils.GrowableRingBuff[uint32]) {
+func (g *Graph[V, E, M, N]) SendDel(srcRaw RawType, dstRaw RawType, EdgeProperty E, edgeQueue *utils.RingBuffSPSC[InputEvent[E]]) {
 	typeAndEventIdx := uint64(DEL)
-	sc := TopologyEvent[E]{TypeAndEventIdx: typeAndEventIdx, SrcRaw: srcRaw, DstRaw: dstRaw, EdgeProperty: EdgeProperty}
-	targetIdx := dstRaw.Within(g.NumThreads)
-	if pos, ok := g.GraphThreads[targetIdx].FromEmitQueue.PutFast(sc); !ok {
-		g.GraphThreads[targetIdx].FromEmitQueue.PutSlow(sc, pos)
-	}
-	if pos, ok := order.PutFast(targetIdx); !ok {
-		order.PutSlow(targetIdx, pos)
+	event := InputEvent[E]{TypeAndEventIdx: typeAndEventIdx, SrcRaw: srcRaw, DstRaw: dstRaw, EdgeProperty: EdgeProperty}
+	if pos, ok := edgeQueue.PutFast(event); !ok {
+		edgeQueue.PutSlow(event, pos)
 	}
 }

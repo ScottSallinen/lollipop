@@ -106,25 +106,25 @@ func SendInitialMail[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 // Will pull a bundle of notifications targeting this thread.
 // A notification represents a vertex is 'active' as it has work to do (e.g. has mail in its inbox, or the notification itself is important).
 // We define a message as a notification that was genuinely sent and is thus in the queue (e.g. it was not discarded due to non-uniqueness).
-func ReceiveMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], algCount uint64) (newAlgCount uint64) {
+func ReceiveMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], algMessageCount uint64) (newAlgMessageCount uint64) {
 	// First check for any back-pressure from the last attempt. This are first in FIFO.
 	if gt.NotificationBuff.Len() != 0 {
-		for ; algCount < MSG_MAX; algCount++ {
+		for ; algMessageCount < MSG_MAX; algMessageCount++ {
 			if notif, ok := gt.NotificationBuff.TryPopFront(); !ok {
 				break
 			} else {
 				gt.NotificationBuff.UpdatePopFront()
-				gt.Notifications[algCount] = notif
+				gt.Notifications[algMessageCount] = notif
 			}
 		}
 	}
 
 	// If we still have room (no more back-pressure), then pull directly from the queue.
-	for ; algCount < MSG_MAX; algCount++ {
+	for ; algMessageCount < MSG_MAX; algMessageCount++ {
 		if notif, ok := gt.NotificationQueue.Accept(); !ok {
 			break
 		} else {
-			gt.Notifications[algCount] = notif
+			gt.Notifications[algMessageCount] = notif
 		}
 	}
 
@@ -144,15 +144,15 @@ func ReceiveMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M,
 			}
 		}
 	}
-	return algCount
+	return algMessageCount
 }
 
 // Will process the messages in the queue.
 // Will check for termination only if the bool is set.
-func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], algCount uint64, exitCheck bool) (done bool) {
+func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M, N], g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], algMessageCount uint64, exitCheck bool) (done bool) {
 	sent := uint64(0)
 	// Process all that we pulled.
-	for i := uint64(0); i < algCount; i++ {
+	for i := uint64(0); i < algMessageCount; i++ {
 		vertex, mailbox := gt.VertexAndMailbox(gt.Notifications[i].Target)
 		gt.Notifications[i].Activity = atomic.AddInt32(&(mailbox.Activity), -1)
 		prop := gt.VertexProperty(gt.Notifications[i].Target)
@@ -160,9 +160,9 @@ func ProcessMessages[V VPI[V], E EPI[E], M MVI[M], N any](alg Algorithm[V, E, M,
 		sent += alg.OnUpdateVertex(g, gt, vertex, prop, gt.Notifications[i], mail)
 	}
 
-	if algCount != 0 { // Update send and receive counts.
+	if algMessageCount != 0 { // Update send and receive counts.
 		gt.MsgSend += sent
-		gt.MsgRecv += algCount
+		gt.MsgRecv += algMessageCount
 	} else if exitCheck {
 		if g.CheckTermination(gt.Tidx) {
 			return true
@@ -179,15 +179,15 @@ func (gt *GraphThread[V, E, M, N]) checkCommandsAsync(epoch *bool) {
 		if resp != RESUME {
 			log.Panic().Msg("Expected to resume after blocked")
 		}
-	case BLOCK_TOP:
-		log.Panic().Msg("There's no topology changes to block")
+	case BLOCK_EVENTS:
+		log.Panic().Msg("There's no event to block")
 	case RESUME:
 		// No ack needed.
 		break
-	case BLOCK_ALG_IF_TOP:
-		log.Panic().Msg("There's no topology changes")
-	case TOP_SYNC:
-		log.Panic().Msg("There's no topology changes")
+	case BLOCK_ALG_IF_EVENTS:
+		log.Panic().Msg("There's no events")
+	case EVENT_SYNC:
+		log.Panic().Msg("There's no events")
 	case EPOCH:
 		*epoch = true
 		// Ack after complete.

@@ -65,18 +65,12 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 
 		m0 = time.Now()
 
-		if g.Options.NoConvergeForQuery { // View the graph without full convergence.
-			// Block on current state.
-			if !allowAsyncProperties {
-				g.Broadcast(BLOCK_ALL) // Full, to both prevent both top and alg events (consistent view of vertex props).
-			} else {
-				g.Broadcast(BLOCK_TOP) // Enforce no topology changes but still allow alg convergence events.
-			}
-			g.AwaitAck()
-		} else { // View the graph after full convergence. Broadcast EPOCH to await convergence.
-			g.Broadcast(EPOCH)
-			g.AwaitAck()
-		}
+		// Stage one: await all threads acknowledging they are have observed the request to query.
+		g.AwaitAck()
+		g.Broadcast(RESUME) // Resume all threads to allow them to continue.
+
+		// Stage two: all threads have confirmed they are ready for the query. At this point, they will then be awaiting a response from us to tell them to continue.
+		g.AwaitAck()
 
 		if algTimeIncludeQuery {
 			if allowAsyncProperties {
@@ -130,8 +124,9 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 			g.AlgTimer.UnPause()
 		}
 
+		// Stage two is complete: We have view of the graph, threads can continue now.
 		g.ResetTerminationState()
-		g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
+		g.Broadcast(RESUME)
 
 		nQueries++
 		edgesLast = int64(tse.EdgeCount)
@@ -139,8 +134,6 @@ func LogTimeSeries[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]]
 			log.Trace().Msg(", query, " + utils.V(nQueries) + ", command, " + utils.F("%.3f", m1.Sub(m0).Seconds()*1000) +
 				", copy, " + utils.F("%.3f", m2.Sub(m1).Seconds()*1000) + ", finish, " + utils.F("%.3f", m3.Sub(m2).Seconds()*1000) + ", resume, " + utils.F("%.3f", time.Since(m3).Seconds()*1000))
 		}
-
-		g.QueryWaiter.Done()
 	}
 	close(ConcurrentFinishChan)
 }

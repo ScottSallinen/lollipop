@@ -10,7 +10,7 @@ type Vertex[V VPI[V], E any] struct {
 type VertexStructure struct {
 	PendingIdx  uint64  // Used as offset data for dynamic construction.
 	CreateEvent uint64  // Event index of the first event that created this vertex.
-	InEventPos  uint32  // Used to calculate Pos for new in edges. Pro tip: this position is constant across executions (for the pos of the raw vertex that has an event to me), however note said vertex may have a different internal ID across executions.
+	InEventPos  uint32  // Used to calculate Pos for new in edges. This position is constant across executions (for the pos of the raw vertex that has an event to me).
 	RawId       RawType // Raw (external) ID of the vertex. Pro tip: this is constant across executions. Internal IDs that graph threads choose for a given raw is NOT.
 }
 

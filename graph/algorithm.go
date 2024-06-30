@@ -33,7 +33,7 @@ type AlgorithmBaseVertexMailbox[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 }
 
 type AlgorithmOnInEdgeAdd[V VPI[V], E EPI[E], M MVI[M], N any] interface {
-	OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *TopologyEvent[E])
+	OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *InputEvent[E])
 }
 
 type AlgorithmOnFinish[V VPI[V], E EPI[E], M MVI[M], N any] interface {
@@ -180,7 +180,7 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 	feederWg := new(sync.WaitGroup)
 	feederWg.Add(1)
 
-	go LoadGraphStream[EP](g, feederWg)
+	go LoadFileGraphStream[EP](g, feederWg)
 
 	if !g.Options.Dynamic { // Build graph dynamically first, before running algorithm
 		if g.Options.Profile {
@@ -188,7 +188,7 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 			pprof.StartCPUProfile(file)
 			defer file.Close()
 		}
-		g.Broadcast(BLOCK_ALG_IF_TOP)
+		g.Broadcast(BLOCK_ALG_IF_EVENTS)
 		blank := new(blankAlg[V, E, M, N])
 		if aIN, ok := any(alg).(AlgorithmOnInEdgeAdd[V, E, M, N]); ok {
 			blank.OnInEdgeAddFunc = aIN.OnInEdgeAdd
@@ -224,7 +224,7 @@ func Launch[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M,
 }
 
 // For testing. Builds a graph from a pre-defined list of topology events.
-func DynamicGraphExecutionFromTestEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], scs []TopologyEvent[E]) {
+func DynamicGraphExecutionFromTestEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], scs []InputEvent[E]) {
 	g.Init()
 	CheckAssumptions[EP](alg, g)
 	g.SourceInit = (g.InitMails != nil || g.InitNotes != nil)
@@ -237,28 +237,21 @@ func DynamicGraphExecutionFromTestEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M]
 	feederWg.Add(1)
 
 	go func() {
-		order := g.StreamRemitOnly()
+		stream := TestGraphStream[EP](g)
+		event := 0
 		for _, v := range scs {
+			v.TypeAndEventIdx |= (uint64(event) << EVENT_TYPE_BITS)
 			switch EventType(v.TypeAndEventIdx & EVENT_TYPE_MASK) {
 			case ADD:
-				g.SendAdd(v.SrcRaw, v.DstRaw, v.EdgeProperty, order)
-				if g.Options.Undirected {
-					g.SendAdd(v.DstRaw, v.SrcRaw, v.EdgeProperty, order)
-				}
+				g.SendAdd(v.SrcRaw, v.DstRaw, v.EdgeProperty, stream)
 				log.Debug().Msg("add " + utils.V(v.SrcRaw) + " " + utils.V(v.DstRaw) + " " + utils.V(v.EdgeProperty))
 			case DEL:
-				g.SendDel(v.SrcRaw, v.DstRaw, v.EdgeProperty, order)
-				if g.Options.Undirected {
-					g.SendDel(v.DstRaw, v.SrcRaw, v.EdgeProperty, order)
-				}
+				g.SendDel(v.SrcRaw, v.DstRaw, v.EdgeProperty, stream)
 				log.Debug().Msg("del " + utils.V(v.SrcRaw) + " " + utils.V(v.DstRaw) + " " + utils.V(v.EdgeProperty))
 			}
 		}
 
-		for t := uint32(0); t < g.NumThreads; t++ {
-			g.GraphThreads[t].FromEmitQueue.Close()
-		}
-		order.Close()
+		stream.Close()
 		feederWg.Done()
 	}()
 
@@ -267,7 +260,7 @@ func DynamicGraphExecutionFromTestEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M]
 
 // Some quick checks to make sure timestamp changes are possible if it was declared to use one...
 func CheckAssumptions[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N]) {
-	event := TopologyEvent[E]{}
+	event := InputEvent[E]{}
 
 	if g.Options.LogicalTime || g.Options.TimestampPos != 0 {
 		EP(&event.EdgeProperty).ReplaceTimestamp(123)
@@ -285,7 +278,7 @@ func CheckAssumptions[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorith
 
 // --------- Blank Algorithm, for loading a stream with no algorithm. ---------
 type blankAlg[V VPI[V], E EPI[E], M MVI[M], N any] struct {
-	OnInEdgeAddFunc func(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *TopologyEvent[E])
+	OnInEdgeAddFunc func(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *InputEvent[E])
 }
 
 func (e *blankAlg[V, E, M, N]) OnUpdateVertex(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, Notification[N], M) (s uint64) {
@@ -293,7 +286,7 @@ func (e *blankAlg[V, E, M, N]) OnUpdateVertex(*Graph[V, E, M, N], *GraphThread[V
 }
 func (e *blankAlg[V, E, M, N]) MailMerge(M, uint32, *M) (b bool)         { return false }
 func (e *blankAlg[V, E, M, N]) MailRetrieve(*M, *Vertex[V, E], *V) (m M) { return }
-func (e *blankAlg[V, E, M, N]) OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *TopologyEvent[E]) {
+func (e *blankAlg[V, E, M, N]) OnInEdgeAdd(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, vidx uint32, pos uint32, event *InputEvent[E]) {
 	if e.OnInEdgeAddFunc != nil {
 		e.OnInEdgeAddFunc(g, gt, v, vp, vidx, pos, event)
 	}
