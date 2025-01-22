@@ -271,7 +271,7 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 						change := &gt.TopologyEventBuff[pendIdx[idx]]
 						if change.EventType() == DEL {
 							didx := change.Edge.Didx
-							if src.OutEdges[deleteIdx].Didx == didx && (src.OutEdges[deleteIdx].Pos&(1<<31) == 0) {
+							if len(src.OutEdges) > deleteIdx && src.OutEdges[deleteIdx].Didx == didx && (src.OutEdges[deleteIdx].Pos&(1<<31) == 0) {
 								// Fast path, if its the first edge (and continues to be the first edge).
 								// Edges are ordered by event, so fast if its an expiry or otherwise targets oldest (time window).
 								deleteEdgesIdx = append(deleteEdgesIdx, deleteIdx)
@@ -351,6 +351,7 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 					for ; idx < len(pendIdx); idx++ {
 						change := &gt.TopologyEventBuff[pendIdx[idx]]
 						if change.EventType() == DEL {
+							log.Warn().Msg("DETECTED EDGE DELETE!")
 							didx := change.Edge.Didx
 							for src.OutEdges[deleteIdx].Property.GetEndTime() != 0 {
 								deleteIdx++ // Skip any edges that are already ended.

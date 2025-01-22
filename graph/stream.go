@@ -2,6 +2,7 @@ package graph
 
 import (
 	"bytes"
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
@@ -112,9 +113,42 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 			totalRetriedThreads += retried
 		}
 		targetIdx := event.SrcRaw.Within(THREADS)
+		log.Debug().Msg(fmt.Sprintf("event in remitter %v src: %v - dst: %v", event.EventType(), event.SrcRaw, event.DstRaw))
+
+		if event.EventType() == DEL {
+			// Wait for in-process topo changes
+			//if g.Options.AsyncContinuationTime > 0 {
+			//	time.Sleep(time.Duration(g.Options.AsyncContinuationTime) * time.Millisecond)
+			//}
+			// Wait for alg to converge
+			g.Broadcast(BLOCK_TOP)
+			g.AwaitAck()
+			g.Broadcast(RESUME)
+			log.Debug().Msg("Execute Query BEFORE Delete")
+			//g.ExecuteQuery(remitted)
+		}
+
 		if pos, ok = g.GraphThreads[targetIdx].TopologyQueue.PutFast(event); !ok {
 			totalPutFails += g.GraphThreads[targetIdx].TopologyQueue.PutSlow(event, pos)
 		}
+
+		if event.EventType() == DEL {
+			g.Broadcast(BLOCK_TOP)
+			g.AwaitAck()
+			g.Broadcast(RESUME)
+			log.Debug().Msg("Execute Query AFTER Delete")
+			//g.ExecuteQuery(remitted)
+		}
+
+		//if event.EventType() == DEL {
+		//	// Wait for in-process topo changes
+		//	if g.Options.AsyncContinuationTime > 0 {
+		//		time.Sleep(time.Duration(g.Options.AsyncContinuationTime) * time.Millisecond)
+		//	}
+		//	// Wait for alg to converge
+		//	g.Broadcast(BLOCK_TOP)
+		//	g.AwaitAck()
+		//}
 
 		//log.Debug().Msg("Remitter " + utils.V(event))
 
@@ -275,8 +309,17 @@ func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqC
 			continue
 		}
 		if (lines % enqCount) == myIndex {
+			log.Debug().Msg(fmt.Sprintf("The fields are %v - %v", fields, b))
 			utils.FastFields(fields, b)
+			if (b[0]) == 'D' {
+				log.Debug().Msg("Recognized Delete")
+				fields = fields[1:]
+			}
 			event, remaining = EdgeParser[E](fields)
+			if (b[0]) == 'D' {
+				log.Debug().Msg("Recognized Delete")
+				event.TypeAndEventIdx = uint64(DEL)
+			}
 			EP(&event.EdgeProperty).ReplaceWeight(DEFAULT_WEIGHT)
 			if parseProp {
 				EP(&event.EdgeProperty).ParseProperty(remaining, wPos, tPos)

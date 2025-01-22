@@ -43,7 +43,11 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 			}
 
 			if initVal, ok := g.InitMails[gt.VertexRawID(i)]; ok {
-				if ourValue != float64(initVal) {
+				minInitVal := EMPTY_VAL
+				for _, v := range initVal.distanceMap {
+					minInitVal = min(minInitVal, v)
+				}
+				if ourValue != minInitVal {
 					log.Panic().Msg("Expected rawId " + utils.V(gt.VertexRawID(i)) + " to have init, but has " + utils.V(ourValue))
 				}
 			}
@@ -80,7 +84,7 @@ func main() {
 
 	if !(*useMsgPassing) {
 		initMail := map[graph.RawType]Mail{}
-		initMail[graph.AsRawTypeString(*sourceInit)] = 0.0
+		initMail[graph.AsRawTypeString(*sourceInit)] = Mail{}
 		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), graphOptions, initMail, nil)
 	} else {
 		log.Warn().Msg("Warning: this strategy is slow! Use this only for reference.")
