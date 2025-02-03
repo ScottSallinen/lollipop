@@ -116,16 +116,10 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 		log.Debug().Msg(fmt.Sprintf("event in remitter %v src: %v - dst: %v", event.EventType(), event.SrcRaw, event.DstRaw))
 
 		if event.EventType() == DEL {
-			// Wait for in-process topo changes
-			//if g.Options.AsyncContinuationTime > 0 {
-			//	time.Sleep(time.Duration(g.Options.AsyncContinuationTime) * time.Millisecond)
-			//}
 			// Wait for alg to converge
 			g.Broadcast(BLOCK_TOP)
 			g.AwaitAck()
 			g.Broadcast(RESUME)
-			log.Debug().Msg("Execute Query BEFORE Delete")
-			//g.ExecuteQuery(remitted)
 		}
 
 		if pos, ok = g.GraphThreads[targetIdx].TopologyQueue.PutFast(event); !ok {
@@ -136,21 +130,7 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 			g.Broadcast(BLOCK_TOP)
 			g.AwaitAck()
 			g.Broadcast(RESUME)
-			log.Debug().Msg("Execute Query AFTER Delete")
-			//g.ExecuteQuery(remitted)
 		}
-
-		//if event.EventType() == DEL {
-		//	// Wait for in-process topo changes
-		//	if g.Options.AsyncContinuationTime > 0 {
-		//		time.Sleep(time.Duration(g.Options.AsyncContinuationTime) * time.Millisecond)
-		//	}
-		//	// Wait for alg to converge
-		//	g.Broadcast(BLOCK_TOP)
-		//	g.AwaitAck()
-		//}
-
-		//log.Debug().Msg("Remitter " + utils.V(event))
 
 		remitted++
 
@@ -309,15 +289,16 @@ func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqC
 			continue
 		}
 		if (lines % enqCount) == myIndex {
-			log.Debug().Msg(fmt.Sprintf("The fields are %v - %v", fields, b))
+			log.Debug().Msg(fmt.Sprintf("The fields on line %v are %v - %v", lines, fields, b))
 			utils.FastFields(fields, b)
 			if (b[0]) == 'D' {
-				log.Debug().Msg("Recognized Delete")
-				fields = fields[1:]
+				log.Debug().Msg(fmt.Sprintf("Recognized Delete on Line %v", lines))
+				event, remaining = EdgeParser[E](fields[1:])
+			} else {
+				event, remaining = EdgeParser[E](fields)
 			}
-			event, remaining = EdgeParser[E](fields)
 			if (b[0]) == 'D' {
-				log.Debug().Msg("Recognized Delete")
+				log.Debug().Msg(fmt.Sprintf("Parsed Delete on Line %v DEL (%v, %v)", lines, event.SrcRaw, event.DstRaw))
 				event.TypeAndEventIdx = uint64(DEL)
 			}
 			EP(&event.EdgeProperty).ReplaceWeight(DEFAULT_WEIGHT)
