@@ -25,7 +25,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		visitCount := 0
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 			vertex := &gt.Vertices[i]
-			ourValue := gt.VertexProperty(i).Value
+			ourValue := gt.VertexProperty(i).Predecessor.TotalDistance
 			if ourValue < EMPTY_VAL {
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
 				visitCount++
@@ -45,7 +45,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 			if initVal, ok := g.InitMails[gt.VertexRawID(i)]; ok {
 				minInitVal := EMPTY_VAL
 				for _, v := range initVal.distanceMap.Content() {
-					minInitVal = min(minInitVal, v)
+					minInitVal = min(minInitVal, v.TotalDistance)
 				}
 				if (ourValue != 0 && gt.VertexRawID(i) == 1) || (ourValue != minInitVal && gt.VertexRawID(i) != 1) {
 					log.Panic().Msg("Expected rawId " + utils.V(gt.VertexRawID(i)) + " to have init, but has " + utils.V(ourValue))
@@ -55,7 +55,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 				// we were never visited.
 			} else {
 				for eidx := range vertex.OutEdges {
-					targetProp := g.NodeVertexProperty(vertex.OutEdges[eidx].Didx).Value
+					targetProp := g.NodeVertexProperty(vertex.OutEdges[eidx].Didx).Predecessor.TotalDistance
 					// Should not be worse than what we could provide.
 					if targetProp > (ourValue + vertex.OutEdges[eidx].Property.Weight) {
 						log.Panic().Msg("Unexpected neighbour weight: " + utils.V(targetProp) + ", vs our weight: " + utils.V(ourValue) + " with edge weight: " + utils.V(vertex.OutEdges[eidx].Property.Weight))
@@ -73,7 +73,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 // Compares the results of the algorithm to the oracle.
 func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	// Default compare function is fine; diffs should all be zero (algorithm is deterministic).
-	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Value })
+	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Predecessor.TotalDistance })
 }
 
 // Launch point. Parses command line arguments, and launches the graph execution.
@@ -84,7 +84,7 @@ func main() {
 
 	if !(*useMsgPassing) {
 		initMail := map[graph.RawType]Mail{}
-		initMail[graph.AsRawTypeString(*sourceInit)] = Mail{NewConcurrentMap()}
+		initMail[graph.AsRawTypeString(*sourceInit)] = Mail{NewConcurrentMap[uint32, Predecessor]()}
 		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), graphOptions, initMail, nil)
 	} else {
 		log.Warn().Msg("Warning: this strategy is slow! Use this only for reference.")

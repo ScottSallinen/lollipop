@@ -91,8 +91,8 @@ func appendToJson(filename string, newReport ShortestPathReport) {
 func (*SSSP) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
 	ssspReport := make(map[uint32]float64)
 	tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
-		fmt.Println(tse.GraphView.NodeVertexRawID(v), prop.Value)
-		ssspReport[tse.GraphView.NodeVertexRawID(v).Integer()] = prop.Value
+		fmt.Println(tse.GraphView.NodeVertexRawID(v), prop.Predecessor.TotalDistance)
+		ssspReport[tse.GraphView.NodeVertexRawID(v).Integer()] = prop.Predecessor.TotalDistance
 	})
 	appendToJson("cmd/rand-graph/rand-graph-sssp-actual.json",
 		ShortestPathReport{
