@@ -84,7 +84,7 @@ func ssspAlgorithm(filename string) {
 	graphOptions := graph.FlagsToOptions()
 
 	initMail := map[graph.RawType]Mail{}
-	initMail[graph.AsRawTypeString("1")] = Mail{NewConcurrentMap[uint32, Predecessor]()}
+	initMail[graph.AsRawTypeString("1")] = Mail{NewSafeMail()}
 	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), graphOptions, initMail, nil)
 }
 
@@ -286,18 +286,18 @@ func testSSSP() {
 	}
 
 	for _, test := range testCases {
-		break
+		//break
 		runTestCase(test, 1, true)
 	}
-
-	n := 100
-	m := n * (n - 1)
-
-	commands, reports := GenerateRandomGraph(n, m)
-	randomTest := TestCase{
-		Name:     fmt.Sprintf("random_%v_%v", n, m),
-		Events:   commands,
-		Expected: reports,
-	}
-	runTestCase(randomTest, m, false)
+	//
+	//n := 100
+	//m := n * (n - 1)
+	//
+	//commands, reports := GenerateRandomGraph(n, m)
+	//randomTest := TestCase{
+	//	Name:     fmt.Sprintf("random_%v_%v", n, m),
+	//	Events:   commands,
+	//	Expected: reports,
+	//}
+	//runTestCase(randomTest, m, false)
 }

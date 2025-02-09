@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"math"
 	"reflect"
+	"sync"
 )
 
 type Predecessor struct {
@@ -40,12 +41,6 @@ type SSSP struct{}
 
 const EMPTY_VAL = math.MaxFloat64
 
-// This maps every node, to it's tree of predecessors to source
-//
-//	for example: {
-//				s: [1, ...., s],
-//				v: [] -> No path to 1
-//			}
 type MapVertexDistance map[uint32]Predecessor
 
 type VertexProperty struct {
@@ -59,8 +54,95 @@ type EdgeProperty struct {
 	graph.NoRaw
 }
 
+const (
+	ADD graph.EventType = iota // Implicit, 0, means add.
+	DEL
+)
+
+type SafeMail struct {
+	mu          sync.RWMutex
+	distanceMap map[uint32]Predecessor
+	trigger     graph.EventType
+}
+
+func NewSafeMail() *SafeMail {
+	return &SafeMail{
+		mu:          sync.RWMutex{},
+		distanceMap: make(map[uint32]Predecessor),
+		trigger:     ADD,
+	}
+}
+
+func SourceSafeMail(s string) *SafeMail {
+	return &SafeMail{
+		mu:          sync.RWMutex{},
+		distanceMap: map[uint32]Predecessor{math.MaxUint32: {TotalDistance: 0}},
+		trigger:     ADD,
+	}
+}
+
+func NewSafeMailFromEvent(dm map[uint32]Predecessor, ev graph.EventType) *SafeMail {
+	newMap := make(map[uint32]Predecessor)
+	for k, v := range dm {
+		newMap[k] = v
+	}
+	return &SafeMail{
+		mu:          sync.RWMutex{},
+		distanceMap: newMap,
+		trigger:     ev,
+	}
+}
+
+func CopySafeMail(prev *SafeMail) *SafeMail {
+	newMap := make(map[uint32]Predecessor)
+	prev.mu.RLock()
+	trigger := prev.trigger
+	for k, v := range prev.distanceMap {
+		newMap[k] = v
+	}
+	prev.mu.RUnlock()
+	return &SafeMail{
+		mu:          sync.RWMutex{},
+		distanceMap: newMap,
+		trigger:     trigger,
+	}
+}
+
+// Set adds or updates a key-value pair
+func (sm *SafeMail) Set(key uint32, value Predecessor) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.distanceMap[key] = value
+}
+
+// Get retrieves a value safely
+func (sm *SafeMail) Get(key uint32) (Predecessor, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	val, exists := sm.distanceMap[key]
+	return val, exists
+}
+
+func (sm *SafeMail) Update(newSm *SafeMail, sidx uint32) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	var newInfo bool
+	prevValue, keyExists := sm.distanceMap[sidx]
+	newValue, newExists := newSm.distanceMap[sidx]
+	if keyExists && newExists && prevValue.TotalDistance == newValue.TotalDistance && reflect.DeepEqual(prevValue.PrevList, newValue.PrevList) {
+		newInfo = false
+	} else {
+		log.Debug().Msg(fmt.Sprintf("Log merged %v: %v vs %v", sidx, newValue, prevValue))
+		sm.distanceMap[sidx] = newValue
+		newInfo = true
+	}
+	sm.trigger = newSm.trigger
+	return newInfo
+}
+
 type Mail struct {
-	distanceMap *ConcurrentMap[uint32, Predecessor]
+	inner *SafeMail
 }
 
 type Note struct{}
@@ -70,38 +152,35 @@ func (VertexProperty) New() VertexProperty {
 }
 
 func (Mail) New() Mail {
-	return Mail{NewConcurrentMap[uint32, Predecessor]()}
+	return Mail{NewSafeMail()}
 }
 
 func (*SSSP) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo bool) {
-	prevValue, keyExists := existing.distanceMap.Get(sidx)
-	newValue, newExists := incoming.distanceMap.Get(sidx)
-	if keyExists && newExists && prevValue.TotalDistance == newValue.TotalDistance && reflect.DeepEqual(prevValue.PrevList, newValue.PrevList) {
-		newInfo = false
-	} else {
-		log.Debug().Msg(fmt.Sprintf("Log merged %v: %v vs %v", sidx, newValue, prevValue))
-		existing.distanceMap.Set(sidx, newValue)
-		newInfo = true
-	}
-	return newInfo
+	return existing.inner.Update(incoming.inner, sidx)
+	//prevValue, keyExists := existing.inner.Get(sidx)
+	//newValue, newExists := incoming.inner.Get(sidx)
+	//if keyExists && newExists && prevValue.TotalDistance == newValue.TotalDistance && reflect.DeepEqual(prevValue.PrevList, newValue.PrevList) {
+	//	newInfo = false
+	//} else {
+	//	log.Debug().Msg(fmt.Sprintf("Log merged %v: %v vs %v", sidx, newValue, prevValue))
+	//	existing.inner.Set(sidx, newValue)
+	//	newInfo = true
+	//}
+	//return newInfo
 }
 
 func (*SSSP) MailRetrieve(existing *Mail, _ *graph.Vertex[VertexProperty, EdgeProperty], _ *VertexProperty) Mail {
 	// Atomically load the value of existing
-	mail := make(map[uint32]Predecessor)
-	for k, v := range existing.distanceMap.Content() {
-		mail[k] = v
-	}
-	//existing.distanceMap.Clear()
-	return Mail{distanceMap: NewConcurrentMapFromMap(mail)}
+	return Mail{inner: CopySafeMail(existing.inner)}
 }
 
 // Function called for a vertex update.
 func (alg *SSSP) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
-	//log.Debug().Msg(fmt.Sprintf("Updating Verted %v with mail: %v", n.Target, m))
+	//log.Debug().Msg(fmt.Sprintf("Updating Vertex %v with mail: %v", n.Target, m))
 	//prevPropValue := prop.Predecessor
 	//changed := false
-	for prevId, newValue := range alg.MailRetrieve(&m, src, prop).distanceMap.Content() {
+	retreived := alg.MailRetrieve(&m, src, prop)
+	for prevId, newValue := range retreived.inner.distanceMap {
 		//if !reflect.DeepEqual(prop.PrevDistanceMap[prevId], newValue) {
 		//	prop.PrevDistanceMap[prevId] = newValue
 		//	changed = true
@@ -139,7 +218,7 @@ func (alg *SSSP) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		if prop.Predecessor.TotalDistance < EMPTY_VAL {
 			newDist = AddToPredecessor(prop.Predecessor, n.Target, e.Property.Weight)
 		}
-		if alg.MailMerge(Mail{distanceMap: NewConcurrentMapFromMap(map[uint32]Predecessor{n.Target: newDist})}, n.Target, &mailbox.Inbox) {
+		if alg.MailMerge(Mail{inner: NewSafeMailFromEvent(map[uint32]Predecessor{n.Target: newDist}, retreived.inner.trigger)}, n.Target, &mailbox.Inbox) {
 			sent += g.EnsureSend(g.UniqueNotification(n.Target, graph.Notification[Note]{Target: e.Didx}, mailbox, tidx))
 		}
 	}
@@ -161,7 +240,7 @@ func (alg *SSSP) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, No
 			target := src.OutEdges[eidx].Didx
 			mailbox, tidx := g.NodeVertexMailbox(target)
 			if alg.MailMerge(
-				Mail{distanceMap: NewConcurrentMapFromMap(map[uint32]Predecessor{sidx: AddToPredecessor(prop.Predecessor, sidx, src.OutEdges[eidx].Property.Weight)})},
+				Mail{inner: NewSafeMailFromEvent(map[uint32]Predecessor{sidx: AddToPredecessor(prop.Predecessor, sidx, src.OutEdges[eidx].Property.Weight)}, ADD)},
 				sidx, &mailbox.Inbox) {
 				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: target}, mailbox, tidx))
 			}
@@ -180,7 +259,8 @@ func (alg *SSSP) OnEdgeDel(
 	delEdges []graph.Edge[EdgeProperty],
 	m Mail) (sent uint64) {
 	//log.Debug().Msg(fmt.Sprintf("Called OnEdgeDel! %v - %v - %v", src.OutEdges, delEdges, m))
-	for prevId, newValue := range alg.MailRetrieve(&m, src, prop).distanceMap.Content() {
+	retrieved := alg.MailRetrieve(&m, src, prop)
+	for prevId, newValue := range retrieved.inner.distanceMap {
 		prop.PrevDistanceMap[prevId] = newValue
 	}
 
@@ -220,7 +300,7 @@ func (alg *SSSP) OnEdgeDel(
 			log.Debug().Msg(fmt.Sprintf("Sending mail to %v(%v) to update its distance %v", g.NodeVertexRawID(delE.Didx), delE.Didx, newDist))
 			mailbox, tidx := g.NodeVertexMailbox(delE.Didx)
 			if alg.MailMerge(
-				Mail{distanceMap: NewConcurrentMapFromMap(map[uint32]Predecessor{sidx: newDist})},
+				Mail{inner: NewSafeMailFromEvent(map[uint32]Predecessor{sidx: newDist}, DEL)},
 				sidx, &mailbox.Inbox) {
 				sent += g.EnsureSend(g.UniqueNotification(sidx, graph.Notification[Note]{Target: delE.Didx}, mailbox, tidx))
 			}
