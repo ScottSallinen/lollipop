@@ -5,108 +5,47 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/rs/zerolog/log"
 	"math"
-	"sync"
+	"reflect"
 )
 
-type ConcurrentMap[K comparable, V any] struct {
-	mu sync.RWMutex
-	m  map[K]V
-}
-
-func NewConcurrentMap[K comparable, V any]() *ConcurrentMap[K, V] {
-	return &ConcurrentMap[K, V]{
-		mu: sync.RWMutex{},
-		m:  make(map[K]V),
-	}
-}
-
-func NewConcurrentMapFromMap[K comparable, V any](prev map[K]V) *ConcurrentMap[K, V] {
-	newMap := make(map[K]V)
-	for k, v := range prev {
-		newMap[k] = v
-	}
-	return &ConcurrentMap[K, V]{
-		mu: sync.RWMutex{},
-		m:  newMap,
-	}
-}
-
-// Set adds or updates a key-value pair
-func (c *ConcurrentMap[K, V]) Set(key K, value V) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.m[key] = value
-}
-
-// Get retrieves a value safely
-func (c *ConcurrentMap[K, V]) Get(key K) (V, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	val, exists := c.m[key]
-	return val, exists
-}
-
-// Delete removes a key from the map
-func (c *ConcurrentMap[K, V]) Delete(key K) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.m, key)
-}
-
-// Size returns the number of elements in the map
-func (c *ConcurrentMap[K, V]) Size() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.m)
-}
-
-func (c *ConcurrentMap[K, V]) Content() map[K]V {
-	copyMap := make(map[K]V)
-	c.mu.RLock()
-	for k, v := range c.m {
-		copyMap[k] = v
-	}
-	c.mu.RUnlock()
-	return copyMap
-}
-
-func (c *ConcurrentMap[K, V]) Clear() {
-	c.mu.Lock()
-	c.m = make(map[K]V)
-	c.mu.Unlock()
-}
-
 type Predecessor struct {
-	PrevList      []uint32
+	PrevList      map[uint32]struct{}
 	TotalDistance float64
 }
 
 func NewEmptyPredecessor() Predecessor {
 	return Predecessor{
-		[]uint32{}, EMPTY_VAL,
+		map[uint32]struct{}{}, EMPTY_VAL,
 	}
 }
 
 func AddToPredecessor(p Predecessor, newVertex uint32, newEdgeWeight float64) Predecessor {
+	newPrevList := make(map[uint32]struct{})
+	for k, v := range p.PrevList {
+		newPrevList[k] = v
+	}
+	newPrevList[newVertex] = struct{}{}
 	return Predecessor{
-		append(p.PrevList, newVertex),
+		newPrevList,
 		p.TotalDistance + newEdgeWeight,
 	}
 }
 
 func (p Predecessor) IsInPredecessor(v uint32) bool {
-	for _, prev := range p.PrevList {
-		if prev == v {
-			return true
-		}
-	}
-	return false
+	_, exist := p.PrevList[v]
+	return exist
 }
 
 type SSSP struct{}
 
 const EMPTY_VAL = math.MaxFloat64
 
+// This maps every node, to it's tree of predecessors to source
+//
+//	for example: {
+//				s: [1, ...., s],
+//				v: [] -> No path to 1
+//			}
 type MapVertexDistance map[uint32]Predecessor
 
 type VertexProperty struct {
@@ -127,7 +66,6 @@ type Mail struct {
 type Note struct{}
 
 func (VertexProperty) New() VertexProperty {
-
 	return VertexProperty{NewEmptyPredecessor(), MapVertexDistance{}}
 }
 
@@ -138,10 +76,10 @@ func (Mail) New() Mail {
 func (*SSSP) MailMerge(incoming Mail, sidx uint32, existing *Mail) (newInfo bool) {
 	prevValue, keyExists := existing.distanceMap.Get(sidx)
 	newValue, newExists := incoming.distanceMap.Get(sidx)
-	if keyExists && newExists && prevValue.TotalDistance == newValue.TotalDistance {
+	if keyExists && newExists && prevValue.TotalDistance == newValue.TotalDistance && reflect.DeepEqual(prevValue.PrevList, newValue.PrevList) {
 		newInfo = false
 	} else {
-		log.Debug().Msg(fmt.Sprintf("Log merged %v: %v", sidx, newValue))
+		log.Debug().Msg(fmt.Sprintf("Log merged %v: %v vs %v", sidx, newValue, prevValue))
 		existing.distanceMap.Set(sidx, newValue)
 		newInfo = true
 	}
@@ -161,11 +99,21 @@ func (*SSSP) MailRetrieve(existing *Mail, _ *graph.Vertex[VertexProperty, EdgePr
 // Function called for a vertex update.
 func (alg *SSSP) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
 	//log.Debug().Msg(fmt.Sprintf("Updating Verted %v with mail: %v", n.Target, m))
-	prevPropValue := prop.Predecessor
-	for prevId, newValue := range m.distanceMap.Content() {
+	//prevPropValue := prop.Predecessor
+	//changed := false
+	for prevId, newValue := range alg.MailRetrieve(&m, src, prop).distanceMap.Content() {
+		//if !reflect.DeepEqual(prop.PrevDistanceMap[prevId], newValue) {
+		//	prop.PrevDistanceMap[prevId] = newValue
+		//	changed = true
+		//}
 		prop.PrevDistanceMap[prevId] = newValue
 	}
 
+	//if !changed {
+	//	return 0
+	//}
+
+	prevDist := prop.Predecessor.TotalDistance
 	newPropDistance := EMPTY_VAL
 	newPrevVertex := ^uint32(0) // 0xFFFFFFFF
 
@@ -176,12 +124,7 @@ func (alg *SSSP) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		}
 	}
 
-	// Only act on an improvement to shortest path.
-	if newPropDistance == prevPropValue.TotalDistance {
-		return 0
-	}
-
-	log.Debug().Msg(fmt.Sprintf("Distance of %v(%v) changed to %v", n.Target, g.NodeVertexRawID(n.Target), newPropDistance))
+	log.Debug().Msg(fmt.Sprintf("Distance of %v(%v) changed to %v from %v - %v", n.Target, g.NodeVertexRawID(n.Target), newPropDistance, prevDist, prop.PrevDistanceMap))
 
 	if newPrevVertex == ^uint32(0) {
 		prop.Predecessor = NewEmptyPredecessor()
@@ -237,6 +180,25 @@ func (alg *SSSP) OnEdgeDel(
 	delEdges []graph.Edge[EdgeProperty],
 	m Mail) (sent uint64) {
 	//log.Debug().Msg(fmt.Sprintf("Called OnEdgeDel! %v - %v - %v", src.OutEdges, delEdges, m))
+	for prevId, newValue := range alg.MailRetrieve(&m, src, prop).distanceMap.Content() {
+		prop.PrevDistanceMap[prevId] = newValue
+	}
+
+	newPropDistance := EMPTY_VAL
+	newPrevVertex := ^uint32(0) // 0xFFFFFFFF
+
+	for prevVertex, prevVertexPreds := range prop.PrevDistanceMap {
+		if !prevVertexPreds.IsInPredecessor(sidx) && prevVertexPreds.TotalDistance < newPropDistance {
+			newPrevVertex = prevVertex
+			newPropDistance = prevVertexPreds.TotalDistance
+		}
+	}
+
+	if newPrevVertex == ^uint32(0) {
+		prop.Predecessor = NewEmptyPredecessor()
+	} else {
+		prop.Predecessor = prop.PrevDistanceMap[newPrevVertex]
+	}
 
 	currentMinWeights := make(map[uint32]float64)
 	for _, edge := range src.OutEdges { // find the min weight for edges between this vertex and neighbours
@@ -266,5 +228,4 @@ func (alg *SSSP) OnEdgeDel(
 	}
 	log.Debug().Msg(fmt.Sprintf("Completed OnEdgeDel %v", sidx))
 	return sent
-
 }

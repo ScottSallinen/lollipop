@@ -20,15 +20,15 @@ const (
 )
 
 type ShortestPathReport struct {
-	Timestamp   int             `json:"timestamp"`
-	DistanceMap map[int]float64 `json:"distance_map"`
+	Timestamp   int                `json:"timestamp"`
+	DistanceMap map[uint32]float64 `json:"distance_map"`
 }
 
 func (p ShortestPathReport) MarshalJSON() ([]byte, error) {
 	// Convert map[int]float64 to map[string]float64
 	stringScores := make(map[string]float64)
 	for k, v := range p.DistanceMap {
-		stringScores[strconv.Itoa(k)] = v // Convert int key to string
+		stringScores[strconv.Itoa(int(k))] = v // Convert int key to string
 	}
 
 	// Create an alias to avoid recursion
@@ -92,7 +92,7 @@ func writeToFile(path string, lines []string) {
 }
 
 // GenerateRandomGraph creates a random graph with n nodes and m edges.
-func GenerateRandomGraph(n, m int, outputPath, jsonPath string) *simple.WeightedDirectedGraph {
+func GenerateRandomGraph(n, m int) ([]string, []ShortestPathReport) {
 	g := simple.NewWeightedDirectedGraph(0, 0)
 
 	// Create nodes
@@ -107,7 +107,7 @@ func GenerateRandomGraph(n, m int, outputPath, jsonPath string) *simple.Weighted
 	var reports []ShortestPathReport
 	// Create random edges
 	rand.Seed(time.Now().UnixNano())
-	for i := 0; i < m; i++ {
+	for i := 0; i < m; {
 		event := rand.Intn(ADD_EDGE + DEL_EDGE)
 		if event >= DEL_EDGE && g.WeightedEdges().Len() < n*(n-1) { // Add edge
 			var srcID, dstID int64
@@ -127,12 +127,14 @@ func GenerateRandomGraph(n, m int, outputPath, jsonPath string) *simple.Weighted
 			g.RemoveEdge(edge.From().ID(), edge.To().ID())
 			fmt.Printf("Deleted Edge between %v %v\n", edge.From().ID(), edge.To().ID())
 			commands = append(commands, fmt.Sprintf("D %v %v", edge.From().ID(), edge.To().ID()))
+		} else {
+			continue
 		}
 
 		shortestFrom1 := path.DijkstraFrom(nodes[1], g)
-		shortestMap := make(map[int]float64)
+		shortestMap := make(map[uint32]float64)
 		for dstId := 0; dstId < n; dstId++ {
-			shortestMap[dstId] = min(math.MaxFloat64, shortestFrom1.WeightTo(int64(dstId)))
+			shortestMap[uint32(dstId)] = min(math.MaxFloat64, shortestFrom1.WeightTo(int64(dstId)))
 		}
 
 		shortestPathReport := ShortestPathReport{
@@ -140,12 +142,14 @@ func GenerateRandomGraph(n, m int, outputPath, jsonPath string) *simple.Weighted
 			DistanceMap: shortestMap,
 		}
 		reports = append(reports, shortestPathReport)
+
+		i++
 	}
 
-	writeToFile(outputPath, commands)
-	writeToJson(jsonPath, reports)
+	//writeToFile(outputPath, commands)
+	//writeToJson(jsonPath, reports)
 
-	return g
+	return commands, reports
 }
 
 // PrintGraph prints the nodes and edges of the graph.

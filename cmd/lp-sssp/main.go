@@ -80,16 +80,22 @@ func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, 
 func main() {
 	sourceInit := flag.String("i", "1", "Source init vertex (raw id).")
 	useMsgPassing := flag.Bool("msg", false, "Use message passing. This is slow! Only for a reference implementation of message passing.")
-	graphOptions := graph.FlagsToOptions()
+	testMode := flag.Bool("test", false, "Run test_sssp")
 
-	if !(*useMsgPassing) {
-		initMail := map[graph.RawType]Mail{}
-		initMail[graph.AsRawTypeString(*sourceInit)] = Mail{NewConcurrentMap[uint32, Predecessor]()}
-		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), graphOptions, initMail, nil)
+	if *testMode {
+		testSSSP()
+		return
 	} else {
-		log.Warn().Msg("Warning: this strategy is slow! Use this only for reference.")
-		initNotes := map[graph.RawType]NoteMsg{}
-		initNotes[graph.AsRawTypeString(*sourceInit)] = 0.0
-		graph.LaunchGraphExecution[*EPMsg, VPMsg, EPMsg, MailMsg, NoteMsg](new(SSSPM), graphOptions, nil, initNotes)
+		graphOptions := graph.FlagsToOptions()
+		if !(*useMsgPassing) {
+			initMail := map[graph.RawType]Mail{}
+			initMail[graph.AsRawTypeString(*sourceInit)] = Mail{NewConcurrentMap[uint32, Predecessor]()}
+			graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), graphOptions, initMail, nil)
+		} else {
+			log.Warn().Msg("Warning: this strategy is slow! Use this only for reference.")
+			initNotes := map[graph.RawType]NoteMsg{}
+			initNotes[graph.AsRawTypeString(*sourceInit)] = 0.0
+			graph.LaunchGraphExecution[*EPMsg, VPMsg, EPMsg, MailMsg, NoteMsg](new(SSSPM), graphOptions, nil, initNotes)
+		}
 	}
 }

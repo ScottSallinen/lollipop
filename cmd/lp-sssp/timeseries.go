@@ -6,31 +6,31 @@ import (
 	"github.com/ScottSallinen/lollipop/graph"
 	"io"
 	"os"
-	"strconv"
+	//"strconv"
 )
 
-type ShortestPathReport struct {
-	Timestamp   int                `json:"timestamp"`
-	DistanceMap map[uint32]float64 `json:"distance_map"`
-}
-
-func (p ShortestPathReport) MarshalJSON() ([]byte, error) {
-	// Convert map[int]float64 to map[string]float64
-	stringDists := make(map[string]float64)
-	for k, v := range p.DistanceMap {
-		stringDists[strconv.Itoa(int(k))] = v // Convert int key to string
-	}
-
-	// Create an alias to avoid recursion
-	type Alias ShortestPathReport
-	return json.Marshal(&struct {
-		DistanceMap map[string]float64 `json:"distance_map"`
-		*Alias
-	}{
-		DistanceMap: stringDists,
-		Alias:       (*Alias)(&p),
-	})
-}
+//type ShortestPathReport struct {
+//	Timestamp   int                `json:"timestamp"`
+//	DistanceMap map[uint32]float64 `json:"distance_map"`
+//}
+//
+//func (p ShortestPathReport) MarshalJSON() ([]byte, error) {
+//	// Convert map[int]float64 to map[string]float64
+//	stringDists := make(map[string]float64)
+//	for k, v := range p.DistanceMap {
+//		stringDists[strconv.Itoa(int(k))] = v // Convert int key to string
+//	}
+//
+//	// Create an alias to avoid recursion
+//	type Alias ShortestPathReport
+//	return json.Marshal(&struct {
+//		DistanceMap map[string]float64 `json:"distance_map"`
+//		*Alias
+//	}{
+//		DistanceMap: stringDists,
+//		Alias:       (*Alias)(&p),
+//	})
+//}
 
 func appendToJson(filename string, newReport ShortestPathReport) {
 	// Step 1: Read the existing JSON file
@@ -91,12 +91,12 @@ func appendToJson(filename string, newReport ShortestPathReport) {
 func (*SSSP) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
 	ssspReport := make(map[uint32]float64)
 	tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
-		fmt.Println(tse.GraphView.NodeVertexRawID(v), prop.Predecessor.TotalDistance)
+		//fmt.Println(tse.GraphView.NodeVertexRawID(v), prop.Predecessor.TotalDistance)
 		ssspReport[tse.GraphView.NodeVertexRawID(v).Integer()] = prop.Predecessor.TotalDistance
 	})
 	appendToJson("cmd/rand-graph/rand-graph-sssp-actual.json",
 		ShortestPathReport{
-			int(tse.AtEventIndex),
-			ssspReport,
+			Timestamp:   int(tse.AtEventIndex),
+			DistanceMap: ssspReport,
 		})
 }
