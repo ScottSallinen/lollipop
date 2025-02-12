@@ -70,6 +70,12 @@ type Graph[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 
 	VertexMap          map[RawType]uint32 // Per-Vertex: Raw (external) to internal ID.
 	ThreadVertexCounts [THREAD_MAX]uint32 // number of vertices assigned to each thread
+
+	// MLA
+	Partitioner func(g *Graph[V, E, M, N], eventBatch []TopologyEvent[E], eventBatchPlacement []utils.Pair[uint32, uint32], batchNumEvents int, undirected bool)
+	Load        func(gt *GraphThread[V, E, M, N]) float64
+	Alpha       float64
+	Batch       uint64
 }
 
 // Graph Thread. Elements here are typically thread-local only (though queues/channels have in/out positions).
@@ -138,6 +144,22 @@ func (g *Graph[V, E, M, N]) Init() {
 	notifQueueSize := BASE_SIZE
 	if g.Options.QueueMultiplier > 0 {
 		notifQueueSize *= (1 << g.Options.QueueMultiplier)
+	}
+
+	if g.Options.Mla {
+		g.Partitioner = PartitionerMla
+		switch g.Options.MlaLoad {
+		case "v":
+			g.Load = LoadV
+		case "e":
+			g.Load = LoadE
+		case "msg":
+			g.Load = LoadMsg
+		default:
+			log.Panic().Msg("Unkown load: " + g.Options.MlaLoad)
+		}
+	} else {
+		g.Partitioner = PartitionerModulo
 	}
 
 	for t := 0; t < int(g.NumThreads); t++ {
@@ -277,8 +299,8 @@ func (s GraphThreadStatus) String() string {
 // --------------- Misc Graph Helper Functions ---------------
 
 func (g *Graph[V, E, M, N]) SavePartitioningStats() {
-	utils.CreateFile("partitioning-stats.csv")
-	outFile := utils.CreateFile("partitioning-stats.csv")
+	utils.CreateFile("results/partitioning-stats.csv")
+	outFile := utils.CreateFile("results/partitioning-stats.csv")
 	defer outFile.Close()
 
 	writer := csv.NewWriter(io.MultiWriter(os.Stdout, outFile))
@@ -323,7 +345,7 @@ func (g *Graph[V, E, M, N]) SavePartitioningStats() {
 		}
 		return edgeCuts
 	})
-	log.Info().Msg("Edge Cuts: " + utils.V(float64(totalEdgeCuts)/float64(numEdges)))
+	log.Info().Msg("Edge Cuts: " + utils.V(totalEdgeCuts))
 }
 
 // Prints some statistics of the graph

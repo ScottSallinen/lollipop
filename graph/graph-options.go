@@ -2,6 +2,7 @@ package graph
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"runtime"
@@ -42,6 +43,11 @@ type GraphOptions struct {
 	TimeSeriesInterval    uint64  // Interval (seconds) for how often to log timeseries.
 	InsertDeleteOnExpire  uint64  // If non-zero, will insert deletion of edges that were added before, after passing the expiration duration. (Create a sliding window graph). Needs (Get/Set)Timestamp defined.
 	Name                  string  // Name of the input graph.
+
+	Mla      bool
+	MlaAlpha float64
+	MlaBatch uint64
+	MlaLoad  string
 }
 
 // Declare your own flags before you call this function.
@@ -79,6 +85,11 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 
 	threadPtr := flag.Int("t", runtime.NumCPU(), "Thread count for the algorithm. For dynamic with many queries, suggest one per real CPU, and leave hyperthreads free to handle queries.")
 	threadLoadPtr := flag.Int("tg", 2, "Workers for edge parsing. Note there is always one thread that emits events in sequential order; if set to 1, a single thread handles parsing and emitting. Some tuning/testing needed...")
+
+	mlaPtr := flag.Bool("mla", false, "Use Minimum Load with Affinity (MLA) partitioner instead of hash then modulo")
+	mlaAlphaPtr := flag.Float64("ma", 0, "alpha for MLA")
+	mlaBPtr := flag.Uint64("mb", 1, "b (batch size) for MLA")
+	mlaLoadPtr := flag.String("ml", "v", "Load criteria for MLA partitioning. Should be v, e, or msg")
 	flag.Parse()
 
 	if *colourPtr {
@@ -135,6 +146,20 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 		log.Warn().Msg("Load thread count is greater than CPU count?")
 	}
 
+	mla := *mlaPtr
+	mlaAlpha := *mlaAlphaPtr
+	mlaBatch := *mlaBPtr
+	mlaLoad := *mlaLoadPtr
+	if mla {
+		log.Info().Msg(fmt.Sprintf("Using MLA with alpha=%f b=%d load=%s", mlaAlpha, mlaBatch, mlaLoad))
+		switch mlaLoad {
+		case "v", "e", "msg":
+			break
+		default:
+			log.Panic().Msg("Unkown load: " + mlaLoad)
+		}
+	}
+
 	graphOptions = GraphOptions{
 		Name:                  *graphPtr,
 		NumThreads:            uint32(threadCount),
@@ -161,6 +186,11 @@ func FlagsToOptions() (graphOptions GraphOptions) {
 		LoadThreads:           uint8(loadThreads),
 		TimestampPos:          int8(*timePosPtr),
 		WeightPos:             int8(*weightPosPtr),
+
+		Mla:      mla,
+		MlaAlpha: mlaAlpha,
+		MlaBatch: mlaBatch,
+		MlaLoad:  mlaLoad,
 	}
 	return graphOptions
 }

@@ -20,10 +20,13 @@ func BackOff(count int) {
 	//if count == 0 {
 	//runtime.Gosched()
 	//} else {
-	time.Sleep(time.Duration((count+1)*100) * time.Microsecond)
 	if count > 2000 {
-		log.Panic().Msg("BackOff count too high")
+		count = 2000
 	}
+	time.Sleep(time.Duration((count+1)*100) * time.Microsecond)
+	// if count > 2000 {
+	// 	log.Panic().Msg("BackOff count too high")
+	// }
 	//}
 }
 

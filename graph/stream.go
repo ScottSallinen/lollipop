@@ -198,10 +198,13 @@ func Emitter[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N
 	totalRetried := 0
 	putFails := 0
 	gtPutFails := 0
-	eventBatch := make([]TopologyEvent[E], PARTITIONING_BATCH_SIZE)
-	eventBatchPlacement := make([]utils.Pair[uint32, uint32], PARTITIONING_BATCH_SIZE)
+	eventBatch := make([]TopologyEvent[E], g.Options.MlaBatch)
+	eventBatchPlacement := make([]utils.Pair[uint32, uint32], g.Options.MlaBatch)
 	eventBatchIdx := 0
 	closed := false
+	if len(edgeQueues) != 1 {
+		log.Panic().Msg("Only 1 load thread supported")
+	}
 
 	for !closed {
 	batch:
@@ -220,18 +223,21 @@ func Emitter[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any](g *Graph[V, E, M, N
 
 				eventBatch[eventBatchIdx] = event
 				eventBatchIdx++
-				if eventBatchIdx == PARTITIONING_BATCH_SIZE {
+				// if eventBatchIdx == int(g.Options.MlaBatch) {
+				// 	break batch
+				// }
+				if eventBatchIdx == int(g.Options.MlaBatch) && i+1 == len(edgeQueues) {
 					break batch
 				}
 			}
 		}
 
-		g.FindVertexPlacementBulk(eventBatch, eventBatchPlacement, eventBatchIdx, undirected)
+		g.Partitioner(g, eventBatch, eventBatchPlacement, eventBatchIdx, undirected)
+		// g.FindVertexPlacementBulkIndividual(eventBatch, eventBatchPlacement, eventBatchIdx, undirected)
 
 		for i := 0; i < eventBatchIdx; i++ {
 			event := eventBatch[i]
 			srcId, dstId := eventBatchPlacement[i].First, eventBatchPlacement[i].Second
-			// srcId, dstId := g.FindVertexPlacement(event, undirected, &gtPutFails)
 			srcTidx, dstTidx := IdxToTidx(srcId), IdxToTidx(dstId)
 
 			internalEvent := InternalTopologyEvent[E]{TypeAndEventIdx: event.TypeAndEventIdx, SrcRaw: event.SrcRaw, DstRaw: event.DstRaw, SrcIdx: srcId, Edge: Edge[E]{
