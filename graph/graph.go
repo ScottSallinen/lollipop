@@ -131,7 +131,7 @@ func (g *Graph[V, E, M, N]) Init() {
 	for t := 0; t < int(g.NumThreads); t++ {
 		gt := &g.GraphThreads[t]
 		gt.Tidx = uint16(t)
-		gt.Command = make(chan Command, 1)
+		gt.Command = make(chan Command, 32)
 		gt.Response = make(chan Command, 1)
 		gt.NumUnique = 1 // 0 is reserved for comparison against zeroed allocation.
 
