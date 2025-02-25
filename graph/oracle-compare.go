@@ -20,7 +20,7 @@ func CompareToOracle[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N
 	}
 
 	if syncWithQuery { // Wait for all threads to sync to match the query before comparing to oracle
-		g.Broadcast(TOP_SYNC)
+		g.Broadcast(EVENT_SYNC)
 		g.AwaitAck()
 	}
 	if broadcast {

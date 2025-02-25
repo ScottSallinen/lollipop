@@ -148,7 +148,7 @@ func Test_FindFirstUnused(t *testing.T) {
 	}
 }
 
-func assertEqual(t *testing.T, expected any, actual any, prefix string) {
+func assertEqual(_ *testing.T, expected any, actual any, prefix string) {
 	if reflect.DeepEqual(expected, actual) {
 		return
 	}

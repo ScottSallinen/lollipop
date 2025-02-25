@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: 1.20.4
+          go-version: 1.22.4
 
       # Prints some relevant information
       - run: echo "repository is ${{ github.repository }}"

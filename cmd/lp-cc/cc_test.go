@@ -66,7 +66,7 @@ func TestDynamicCreation(t *testing.T) {
 
 		t.Log("TestDynamicCreation ", count, " t ", threads)
 
-		rawTestGraph := []graph.TopologyEvent[EdgeProperty]{
+		rawTestGraph := []graph.InputEvent[EdgeProperty]{
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(1), DstRaw: graph.AsRawType(4)},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(7), DstRaw: graph.AsRawType(0)},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(1)},

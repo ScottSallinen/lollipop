@@ -3,7 +3,6 @@ package graph
 import (
 	"bufio"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -33,7 +32,7 @@ const THREAD_ID_MASK = ((1 << THREAD_BITS) - 1) << THREAD_SHIFT
 const BASE_SIZE = 4096 * 4
 const GROW_LIMIT = 7             // Number of times certain buffers can grow (double in size)
 const MSG_MAX = 1024             // Max messages a thread MAY pull from the queue at a time, before cycling back to check other tasks. A message is a notification genuinely sent (e.g. not discarded due to non-uniqueness).
-const TOPOLOGY_FIRST = false     // Should be false. Only process topology events (no algorithm-only events) until the topology is fully loaded. For testing how useful the topology hooks only are.
+const EVENTS_FIRST = false       // Should be false. Only process input events (no algorithm-only events) until the graph is fully loaded. For testing how useful event hooks are.
 const QUERY_NON_BLOCKING = false // Should be false. Determines if the input stream should be non blocked while waiting for a query result -- this way until we can make a better async state view. If a small rate or bundle size is used it could work (otherwise the system moves too fast).
 
 // For vertex allocation.
@@ -57,7 +56,6 @@ type Graph[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	Watch               utils.Watch                         // General (e.g. wall clock) timer for the graph.
 	AlgTimer            utils.Watch                         // Timer for the algorithm, to sometimes determine algorithm-specific performance (e.g., derive query interruption compared to wall clock).
 	LogEntryChan        chan uint64                         // Channel for logging timeseries data.
-	QueryWaiter         sync.WaitGroup                      // Wait group for queries, if queries are blocking.
 	SuperStepWaiter     SuperStepWaiter                     // Synchronize threads for algorithmic super steps.
 	OracleCache         *Graph[V, E, M, N]                  // For debugging: if non-nil, will use this graph as the oracle instead of (re)-computing it.
 	warnOutOfOrderInput uint64                              // Detection of out of order input, during streaming; used for a unique notification.
@@ -94,17 +92,20 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 
 	NumOutAdds   uint32 // Number of outgoing edges added by the thread.
 	NumOutDels   uint32 // Number of outgoing edges deleted by the thread.
-	NumInEvents  uint64 // Thread's total incoming event count. Tracked by the to-remit process. (unused)
 	EventActions uint64 // Number of event actions (to or from remitter) performed by the thread.
 	AtEvent      uint64 // Max event index a thread is at.
+	_            uint64
 
-	TopologyQueue utils.GrowableRingBuff[RawEdgeEvent[E]]
-	FromEmitQueue utils.GrowableRingBuff[TopologyEvent[E]]
-	ToRemitQueue  utils.RingBuffSPSC[RawEdgeEvent[E]]
+	FromEmitQueue  utils.GrowableRingBuff[InputEvent[E]]
+	FromRemitQueue utils.RingBuffTokenMPSC[RemitEvent[E]] // replaces topology queue
 
 	ExpiredEdges []utils.Pair[uint32, RawEdgeEvent[E]] // Set of an edge for a vertex that will need to be removed.
 	LoopTimes    []time.Duration                       // For debugging.
 	_            [2]uint64
+
+	FailedRemit bool
+	InputEvent  InputEvent[E]
+	RemitEvent  RemitEvent[E]
 }
 
 // Allocates everything needed for a new graph.
@@ -135,15 +136,16 @@ func (g *Graph[V, E, M, N]) Init() {
 		gt.Response = make(chan Command, 1)
 		gt.NumUnique = 1 // 0 is reserved for comparison against zeroed allocation.
 
-		gt.TopologyEventBuff = make([]RawEdgeEvent[E], BASE_SIZE*64)
+		gt.TopologyEventBuff = make([]RawEdgeEvent[E], BASE_SIZE*64*2)
 		gt.Notifications = make([]Notification[N], MSG_MAX)
 
 		gt.NotificationQueue.Init(uint64(notifQueueSize) * uint64(THREAD_MAX/g.NumThreads))
 		gt.NotificationBuff.Init()
 
-		gt.TopologyQueue.Init(BASE_SIZE, GROW_LIMIT)
 		gt.FromEmitQueue.Init(BASE_SIZE, GROW_LIMIT)
-		gt.ToRemitQueue.Init(BASE_SIZE * 4 * THREAD_MAX) // TODO: size?
+		gt.FromRemitQueue.Init(BASE_SIZE * 4 * THREAD_MAX)
+
+		gt.FailedRemit = false
 
 		gt.ExpiredEdges = make([]utils.Pair[uint32, RawEdgeEvent[E]], 0, 512)
 		gt.VertexPendingBuff = make([][]uint32, 1024)
@@ -164,11 +166,11 @@ func (g *Graph[V, E, M, N]) Init() {
 
 	if g.Options.DebugLevel >= 3 || g.Options.Profile {
 		log.Debug().Msg("Bit sizes (  Given  ): VertexPropType: " + utils.V(unsafe.Sizeof(*new(V))) + " EdgePropType: " + utils.V(unsafe.Sizeof(*new(E))) + " MsgType: " + utils.V(unsafe.Sizeof(*new(M))) + " NoteType " + utils.V(unsafe.Sizeof(*new(N))))
-		log.Debug().Msg("Bit sizes (Ephemeral): TopologyEvent: " + utils.V(unsafe.Sizeof(*new(TopologyEvent[E]))) + " RawEdgeEvent: " + utils.V(unsafe.Sizeof(*new(RawEdgeEvent[E]))) + " Notification: " + utils.V(unsafe.Sizeof(*new(Notification[N]))))
+		log.Debug().Msg("Bit sizes (Ephemeral): TopologyEvent: " + utils.V(unsafe.Sizeof(*new(InputEvent[E]))) + " RawEdgeEvent: " + utils.V(unsafe.Sizeof(*new(RawEdgeEvent[E]))) + " Notification: " + utils.V(unsafe.Sizeof(*new(Notification[N]))))
 		log.Debug().Msg("Bit sizes ( Derived ): Vertex: " + utils.V(unsafe.Sizeof(*new(Vertex[V, E]))) + " VertexMsg: " + utils.V(unsafe.Sizeof(*new(VertexMailbox[M]))) + " VertexStruc " + utils.V(unsafe.Sizeof(*new(VertexStructure))) + " Edge: " + utils.V(unsafe.Sizeof(*new(Edge[E]))))
 		log.Debug().Msg("Bit sizes: Graph: " + utils.V(unsafe.Sizeof(*new(Graph[V, E, M, N]))) + " GraphThread: " + utils.V(unsafe.Sizeof(*new(GraphThread[V, E, M, N]))) + " GraphOptions: " + utils.V(unsafe.Sizeof(*new(GraphOptions))))
-		log.Debug().Msg("Bit sizes: RingBuffSPSC: " + utils.V(unsafe.Sizeof(*new(utils.RingBuffSPSC[TopologyEvent[E]]))) + " RingBuffMPSC: " + utils.V(unsafe.Sizeof(*new(utils.RingBuffMPSC[uint32]))) + " GrowableRingBuff: " + utils.V(unsafe.Sizeof(*new(utils.GrowableRingBuff[TopologyEvent[E]]))) + " NotifDeque " + utils.V(unsafe.Sizeof(*new(utils.Deque[Notification[N]]))))
-		log.Debug().Msg("Initial caps: FromEmit: " + utils.V(g.GraphThreads[0].FromEmitQueue.EnqCap()) + " ToRemit: " + utils.V(g.GraphThreads[0].ToRemitQueue.EnqCap()))
+		log.Debug().Msg("Bit sizes: RingBuffSPSC: " + utils.V(unsafe.Sizeof(*new(utils.RingBuffSPSC[InputEvent[E]]))) + " RingBuffMPSC: " + utils.V(unsafe.Sizeof(*new(utils.RingBuffMPSC[uint32]))) + " GrowableRingBuff: " + utils.V(unsafe.Sizeof(*new(utils.GrowableRingBuff[InputEvent[E]]))) + " NotifDeque " + utils.V(unsafe.Sizeof(*new(utils.Deque[Notification[N]]))))
+		//log.Debug().Msg("Initial caps: FromEmit: " + utils.V(g.GraphThreads[0].FromEmitQueue.EnqCap()) + " ToRemit: " + utils.V(g.GraphThreads[0].ToRemitQueue.EnqCap()) + " FromRemit: " + utils.V(g.GraphThreads[0].FromRemitQueue.EnqCap()))
 	}
 
 	if g.Options.DebugLevel >= 3 || g.Options.Profile {
@@ -185,11 +187,11 @@ type Command uint8
 const (
 	ACK Command = iota
 	RESUME
-	BLOCK_TOP
-	BLOCK_TOP_ASYNC // Similar to BLOCK_TOP but does not wait for an ACK
+	BLOCK_EVENTS
+	BLOCK_EVENTS_ASYNC // Similar to BLOCK_EVENTS but does not wait for an ACK
 	BLOCK_ALL
-	BLOCK_ALG_IF_TOP // Init command, no ack
-	TOP_SYNC
+	BLOCK_ALG_IF_EVENTS // Init command, no ack
+	EVENT_SYNC
 	EPOCH
 )
 
@@ -202,14 +204,6 @@ func (g *Graph[V, E, M, N]) Broadcast(command Command) {
 func (g *Graph[V, E, M, N]) AwaitAck() {
 	for i := uint32(0); i < g.NumThreads; i++ {
 		<-g.GraphThreads[i].Response
-	}
-}
-
-func (g *Graph[V, E, M, N]) ExecuteQuery(entry uint64) {
-	g.QueryWaiter.Add(1)
-	g.LogEntryChan <- entry
-	if !QUERY_NON_BLOCKING {
-		g.QueryWaiter.Wait() // Wait for the query to finish before processing new events
 	}
 }
 

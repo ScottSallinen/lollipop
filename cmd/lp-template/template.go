@@ -122,7 +122,7 @@ func (alg *Template) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty,
 // Function called when an in-edge is first observed at the destination vertex. This happens before the edge is given to the source vertex as an out-edge.
 // This should not be used to create algorithmic events, as this function can be called in advance (e.g., it may occur before the logical point in time the graph thread is at).
 // This advanced hook should only be used to adjust structural properties of the graph topology -- for example, adjusting the topEvent and the associated edge property.
-func (*Template) OnInEdgeAdd(_ *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], dst *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, didx uint32, pos uint32, topEvent *graph.TopologyEvent[EdgeProperty]) {
+func (*Template) OnInEdgeAdd(_ *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], dst *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, didx uint32, pos uint32, topEvent *graph.InputEvent[EdgeProperty]) {
 }
 
 // Function called upon new edge(s) added to the vertex src. This also bundles a visit, including any new mail, from MailRetrieve for this vertex.

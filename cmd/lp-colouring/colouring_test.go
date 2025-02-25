@@ -48,7 +48,7 @@ func TestAsyncDynamic(t *testing.T) {
 
 func TestAsyncDynamicWithDelete(t *testing.T) {
 	for ti := 0; ti < 10; ti++ {
-		rawStructureChanges := []graph.TopologyEvent[EdgeProperty]{
+		rawStructureChanges := []graph.InputEvent[EdgeProperty]{
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(1), DstRaw: graph.AsRawType(4), EdgeProperty: EdgeProperty{}},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(0), EdgeProperty: EdgeProperty{}},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(1), EdgeProperty: EdgeProperty{}},

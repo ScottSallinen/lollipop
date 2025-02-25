@@ -36,9 +36,10 @@ func PrintTopN(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], size ui
 		log.Info().Msg(interestStr)
 	} else {
 		log.Info().Msg("Top N:")
-		log.Info().Msg("pos,   rawId,           score")
+		log.Info().Msg("pos,   rawId,           score,    thread,  threadInternalVidx")
 		for i := uint32(0); i < topN; i++ {
-			log.Info().Msg(utils.V(i) + "," + utils.F("%10s", g.NodeVertexRawID(vIds[res[i].First]).String()) + "," + utils.F("%16.6f", res[i].Second))
+			idx, tidx := graph.InternalExpand(vIds[res[i].First])
+			log.Info().Msg(utils.V(i) + "," + utils.F("%10s", g.NodeVertexRawID(vIds[res[i].First]).String()) + "," + utils.F("%16.6f", res[i].Second) + "," + utils.F("%5d", tidx) + "," + utils.F("%14d", idx))
 		}
 	}
 }

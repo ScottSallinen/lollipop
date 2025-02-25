@@ -1,5 +1,6 @@
 results
 data
+backup
 *.pprof
 
 # Binaries for programs and plugins

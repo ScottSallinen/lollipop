@@ -74,8 +74,8 @@ func AsRawTypeString(val string) RawType {
 // TODO: how to choose between options in a clean way?
 
 // [src dst] , implying add only
-func EdgeParser[E EPI[E]](stringFields []string) (TopologyEvent[E], []string) {
-	return TopologyEvent[E]{
+func EdgeParser[E EPI[E]](stringFields []string) (InputEvent[E], []string) {
+	return InputEvent[E]{
 		TypeAndEventIdx: uint64(ADD),
 		SrcRaw:          AsRawTypeString(stringFields[0]),
 		DstRaw:          AsRawTypeString(stringFields[1]),

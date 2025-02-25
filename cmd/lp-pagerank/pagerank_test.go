@@ -59,7 +59,7 @@ func DynamicCreation(undirected bool, t *testing.T) {
 
 		t.Log("TestDynamicCreation ", tCount, " t ", THREADS)
 
-		rawTestGraph := []graph.TopologyEvent[EdgeProperty]{
+		rawTestGraph := []graph.InputEvent[EdgeProperty]{
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(1), DstRaw: graph.AsRawType(4)},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(0)},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(1)},
@@ -125,7 +125,7 @@ func DynamicWithDelete(undirected bool, t *testing.T) {
 	for tCount := 0; tCount < 10; tCount++ {
 		THREADS := uint32(rand.Intn(8-1) + 1)
 
-		rawTestGraph := []graph.TopologyEvent[EdgeProperty]{
+		rawTestGraph := []graph.InputEvent[EdgeProperty]{
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(1), DstRaw: graph.AsRawType(4)},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(0)},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(1)},

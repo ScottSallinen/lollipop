@@ -72,7 +72,7 @@ func TestDynamicCreation(t *testing.T) {
 		basicEdge := EdgeProperty{}
 		basicEdge.Weight = 1.0
 
-		rawTestGraph := []graph.TopologyEvent[EdgeProperty]{
+		rawTestGraph := []graph.InputEvent[EdgeProperty]{
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(1), DstRaw: graph.AsRawType(4), EdgeProperty: basicEdge},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(0), EdgeProperty: basicEdge},
 			{TypeAndEventIdx: uint64(graph.ADD), SrcRaw: graph.AsRawType(2), DstRaw: graph.AsRawType(1), EdgeProperty: basicEdge},
