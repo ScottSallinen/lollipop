@@ -124,28 +124,12 @@ func (*NoRaw) ReplaceRaw(r RawType) {}
 /* ------------------ Timestamp Weighted Edge ------------------ */
 
 type TimestampWeightedEdge struct {
-	Ts     uint64
-	Weight float64
+	WithTimestamp
+	WithWeight
+	NoRaw
 }
 
-func (e TimestampWeightedEdge) GetTimestamp() uint64 {
-	return uint64(e.Ts)
-}
-
-func (e TimestampWeightedEdge) GetEndTime() uint64 { return 0 }
-func (e TimestampWeightedEdge) GetWeight() float64 { return e.Weight }
-
-func (e *TimestampWeightedEdge) ReplaceTimestamp(ts uint64) {
-	e.Ts = ts
-}
-
-func (e *TimestampWeightedEdge) ReplaceWeight(w float64) {
-	e.Weight = w
-}
-
-func (*TimestampWeightedEdge) ReplaceEndTime(uint64) {}
-
-func (e *TimestampWeightedEdge) ParseProperty(fields []string, wPos int32, tPos int32) {
+func (e *TimestampWeightedEdge) ParseProperty(fields []string, wPos, tPos int32) {
 	if wPos >= 0 {
 		e.Weight, _ = strconv.ParseFloat(fields[wPos], 32)
 	}
