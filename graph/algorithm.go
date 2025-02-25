@@ -20,6 +20,10 @@ type Algorithm[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 	OnEdgeDel(g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], v *Vertex[V, E], vp *V, sidx uint32, deletedEdges []Edge[E], mail M) (sent uint64)
 }
 
+type AlgorithmNew[V VPI[V], E EPI[E], M MVI[M], N any, A any] interface {
+	New() (new A)
+}
+
 type AlgorithmInitAllMail[V VPI[V], E EPI[E], M MVI[M], N any] interface {
 	InitAllMail(v *Vertex[V, E], vp *V, internalId uint32, rawId RawType) (initialMail M)
 }
@@ -99,6 +103,10 @@ func Run[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]
 		file := utils.CreateFile("algorithm.pprof")
 		pprof.StartCPUProfile(file)
 		defer file.Close()
+	}
+
+	if aN, ok := any(alg).(AlgorithmNew[V, E, M, N, A]); ok {
+		alg = aN.New()
 	}
 
 	g.AlgTimer.Start()
