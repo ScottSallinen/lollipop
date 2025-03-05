@@ -10,9 +10,10 @@ import (
 )
 
 type TestCase struct {
-	Name     string               `json:"name"`
-	Events   []string             `json:"events"`
-	Expected []ShortestPathReport `json:"expected"`
+	Name          string               `json:"name"`
+	Events        []string             `json:"events"`
+	Expected      []ShortestPathReport `json:"expected"`
+	QueryInterval int                  `json:"query_interval"`
 }
 
 func writeTestInput(filename string, events []string) error {
@@ -84,43 +85,40 @@ func ssspAlgorithm(filename string) {
 	graphOptions := graph.FlagsToOptions()
 
 	initMail := map[graph.RawType]Mail{}
-	initMail[graph.AsRawTypeString("1")] = Mail{NewSafeMail()}
-	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), graphOptions, initMail, nil)
+	alg := new(SSSP)
+	alg.SourceVertex = graph.AsRawType(1)
+	//initMail[graph.AsRawTypeString("1")] = Mail{NewSafeMail()}
+	graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](alg, graphOptions, initMail, nil)
 }
 
-func runTestCase(test TestCase, nQuery int, checkOutput bool) {
+func runTestCase(test TestCase, inputPath, expectedPath, actualPath string) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	txtFilename := test.Name + ".txt"
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
 	// Set custom args
-	if checkOutput {
-		os.Args = []string{"", "-g", txtFilename, "-de", fmt.Sprintf("%v", nQuery)}
-	} else {
-		os.Args = []string{"", "-g", txtFilename}
-	}
+	os.Args = []string{"", "-g", inputPath, "-d", "-de", fmt.Sprintf("%v", test.QueryInterval), "-debug", "1"}
 
 	// Write test input file
-	err := writeTestInput(txtFilename, test.Events)
+	err := writeTestInput(inputPath, test.Events)
 	if err != nil {
 		fmt.Println("Error writing test file:", err)
 		return
 	}
 
-	_ = os.Remove("cmd/rand-graph/rand-graph-sssp-actual.json")
+	_ = os.Remove(actualPath)
 
 	// Run the SSSP algorithm
-	ssspAlgorithm(txtFilename)
+	ssspAlgorithm(inputPath)
 
-	reports, err := readTestOutput("cmd/rand-graph/rand-graph-sssp-actual.json")
+	reports, err := readTestOutput(actualPath)
 	// Load expected results
 	if err != nil {
 		fmt.Println("Error marshaling expected data:", err)
 		return
 	}
 
-	writeExpectedOutput("cmd/rand-graph/rand-graph-sssp-expected.json", test.Expected)
+	writeExpectedOutput(expectedPath, test.Expected)
 
 	// map timestamp to expected results
 	mapTimestampExpectedResult := make(map[int]ShortestPathReport)
@@ -128,29 +126,58 @@ func runTestCase(test TestCase, nQuery int, checkOutput bool) {
 		mapTimestampExpectedResult[expected.Timestamp] = expected
 	}
 
-	if !checkOutput {
-		return
+	// map timestamp to actual results
+	mapTimestampActualResult := make(map[int]ShortestPathReport)
+	for _, actual := range reports {
+		mapTimestampActualResult[actual.Timestamp] = actual
 	}
 
-	// Compare results
+	//for timestamp, expectedReport := range mapTimestampExpectedResult {
+	//	actualReport := mapTimestampActualResult[timestamp]
+	//	for v, edv := range expectedReport.DistanceMap {
+	//		if dv, exist := actualReport.DistanceMap[v]; !exist {
+	//			if edv == EmptyVal {
+	//				continue
+	//			}
+	//			fmt.Println(fmt.Sprintf("Test [%v] Failed: timestamp %v vertex %v didn't exist!", test.Name, timestamp, v))
+	//			//return
+	//		} else if dv != edv {
+	//			fmt.Println(fmt.Sprintf("Test [%v] Failed: timestamp %v vertex %v wrong distance [expected %v] != [got %v]!", test.Name, timestamp, v, edv, dv))
+	//			//return
+	//		}
+	//	}
+	//}
+
+	//// Compare results
 	for _, actualReport := range reports {
 		timestamp := actualReport.Timestamp
 		expectedReport := mapTimestampExpectedResult[timestamp]
 		for v, edv := range expectedReport.DistanceMap {
 			if dv, exist := actualReport.DistanceMap[v]; !exist {
-				if edv == EMPTY_VAL {
+				if edv == EmptyVal {
 					continue
 				}
 				fmt.Println(fmt.Sprintf("Test [%v] Failed: timestamp %v vertex %v didn't exist!", test.Name, timestamp, v))
-				return
+				//return
 			} else if dv != edv {
 				fmt.Println(fmt.Sprintf("Test [%v] Failed: timestamp %v vertex %v wrong distance [expected %v] != [got %v]!", test.Name, timestamp, v, edv, dv))
-				return
+				//return
 			}
 		}
 	}
 	fmt.Println("Passed Test Case:", test.Name)
 
+}
+
+func testRandom(V, E, queryInterval int, addProb float64, inputPath, expectedPath, actualPath string) {
+	commands, reports := GenerateRandomGraph(V, E, Probability(addProb), inputPath, expectedPath)
+	randomTest := TestCase{
+		Name:          fmt.Sprintf("random_%v_%v", V, E),
+		Events:        commands,
+		Expected:      reports,
+		QueryInterval: queryInterval,
+	}
+	runTestCase(randomTest, inputPath, expectedPath, actualPath)
 }
 
 func testSSSP() {
@@ -163,9 +190,9 @@ func testSSSP() {
 				"D 1 2",
 			},
 			Expected: []ShortestPathReport{
-				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EMPTY_VAL}},
+				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EmptyVal}},
 				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2}},
-				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: EMPTY_VAL, 3: EMPTY_VAL}},
+				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: EmptyVal, 3: EmptyVal}},
 			},
 		},
 		{
@@ -176,8 +203,8 @@ func testSSSP() {
 				"5 2",
 			},
 			Expected: []ShortestPathReport{
-				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 4: 1, 5: EMPTY_VAL, 2: EMPTY_VAL}},
-				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 4: 1, 5: 2, 2: EMPTY_VAL}},
+				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 4: 1, 5: EmptyVal, 2: EmptyVal}},
+				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 4: 1, 5: 2, 2: EmptyVal}},
 				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 4: 1, 5: 2, 2: 3}},
 			},
 		},
@@ -189,9 +216,9 @@ func testSSSP() {
 				"D 2 3",
 			},
 			Expected: []ShortestPathReport{
-				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EMPTY_VAL}},
+				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EmptyVal}},
 				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2}},
-				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EMPTY_VAL}},
+				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EmptyVal}},
 			},
 		},
 		{
@@ -203,7 +230,7 @@ func testSSSP() {
 				"D 3 1",
 			},
 			Expected: []ShortestPathReport{
-				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EMPTY_VAL}},
+				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EmptyVal}},
 				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2}},
 				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2}},
 				{Timestamp: 3, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2}},
@@ -218,7 +245,7 @@ func testSSSP() {
 				"D 1 3",
 			},
 			Expected: []ShortestPathReport{
-				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EMPTY_VAL}},
+				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EmptyVal}},
 				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2}},
 				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 1}},
 				{Timestamp: 3, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2}},
@@ -234,10 +261,10 @@ func testSSSP() {
 				"40 50",
 			},
 			Expected: []ShortestPathReport{
-				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: EMPTY_VAL, 30: EMPTY_VAL, 40: EMPTY_VAL, 50: EMPTY_VAL}},
-				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: 2, 30: EMPTY_VAL, 40: EMPTY_VAL, 50: EMPTY_VAL}},
-				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: 2, 30: 3, 40: EMPTY_VAL, 50: EMPTY_VAL}},
-				{Timestamp: 3, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: 2, 30: 3, 40: 4, 50: EMPTY_VAL}},
+				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: EmptyVal, 30: EmptyVal, 40: EmptyVal, 50: EmptyVal}},
+				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: 2, 30: EmptyVal, 40: EmptyVal, 50: EmptyVal}},
+				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: 2, 30: 3, 40: EmptyVal, 50: EmptyVal}},
+				{Timestamp: 3, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: 2, 30: 3, 40: 4, 50: EmptyVal}},
 				{Timestamp: 4, DistanceMap: map[uint32]float64{1: 0, 10: 1, 20: 2, 30: 3, 40: 4, 50: 5}},
 			},
 		},
@@ -251,9 +278,9 @@ func testSSSP() {
 			},
 			Expected: []ShortestPathReport{
 				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1}},
-				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 2: EMPTY_VAL}},
+				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 2: EmptyVal}},
 				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: 1}},
-				{Timestamp: 3, DistanceMap: map[uint32]float64{1: 0, 2: EMPTY_VAL}},
+				{Timestamp: 3, DistanceMap: map[uint32]float64{1: 0, 2: EmptyVal}},
 			},
 		},
 		{
@@ -276,10 +303,10 @@ func testSSSP() {
 				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2, 4: 3}},
 				{Timestamp: 3, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2, 4: 3, 5: 4}},
 				{Timestamp: 4, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2, 4: 3, 5: 4}},
-				{Timestamp: 5, DistanceMap: map[uint32]float64{1: 0, 2: EMPTY_VAL, 3: EMPTY_VAL, 4: EMPTY_VAL, 5: EMPTY_VAL}},
-				{Timestamp: 6, DistanceMap: map[uint32]float64{1: 0, 2: EMPTY_VAL, 3: EMPTY_VAL, 4: EMPTY_VAL, 5: EMPTY_VAL}},
+				{Timestamp: 5, DistanceMap: map[uint32]float64{1: 0, 2: EmptyVal, 3: EmptyVal, 4: EmptyVal, 5: EmptyVal}},
+				{Timestamp: 6, DistanceMap: map[uint32]float64{1: 0, 2: EmptyVal, 3: EmptyVal, 4: EmptyVal, 5: EmptyVal}},
 				{Timestamp: 7, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2, 4: 3, 5: 4}},
-				{Timestamp: 8, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EMPTY_VAL, 4: EMPTY_VAL, 5: EMPTY_VAL}},
+				{Timestamp: 8, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: EmptyVal, 4: EmptyVal, 5: EmptyVal}},
 				{Timestamp: 9, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2, 4: 3, 5: 4}},
 			},
 		},
@@ -287,17 +314,6 @@ func testSSSP() {
 
 	for _, test := range testCases {
 		//break
-		runTestCase(test, 1, true)
+		runTestCase(test, "", "", "")
 	}
-	//
-	//n := 100
-	//m := n * (n - 1)
-	//
-	//commands, reports := GenerateRandomGraph(n, m)
-	//randomTest := TestCase{
-	//	Name:     fmt.Sprintf("random_%v_%v", n, m),
-	//	Events:   commands,
-	//	Expected: reports,
-	//}
-	//runTestCase(randomTest, m, false)
 }

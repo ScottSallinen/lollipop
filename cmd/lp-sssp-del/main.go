@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
 	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
@@ -12,6 +13,7 @@ import (
 
 // Performs some sanity checks for correctness.
 func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
+	log.Debug().Msg("Checking correctness.")
 	maxValue := make([]float64, g.NumThreads)
 	numDistZero := uint64(0)
 	numDistOne := uint64(0)
@@ -25,8 +27,8 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		visitCount := 0
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 			vertex := &gt.Vertices[i]
-			ourValue := gt.VertexProperty(i).Value
-			if ourValue < EMPTY_VAL {
+			ourValue := gt.VertexProperty(i).Distance
+			if ourValue < EmptyVal {
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
 				visitCount++
 			}
@@ -42,16 +44,11 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 				atomic.AddUint64(&numDistFour, 1)
 			}
 
-			if initVal, ok := g.InitMails[gt.VertexRawID(i)]; ok {
-				if ourValue != float64(initVal) {
-					log.Panic().Msg("Expected rawId " + utils.V(gt.VertexRawID(i)) + " to have init, but has " + utils.V(ourValue))
-				}
-			}
-			if ourValue == EMPTY_VAL {
+			if ourValue == EmptyVal {
 				// we were never visited.
 			} else {
 				for eidx := range vertex.OutEdges {
-					targetProp := g.NodeVertexProperty(vertex.OutEdges[eidx].Didx).Value
+					targetProp := g.NodeVertexProperty(vertex.OutEdges[eidx].Didx).Distance
 					// Should not be worse than what we could provide.
 					if targetProp > (ourValue + vertex.OutEdges[eidx].Property.Weight) {
 						log.Panic().Msg("Unexpected neighbour weight: " + utils.V(targetProp) + ", vs our weight: " + utils.V(ourValue) + " with edge weight: " + utils.V(vertex.OutEdges[eidx].Property.Weight))
@@ -69,23 +66,23 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 // Compares the results of the algorithm to the oracle.
 func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	// Default compare function is fine; diffs should all be zero (algorithm is deterministic).
-	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Value })
+	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Distance })
 }
 
 // Launch point. Parses command line arguments, and launches the graph execution.
 func main() {
-	sourceInit := flag.String("i", "1", "Source init vertex (raw id).")
-	useMsgPassing := flag.Bool("msg", false, "Use message passing. This is slow! Only for a reference implementation of message passing.")
-	graphOptions := graph.FlagsToOptions()
-
-	if !(*useMsgPassing) {
-		initMail := map[graph.RawType]Mail{}
-		initMail[graph.AsRawTypeString(*sourceInit)] = 0.0
-		graph.LaunchGraphExecution[*EdgeProperty, VertexProperty, EdgeProperty, Mail, Note](new(SSSP), graphOptions, initMail, nil)
+	_ = os.Remove("/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
+	random := false
+	if random {
+		V, E := 50, 500
+		testRandom(V, E, 1, 1, "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/test_input.txt", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/expected_output.json", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
 	} else {
-		log.Warn().Msg("Warning: this strategy is slow! Use this only for reference.")
-		initNotes := map[graph.RawType]NoteMsg{}
-		initNotes[graph.AsRawTypeString(*sourceInit)] = 0.0
-		graph.LaunchGraphExecution[*EPMsg, VPMsg, EPMsg, MailMsg, NoteMsg](new(SSSPM), graphOptions, nil, initNotes)
+		sourceInit := flag.String("i", "1", "Source init vertex (raw id).")
+		graphOptions := graph.FlagsToOptions()
+		//graphOptions.DebugLevel = 1
+		alg, g := Run(graphOptions, sourceInit)
+		graph.Launch(alg, g)
 	}
 }
+
+//1_470_952_770 - 1_459_367_553

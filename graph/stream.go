@@ -117,9 +117,12 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 
 		if event.EventType() == DEL {
 			// Wait for alg to converge
-			g.Broadcast(BLOCK_TOP)
+			log.Debug().Msg("Remitter waiting for Algorithm BEFORE Del")
+			g.Broadcast(EPOCH)
 			g.AwaitAck()
-			g.Broadcast(RESUME)
+			g.ResetTerminationState()
+			g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
+			log.Debug().Msg("Remitter is adding Del event")
 		}
 
 		if pos, ok = g.GraphThreads[targetIdx].TopologyQueue.PutFast(event); !ok {
@@ -127,9 +130,12 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 		}
 
 		if event.EventType() == DEL {
-			g.Broadcast(BLOCK_TOP)
+			log.Debug().Msg("Remitter waiting for Algorithm AFTER Del")
+			g.Broadcast(EPOCH)
 			g.AwaitAck()
-			g.Broadcast(RESUME)
+			g.ResetTerminationState()
+			g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
+			log.Debug().Msg("Remitter is RESUMING after Del event")
 		}
 
 		remitted++
