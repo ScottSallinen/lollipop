@@ -183,7 +183,8 @@ func testRandom(V, E, queryInterval int, addProb float64, inputPath, expectedPat
 func testSSSP() {
 	testCases := []TestCase{
 		{
-			Name: "basic_add_delete",
+			Name:          "basic_add_delete",
+			QueryInterval: 1,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -196,7 +197,8 @@ func testSSSP() {
 			},
 		},
 		{
-			Name: "disconnected_to_connected",
+			Name:          "disconnected_to_connected",
+			QueryInterval: 1,
 			Events: []string{
 				"1 4",
 				"4 5",
@@ -209,7 +211,8 @@ func testSSSP() {
 			},
 		},
 		{
-			Name: "graph_becomes_disconnected",
+			Name:          "graph_becomes_disconnected",
+			QueryInterval: 1,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -222,7 +225,8 @@ func testSSSP() {
 			},
 		},
 		{
-			Name: "cycle_formation_breaking",
+			Name:          "cycle_formation_breaking",
+			QueryInterval: 1,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -237,7 +241,8 @@ func testSSSP() {
 			},
 		},
 		{
-			Name: "path_shortening_and_lengthening",
+			Name:          "path_shortening_and_lengthening",
+			QueryInterval: 1,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -252,7 +257,8 @@ func testSSSP() {
 			},
 		},
 		{
-			Name: "large_sparse_graph",
+			Name:          "large_sparse_graph",
+			QueryInterval: 1,
 			Events: []string{
 				"1 10",
 				"10 20",
@@ -269,7 +275,8 @@ func testSSSP() {
 			},
 		},
 		{
-			Name: "frequent_add_delete",
+			Name:          "frequent_add_delete",
+			QueryInterval: 1,
 			Events: []string{
 				"1 2",
 				"D 1 2",
@@ -284,7 +291,8 @@ func testSSSP() {
 			},
 		},
 		{
-			Name: "cycle_add_delete",
+			Name:          "cycle_add_delete",
+			QueryInterval: 1,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -312,8 +320,9 @@ func testSSSP() {
 		},
 	}
 
+	var dataPath = "/Users/pjavanrood/Documents/NetSys/lollipop/data"
 	for _, test := range testCases {
 		//break
-		runTestCase(test, "", "", "")
+		runTestCase(test, dataPath+"/"+test.Name+"_input.txt", dataPath+"/"+test.Name+"_expected.json", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
 	}
 }

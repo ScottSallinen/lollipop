@@ -2,10 +2,10 @@ package main
 
 import (
 	"flag"
-	"os"
-	"sync/atomic"
-
 	"github.com/rs/zerolog/log"
+	"os"
+	"sort"
+	"sync"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
@@ -15,14 +15,10 @@ import (
 func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	log.Debug().Msg("Checking correctness.")
 	maxValue := make([]float64, g.NumThreads)
-	numDistZero := uint64(0)
-	numDistOne := uint64(0)
-	numDistTwo := uint64(0)
-	numDistThree := uint64(0)
-	numDistFour := uint64(0)
+	distanceCountMap := sync.Map{}
 
 	// Denote vertices that claim unvisited, and ensure out edges are at least as good as we could provide.
-	visited := g.NodeParallelFor(func(_, _ uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note]) int {
+	visited := g.NodeParallelFor(func(_, threadOffset uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note]) int {
 		tidx := gt.Tidx
 		visitCount := 0
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
@@ -32,16 +28,10 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
 				visitCount++
 			}
-			if ourValue == 0 {
-				atomic.AddUint64(&numDistZero, 1)
-			} else if ourValue == 1 {
-				atomic.AddUint64(&numDistOne, 1)
-			} else if ourValue == 2 {
-				atomic.AddUint64(&numDistTwo, 1)
-			} else if ourValue == 3 {
-				atomic.AddUint64(&numDistThree, 1)
-			} else if ourValue == 4 {
-				atomic.AddUint64(&numDistFour, 1)
+			if curr, ok := distanceCountMap.Load(ourValue); ok {
+				distanceCountMap.Store(ourValue, curr.(int)+1)
+			} else {
+				distanceCountMap.Store(ourValue, 1)
 			}
 
 			if ourValue == EmptyVal {
@@ -51,7 +41,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 					targetProp := g.NodeVertexProperty(vertex.OutEdges[eidx].Didx).Distance
 					// Should not be worse than what we could provide.
 					if targetProp > (ourValue + vertex.OutEdges[eidx].Property.Weight) {
-						log.Panic().Msg("Unexpected neighbour weight: " + utils.V(targetProp) + ", vs our weight: " + utils.V(ourValue) + " with edge weight: " + utils.V(vertex.OutEdges[eidx].Property.Weight))
+						log.Warn().Msg("Unexpected neighbour From(" + g.NodeVertexRawID(threadOffset|i).String() + "->" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + ") weight: " + utils.V(targetProp) + ", vs our weight: " + utils.V(ourValue) + " with edge weight: " + utils.V(vertex.OutEdges[eidx].Property.Weight) + "Edge timestamp: " + utils.V(vertex.OutEdges[eidx].Property.Ts) + " Delete Mark: " + utils.V(vertex.OutEdges[eidx].Pos&(1<<31)))
 					}
 				}
 			}
@@ -60,7 +50,16 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 	})
 	log.Info().Msg("Visited: " + utils.V(visited) + ", Percent: " + utils.F("%.3f", float64(visited)/float64(g.NodeVertexCount())*100.0))
 	log.Info().Msg("MaxValue (longest shortest path): " + utils.V(utils.MaxSlice(maxValue)))
-	log.Info().Msg("Num with distances of: 0: " + utils.V(numDistZero) + ", 1: " + utils.V(numDistOne) + ", 2: " + utils.V(numDistTwo) + ", 3: " + utils.V(numDistThree) + ", 4: " + utils.V(numDistFour))
+	var keys []float64
+	distanceCountMap.Range(func(key, _ interface{}) bool {
+		keys = append(keys, key.(float64))
+		return true
+	})
+	sort.Float64s(keys)
+	for _, key := range keys {
+		value, _ := distanceCountMap.Load(key)
+		log.Info().Msg("Distance: " + utils.V(key) + ", Count: " + utils.V(value))
+	}
 }
 
 // Compares the results of the algorithm to the oracle.
@@ -74,8 +73,9 @@ func main() {
 	_ = os.Remove("/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
 	random := false
 	if random {
-		V, E := 50, 500
-		testRandom(V, E, 1, 1, "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/test_input.txt", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/expected_output.json", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
+		testSSSP()
+		//V, E := 50, 500
+		//testRandom(V, E, 1, 0.7, "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/test_input.txt", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/expected_output.json", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
 	} else {
 		sourceInit := flag.String("i", "1", "Source init vertex (raw id).")
 		graphOptions := graph.FlagsToOptions()

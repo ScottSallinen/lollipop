@@ -113,16 +113,16 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 			totalRetriedThreads += retried
 		}
 		targetIdx := event.SrcRaw.Within(THREADS)
-		log.Debug().Msg(fmt.Sprintf("event in remitter %v src: %v - dst: %v", event.EventType(), event.SrcRaw, event.DstRaw))
+		//log.Debug().Msg(fmt.Sprintf("event in remitter %v src: %v - dst: %v", event.EventType(), event.SrcRaw, event.DstRaw))
 
 		if event.EventType() == DEL {
 			// Wait for alg to converge
-			log.Debug().Msg("Remitter waiting for Algorithm BEFORE Del")
+			//log.Debug().Msg("Remitter waiting for Algorithm BEFORE Del")
 			g.Broadcast(EPOCH)
 			g.AwaitAck()
 			g.ResetTerminationState()
 			g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
-			log.Debug().Msg("Remitter is adding Del event")
+			//log.Debug().Msg("Remitter is adding Del event")
 		}
 
 		if pos, ok = g.GraphThreads[targetIdx].TopologyQueue.PutFast(event); !ok {
@@ -130,12 +130,12 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 		}
 
 		if event.EventType() == DEL {
-			log.Debug().Msg("Remitter waiting for Algorithm AFTER Del")
+			//log.Debug().Msg("Remitter waiting for Algorithm AFTER Del")
 			g.Broadcast(EPOCH)
 			g.AwaitAck()
 			g.ResetTerminationState()
 			g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
-			log.Debug().Msg("Remitter is RESUMING after Del event")
+			//log.Debug().Msg("Remitter is RESUMING after Del event")
 		}
 
 		remitted++
@@ -295,7 +295,7 @@ func EdgeEnqueueToEmitter[EP EPP[E], E EPI[E]](name string, myIndex uint64, enqC
 			continue
 		}
 		if (lines % enqCount) == myIndex {
-			log.Debug().Msg(fmt.Sprintf("The fields on line %v are %v - %v", lines, fields, b))
+			//log.Debug().Msg(fmt.Sprintf("The fields on line %v are %v - %v", lines, fields, b))
 			utils.FastFields(fields, b)
 			if (b[0]) == 'D' {
 				log.Debug().Msg(fmt.Sprintf("Recognized Delete on Line %v", lines))

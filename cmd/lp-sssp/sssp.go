@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"strconv"
 
 	"github.com/ScottSallinen/lollipop/graph"
 	"github.com/ScottSallinen/lollipop/utils"
@@ -17,8 +18,13 @@ type VertexProperty struct {
 
 type EdgeProperty struct {
 	graph.WithWeight
-	graph.NoTimestamp
+	graph.WithTimestamp
 	graph.NoRaw
+}
+
+func (ep *EdgeProperty) ParseProperty(fields []string, _ int32, tPos int32) {
+	ts, _ := strconv.Atoi(fields[tPos])
+	ep.Ts = uint64(ts)
 }
 
 type Mail float64
