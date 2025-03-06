@@ -77,7 +77,7 @@ type GraphThread[V VPI[V], E EPI[E], M MVI[M], N any] struct {
 	Command         chan Command                     // Incoming command channel.
 
 	VertexProperties []*[BUCKET_SIZE]V               // Per-Vertex: User defined properties.
-	VertexMap        map[RawType]uint32              // Per-Vertex: Raw (external) to internal ID.
+	VertexMap        sync.Map                        // Per-Vertex: Raw (external) to internal ID.
 	VertexStructures []*[BUCKET_SIZE]VertexStructure // Supplemental vertex structure (see vertex.go). Tracks extra structural properties (e.g. internal to external id).
 	Response         chan Command                    // Response channel
 
@@ -154,7 +154,7 @@ func (g *Graph[V, E, M, N]) Init() {
 		gt.Vertices = make([]Vertex[V, E], 0, (BASE_SIZE * 4))
 		gt.VertexMailboxes = make([]*[BUCKET_SIZE]VertexMailbox[M], 0, (BASE_SIZE*4)/BUCKET_SIZE)
 		gt.VertexStructures = make([]*[BUCKET_SIZE]VertexStructure, 0, (BASE_SIZE*4)/BUCKET_SIZE)
-		gt.VertexMap = make(map[RawType]uint32, (BASE_SIZE * 4))
+		gt.VertexMap = sync.Map{}
 	}
 
 	g.TerminateData = make([]int64, g.NumThreads)

@@ -16,7 +16,7 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 	idx := uint32(len(gt.Vertices))
 	vidx = (uint32(gt.Tidx) << THREAD_SHIFT) + idx
 
-	gt.VertexMap[rawId] = vidx
+	gt.VertexMap.Store(rawId, vidx)
 
 	bucket, pos := idxToBucket(idx)
 	if bucket >= uint32(len(gt.VertexMailboxes)) {
@@ -85,6 +85,7 @@ func NewVertex[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg
 // Checks the incoming from-emit queue, and passes anything to the remitter.
 func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](alg A, g *Graph[V, E, M, N], gt *GraphThread[V, E, M, N], onInEdgeAddFunc func(*Graph[V, E, M, N], *GraphThread[V, E, M, N], *Vertex[V, E], *V, uint32, uint32, *TopologyEvent[E])) (closed bool, count uint64) {
 	var ok bool
+	var didxAny any
 	var didx uint32
 	var event TopologyEvent[E]
 
@@ -93,8 +94,10 @@ func checkToRemit[V VPI[V], E EPI[E], M MVI[M], N any, A Algorithm[V, E, M, N]](
 		if event, ok = gt.FromEmitQueue.Accept(); !ok {
 			break
 		}
-		if didx, ok = gt.VertexMap[event.DstRaw]; !ok {
+		if didxAny, ok = gt.VertexMap.Load(event.DstRaw); !ok {
 			didx = NewVertex(alg, g, gt, event.DstRaw, event.EventIdx())
+		} else {
+			didx = didxAny.(uint32)
 		}
 
 		pos := ^uint32(0)
@@ -211,11 +214,14 @@ func EnactTopologyEvents[EP EPP[E], V VPI[V], E EPI[E], M MVI[M], N any, A Algor
 	uniqueCount := uint64(0)
 	canCheckTimestamp := (g.Options.TimestampPos != 0) || g.Options.LogicalTime
 	var ok bool
+	var sidxAny any
 	var sidx uint32
 
 	for i := uint64(0); i < changeCount; i++ {
-		if sidx, ok = gt.VertexMap[gt.TopologyEventBuff[i].SrcRaw]; !ok {
+		if sidxAny, ok = gt.VertexMap.Load(gt.TopologyEventBuff[i].SrcRaw); !ok {
 			sidx = NewVertex(alg, g, gt, gt.TopologyEventBuff[i].SrcRaw, gt.TopologyEventBuff[i].EventIdx())
+		} else {
+			sidx = sidxAny.(uint32)
 		}
 
 		uniqueCount = gt.checkInsertPending(sidx, uint32(i), uniqueCount)

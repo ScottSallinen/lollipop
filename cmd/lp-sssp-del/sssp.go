@@ -33,8 +33,13 @@ type VertexProperty struct {
 
 type EdgeProperty struct {
 	graph.WithWeight
-	graph.NoTimestamp
+	graph.WithTimestamp
 	graph.NoRaw
+}
+
+func (ep *EdgeProperty) ParseProperty(fields []string, _ int32, tPos int32) {
+	ts, _ := strconv.Atoi(fields[tPos])
+	ep.Ts = uint64(ts)
 }
 
 type NotificationType int
@@ -137,7 +142,7 @@ func triggerUpdateDistance(g *Graph, vp *VertexProperty, vertexRawId graph.RawTy
 
 func setAllToInfinityFinished(g *Graph) (sent uint64) {
 
-	log.Debug().Msg("setAllToInfinityFinished called")
+	//log.Debug().Msg("setAllToInfinityFinished called")
 	g.NodeParallelFor(func(ordinalStart, threadOffset uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note]) (accumulated int) {
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 			vp := gt.VertexProperty(i)
@@ -153,7 +158,7 @@ func setAllToInfinityFinished(g *Graph) (sent uint64) {
 }
 
 func (alg *SSSP) OnSuperStepConverged(g *Graph) (sent uint64) {
-	log.Debug().Msg("OnSuperStepConverged called")
+	//log.Debug().Msg("OnSuperStepConverged called")
 	switch alg.Phase {
 	case Normal:
 		return 0
@@ -166,7 +171,7 @@ func (alg *SSSP) OnSuperStepConverged(g *Graph) (sent uint64) {
 
 func onDistanceUpdate(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
 	currentVertex := n.Target
-	log.Debug().Msg("onDistanceUpdate: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
+	//log.Debug().Msg("onDistanceUpdate: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
 	prop.IncomingVertices[g.NodeVertexRawID(n.Note.Sender)] = true // add the sender to the incoming vertices
 	if prop.Distance > n.Note.Distance {
 		prop.Distance = n.Note.Distance
@@ -203,19 +208,19 @@ func onDistanceUpdate(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProper
 }
 
 func onAddToSuccessor(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
-	log.Debug().Msg(g.NodeVertexRawID(n.Target).String() + " Received AddToSuccessor: " + g.NodeVertexRawID(n.Note.Sender).String())
+	//log.Debug().Msg(g.NodeVertexRawID(n.Target).String() + " Received AddToSuccessor: " + g.NodeVertexRawID(n.Note.Sender).String())
 	prop.SuccessorVertices[g.NodeVertexRawID(n.Note.Sender)] = true
 	return sent
 }
 
 func onRemoveFromSuccessor(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
-	log.Debug().Msg(g.NodeVertexRawID(n.Target).String() + " Received RemoveFromSuccessor: " + g.NodeVertexRawID(n.Note.Sender).String())
+	//log.Debug().Msg(g.NodeVertexRawID(n.Target).String() + " Received RemoveFromSuccessor: " + g.NodeVertexRawID(n.Note.Sender).String())
 	delete(prop.SuccessorVertices, g.NodeVertexRawID(n.Note.Sender))
 	return sent
 }
 
 func onSetToInfinity(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
-	log.Debug().Msg("onSetToInfinity: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
+	//log.Debug().Msg("onSetToInfinity: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
 	prop.MarkedAsInfinity = true
 	prop.Distance = EmptyVal
 	prop.PredecessorVertex = EmptyVertex
@@ -232,7 +237,7 @@ func onSetToInfinity(g *Graph, gt *GraphThread, src *Vertex, prop *VertexPropert
 }
 
 func onDistanceQuery(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
-	log.Debug().Msg("onDistanceQuery: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
+	//log.Debug().Msg("onDistanceQuery: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
 	for _, edge := range src.OutEdges {
 		if edge.Didx == n.Note.Sender {
 			mailbox, senderIdx := g.NodeVertexMailbox(n.Note.Sender)
@@ -249,14 +254,14 @@ func onDistanceQuery(g *Graph, gt *GraphThread, src *Vertex, prop *VertexPropert
 }
 
 func onRemoveFromIncoming(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) uint64 {
-	log.Debug().Msg("onRemoveFromIncoming: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
+	//log.Debug().Msg("onRemoveFromIncoming: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
 	delete(prop.IncomingVertices, g.NodeVertexRawID(n.Note.Sender))
 	return 0
 }
 
 // Function called for a vertex update.
 func (alg *SSSP) OnUpdateVertex(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
-	log.Debug().Msg("OnUpdateVertex: " + g.NodeVertexRawID(n.Target).String() + " " + n.Note.Type.toString())
+	//log.Debug().Msg("OnUpdateVertex: " + g.NodeVertexRawID(n.Target).String() + " " + n.Note.Type.toString())
 	switch n.Note.Type {
 	case DistanceUpdate:
 		return onDistanceUpdate(g, gt, src, prop, n, m)
@@ -284,7 +289,7 @@ func (alg *SSSP) OnUpdateVertex(g *Graph, gt *GraphThread, src *Vertex, prop *Ve
 func (alg *SSSP) OnEdgeAdd(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, sidx uint32, eidxStart int, m Mail) (sent uint64) {
 	for eidx := eidxStart; eidx < len(src.OutEdges); eidx++ {
 		edge := src.OutEdges[eidx]
-		log.Debug().Msg("onEdgeAdd: " + g.NodeVertexRawID(sidx).String() + "->" + g.NodeVertexRawID(edge.Didx).String())
+		//log.Debug().Msg("onEdgeAdd: " + g.NodeVertexRawID(sidx).String() + "->" + g.NodeVertexRawID(edge.Didx).String())
 		mailbox, tidx := g.NodeVertexMailbox(edge.Didx)
 		notification := graph.Notification[Note]{
 			Target: edge.Didx, Note: Note{Type: DistanceUpdate, Sender: sidx, Distance: prop.Distance + edge.Property.Weight},
@@ -296,9 +301,9 @@ func (alg *SSSP) OnEdgeAdd(g *Graph, gt *GraphThread, src *Vertex, prop *VertexP
 
 // Not used in this algorithm.
 func (alg *SSSP) OnEdgeDel(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, sidx uint32, delEdges []Edge, mail Mail) (sent uint64) {
-	log.Debug().Msg("onEdgeDel: " + g.NodeVertexRawID(sidx).String())
+	//log.Debug().Msg("onEdgeDel: " + g.NodeVertexRawID(sidx).String())
 	for _, deletedEdge := range delEdges {
-		log.Debug().Msg("onEdgeDel: " + g.NodeVertexRawID(sidx).String() + "->" + g.NodeVertexRawID(deletedEdge.Didx).String())
+		//log.Debug().Msg("onEdgeDel: " + g.NodeVertexRawID(sidx).String() + "->" + g.NodeVertexRawID(deletedEdge.Didx).String())
 		mailbox, tidx := g.NodeVertexMailbox(deletedEdge.Didx)
 		notification := graph.Notification[Note]{
 			Target: deletedEdge.Didx, Note: Note{Type: RemoveFromIncoming, Sender: sidx},

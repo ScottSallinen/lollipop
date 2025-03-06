@@ -108,8 +108,8 @@ func (gt *GraphThread[V, E, M, N]) VertexRawID(internalOrOffset uint32) RawType 
 
 // Node level, vertex reference from Raw ID.
 func (g *Graph[V, E, M, N]) NodeVertexFromRaw(rawId RawType) (uint32, *Vertex[V, E]) {
-	if internalId, ok := g.GraphThreads[rawId.Within(g.NumThreads)].VertexMap[rawId]; ok {
-		return internalId, g.NodeVertex(internalId)
+	if internalId, ok := g.GraphThreads[rawId.Within(g.NumThreads)].VertexMap.Load(rawId); ok {
+		return internalId.(uint32), g.NodeVertex(internalId.(uint32))
 	}
 	return 0, nil
 }
