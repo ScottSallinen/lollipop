@@ -15,7 +15,9 @@ import (
 func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	log.Debug().Msg("Checking correctness.")
 	maxValue := make([]float64, g.NumThreads)
-	distanceCountMap := sync.Map{}
+
+	distanceCountMap := map[float64]uint32{}
+	lock := sync.RWMutex{}
 
 	// Denote vertices that claim unvisited, and ensure out edges are at least as good as we could provide.
 	visited := g.NodeParallelFor(func(_, threadOffset uint32, gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note]) int {
@@ -28,11 +30,13 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
 				visitCount++
 			}
-			if curr, ok := distanceCountMap.Load(ourValue); ok {
-				distanceCountMap.Store(ourValue, curr.(int)+1)
+			lock.Lock()
+			if curr, ok := distanceCountMap[ourValue]; ok {
+				distanceCountMap[ourValue] = curr + 1
 			} else {
-				distanceCountMap.Store(ourValue, 1)
+				distanceCountMap[ourValue] = 1
 			}
+			lock.Unlock()
 
 			if ourValue == EmptyVal {
 				// we were never visited.
@@ -51,13 +55,12 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 	log.Info().Msg("Visited: " + utils.V(visited) + ", Percent: " + utils.F("%.3f", float64(visited)/float64(g.NodeVertexCount())*100.0))
 	log.Info().Msg("MaxValue (longest shortest path): " + utils.V(utils.MaxSlice(maxValue)))
 	var keys []float64
-	distanceCountMap.Range(func(key, _ interface{}) bool {
-		keys = append(keys, key.(float64))
-		return true
-	})
+	for k, _ := range distanceCountMap {
+		keys = append(keys, k)
+	}
 	sort.Float64s(keys)
 	for _, key := range keys {
-		value, _ := distanceCountMap.Load(key)
+		value, _ := distanceCountMap[key]
 		log.Info().Msg("Distance: " + utils.V(key) + ", Count: " + utils.V(value))
 	}
 }
