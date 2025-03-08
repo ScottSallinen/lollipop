@@ -8,15 +8,13 @@ import (
 	"sync/atomic"
 )
 
-type Phase int
-
 const (
-	Normal = iota
-	SetAllToInfinity
+	Normal           = int32(0)
+	SetAllToInfinity = int32(1)
 )
 
 type SSSP struct {
-	Phase        Phase
+	Phase        int32
 	SourceVertex graph.RawType
 }
 
@@ -24,11 +22,14 @@ const EmptyVal = math.MaxFloat64
 const EmptyVertex = math.MaxUint32
 
 type VertexProperty struct {
-	Distance          float64
-	PredecessorVertex uint32
-	IncomingVertices  map[uint32]bool // Hashset
-	SuccessorVertices map[uint32]bool // Hashset
-	MarkedAsInfinity  bool
+	Distance             float64
+	PredecessorVertex    uint32
+	IncomingVertices     map[uint32]bool // Hashset
+	SuccessorVertices    map[uint32]bool // Hashset
+	MarkedAsInfinity     bool
+	MarkedAsInfinityTime uint64
+	InboxHistory         []Note
+	OutboxHistory        []graph.Notification[Note]
 }
 
 type EdgeProperty struct {
@@ -80,6 +81,7 @@ type Note struct {
 	Type     NotificationType
 	Sender   uint32
 	Distance float64 // For DistanceUpdate
+	Ts       uint64
 }
 
 type Graph = graph.Graph[VertexProperty, EdgeProperty, Mail, Note]
@@ -88,7 +90,7 @@ type Vertex = graph.Vertex[VertexProperty, EdgeProperty]
 type Edge = graph.Edge[EdgeProperty]
 
 func (VertexProperty) New() VertexProperty {
-	return VertexProperty{Distance: EmptyVal, PredecessorVertex: EmptyVertex, IncomingVertices: make(map[uint32]bool), SuccessorVertices: make(map[uint32]bool), MarkedAsInfinity: false}
+	return VertexProperty{Distance: EmptyVal, PredecessorVertex: EmptyVertex, IncomingVertices: make(map[uint32]bool), SuccessorVertices: make(map[uint32]bool), MarkedAsInfinity: false, InboxHistory: make([]Note, 0), OutboxHistory: make([]graph.Notification[Note], 0)}
 }
 
 func (Mail) New() Mail {
@@ -126,14 +128,15 @@ func (alg *SSSP) BaseVertexMailbox(v *Vertex, vp *VertexProperty, internalId uin
 	return m
 }
 
-func triggerUpdateDistance(g *Graph, vp *VertexProperty, vertexId uint32) (sent uint64) {
+func triggerUpdateDistance(g *Graph, vp *VertexProperty, vertexId uint32, ts uint64) (sent uint64) {
 	for incomingId, _ := range vp.IncomingVertices {
 		notificationToOldParent := graph.Notification[Note]{
 			Target: incomingId,
-			Note:   Note{Type: DistanceQuery, Sender: vertexId},
+			Note:   Note{Type: DistanceQuery, Sender: vertexId, Ts: ts},
 		}
 		incomingMailbox, incomingIdx := g.NodeVertexMailbox(incomingId)
 		sent += g.EnsureSend(g.ActiveNotification(vertexId, notificationToOldParent, incomingMailbox, incomingIdx))
+		vp.OutboxHistory = append(vp.OutboxHistory, notificationToOldParent)
 	}
 	return sent
 }
@@ -147,8 +150,9 @@ func setAllToInfinityFinished(g *Graph) (sent uint64) {
 			if !vp.MarkedAsInfinity {
 				continue
 			}
-			atomic.AddUint64(&sent, triggerUpdateDistance(g, vp, threadOffset|i))
+			atomic.AddUint64(&sent, triggerUpdateDistance(g, vp, threadOffset|i, vp.MarkedAsInfinityTime))
 			vp.MarkedAsInfinity = false
+			vp.MarkedAsInfinityTime = 0
 		}
 		return 0
 	})
@@ -159,7 +163,8 @@ func (alg *SSSP) OnSuperStepConverged(g *Graph) (sent uint64) {
 	//log.Debug().Msg("OnSuperStepConverged called")
 	switch alg.Phase {
 	case Normal:
-		return 0
+		//alg.OnCheckCorrectness(g)
+		sent = 0
 	case SetAllToInfinity:
 		sent += setAllToInfinityFinished(g)
 		alg.Phase = Normal
@@ -178,27 +183,30 @@ func onDistanceUpdate(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProper
 		if prop.PredecessorVertex != EmptyVertex {
 			notificationToOldParent := graph.Notification[Note]{
 				Target: prop.PredecessorVertex,
-				Note:   Note{Type: RemoveFromSuccessor, Sender: currentVertex},
+				Note:   Note{Type: RemoveFromSuccessor, Sender: currentVertex, Ts: n.Note.Ts},
 			}
 			oldParentMailbox, oldParentIdx := g.NodeVertexMailbox(prop.PredecessorVertex)
 			sent += g.EnsureSend(g.ActiveNotification(currentVertex, notificationToOldParent, oldParentMailbox, oldParentIdx))
+			prop.OutboxHistory = append(prop.OutboxHistory, notificationToOldParent)
 		}
 
 		// Update the predecessor vertex
 		prop.PredecessorVertex = n.Note.Sender
 		notificationToNewParent := graph.Notification[Note]{
 			Target: n.Note.Sender,
-			Note:   Note{Type: AddToSuccessor, Sender: currentVertex},
+			Note:   Note{Type: AddToSuccessor, Sender: currentVertex, Ts: n.Note.Ts},
 		}
 		senderMailbox, senderIdx := g.NodeVertexMailbox(n.Note.Sender)
 		sent += g.EnsureSend(g.ActiveNotification(currentVertex, notificationToNewParent, senderMailbox, senderIdx))
+		prop.OutboxHistory = append(prop.OutboxHistory, notificationToNewParent)
 
 		for _, edge := range src.OutEdges {
 			mailbox, tidx := g.NodeVertexMailbox(edge.Didx)
 			notification := graph.Notification[Note]{
-				Target: edge.Didx, Note: Note{Type: DistanceUpdate, Sender: currentVertex, Distance: prop.Distance + edge.Property.Weight},
+				Target: edge.Didx, Note: Note{Type: DistanceUpdate, Sender: currentVertex, Distance: prop.Distance + edge.Property.Weight, Ts: n.Note.Ts},
 			}
 			sent += g.EnsureSend(g.ActiveNotification(currentVertex, notification, mailbox, tidx))
+			prop.OutboxHistory = append(prop.OutboxHistory, notification)
 		}
 	}
 	return sent
@@ -224,9 +232,10 @@ func onSetToInfinity(g *Graph, gt *GraphThread, src *Vertex, prop *VertexPropert
 	for successor, _ := range prop.SuccessorVertices {
 		mailbox, successorIdx := g.NodeVertexMailbox(successor)
 		notification := graph.Notification[Note]{
-			Target: successor, Note: Note{Type: SetToInfinity, Sender: n.Target},
+			Target: successor, Note: Note{Type: SetToInfinity, Sender: n.Target, Ts: n.Note.Ts},
 		}
 		sent += g.EnsureSend(g.ActiveNotification(n.Target, notification, mailbox, successorIdx))
+		prop.OutboxHistory = append(prop.OutboxHistory, notification)
 	}
 	prop.SuccessorVertices = make(map[uint32]bool)
 	return sent
@@ -238,9 +247,10 @@ func onDistanceQuery(g *Graph, gt *GraphThread, src *Vertex, prop *VertexPropert
 		if edge.Didx == n.Note.Sender {
 			mailbox, senderIdx := g.NodeVertexMailbox(n.Note.Sender)
 			notification := graph.Notification[Note]{
-				Target: n.Note.Sender, Note: Note{Type: DistanceUpdate, Sender: n.Target, Distance: prop.Distance + edge.Property.Weight},
+				Target: n.Note.Sender, Note: Note{Type: DistanceUpdate, Sender: n.Target, Distance: prop.Distance + edge.Property.Weight, Ts: n.Note.Ts},
 			}
 			sent += g.EnsureSend(g.ActiveNotification(n.Target, notification, mailbox, senderIdx))
+			prop.OutboxHistory = append(prop.OutboxHistory, notification)
 		}
 	}
 	if sent == 0 {
@@ -258,6 +268,7 @@ func onRemoveFromIncoming(g *Graph, gt *GraphThread, src *Vertex, prop *VertexPr
 // Function called for a vertex update.
 func (alg *SSSP) OnUpdateVertex(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
 	//log.Debug().Msg("OnUpdateVertex: " + g.NodeVertexRawID(n.Target).String() + " " + n.Note.Type.toString())
+	prop.InboxHistory = append(prop.InboxHistory, n.Note)
 	switch n.Note.Type {
 	case DistanceUpdate:
 		return onDistanceUpdate(g, gt, src, prop, n, m)
@@ -288,9 +299,10 @@ func (alg *SSSP) OnEdgeAdd(g *Graph, gt *GraphThread, src *Vertex, prop *VertexP
 		//log.Debug().Msg("onEdgeAdd: " + g.NodeVertexRawID(sidx).String() + "->" + g.NodeVertexRawID(edge.Didx).String())
 		mailbox, tidx := g.NodeVertexMailbox(edge.Didx)
 		notification := graph.Notification[Note]{
-			Target: edge.Didx, Note: Note{Type: DistanceUpdate, Sender: sidx, Distance: prop.Distance + edge.Property.Weight},
+			Target: edge.Didx, Note: Note{Type: DistanceUpdate, Sender: sidx, Distance: prop.Distance + edge.Property.Weight, Ts: edge.Property.Ts},
 		}
 		sent += g.EnsureSend(g.ActiveNotification(sidx, notification, mailbox, tidx))
+		prop.OutboxHistory = append(prop.OutboxHistory, notification)
 	}
 	return sent
 }
@@ -299,20 +311,22 @@ func (alg *SSSP) OnEdgeAdd(g *Graph, gt *GraphThread, src *Vertex, prop *VertexP
 func (alg *SSSP) OnEdgeDel(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, sidx uint32, delEdges []Edge, mail Mail) (sent uint64) {
 	//log.Debug().Msg("onEdgeDel: " + g.NodeVertexRawID(sidx).String())
 	for _, deletedEdge := range delEdges {
-		log.Debug().Msg("onEdgeDel: " + g.NodeVertexRawID(sidx).String() + "->" + g.NodeVertexRawID(deletedEdge.Didx).String())
+		//log.Debug().Msg("onEdgeDel: " + g.NodeVertexRawID(sidx).String() + "->" + g.NodeVertexRawID(deletedEdge.Didx).String())
 		mailbox, tidx := g.NodeVertexMailbox(deletedEdge.Didx)
 		notification := graph.Notification[Note]{
-			Target: deletedEdge.Didx, Note: Note{Type: RemoveFromIncoming, Sender: sidx},
+			Target: deletedEdge.Didx, Note: Note{Type: RemoveFromIncoming, Sender: sidx, Ts: deletedEdge.Property.Ts},
 		}
 		sent += g.EnsureSend(g.ActiveNotification(sidx, notification, mailbox, tidx))
+		prop.OutboxHistory = append(prop.OutboxHistory, notification)
 		isSourceOnShortestPath, _ := prop.SuccessorVertices[deletedEdge.Didx]
 		if isSourceOnShortestPath {
 			delete(prop.SuccessorVertices, deletedEdge.Didx)
 			notification = graph.Notification[Note]{
-				Target: deletedEdge.Didx, Note: Note{Type: SetToInfinity, Sender: sidx},
+				Target: deletedEdge.Didx, Note: Note{Type: SetToInfinity, Sender: sidx, Ts: deletedEdge.Property.Ts},
 			}
 			sent += g.EnsureSend(g.ActiveNotification(sidx, notification, mailbox, tidx))
-			alg.Phase = SetAllToInfinity
+			prop.OutboxHistory = append(prop.OutboxHistory, notification)
+			atomic.SwapInt32(&alg.Phase, SetAllToInfinity)
 		}
 	}
 	return sent

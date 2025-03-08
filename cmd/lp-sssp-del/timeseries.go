@@ -65,17 +65,19 @@ func appendToJson(filename string, newReport ShortestPathReport) {
 	}
 }
 
-func (*SSSP) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
-	ssspReport := make(map[uint32]float64)
-	tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
-		//fmt.Println(tse.GraphView.NodeVertexRawID(v), prop.Predecessor.TotalDistance)
-		ssspReport[tse.GraphView.NodeVertexRawID(v).Integer()] = prop.Distance
-	})
-	appendToJson("/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json",
-		ShortestPathReport{
-			Timestamp:   int(tse.AtEventIndex),
-			DistanceMap: ssspReport,
-		})
+func (alg *SSSP) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
+	alg.OnCheckCorrectness(tse.GraphView)
+	//OnCheckCorrectness(tse.GraphView)
+	//ssspReport := make(map[uint32]float64)
+	//tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
+	//	//fmt.Println(tse.GraphView.NodeVertexRawID(v), prop.Predecessor.TotalDistance)
+	//	ssspReport[tse.GraphView.NodeVertexRawID(v).Integer()] = prop.Distance
+	//})
+	//appendToJson("/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json",
+	//	ShortestPathReport{
+	//		Timestamp:   int(tse.AtEventIndex),
+	//		DistanceMap: ssspReport,
+	//	})
 }
 
 //import (

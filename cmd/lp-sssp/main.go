@@ -11,7 +11,7 @@ import (
 )
 
 // Performs some sanity checks for correctness.
-func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
+func (alg *SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	maxValue := make([]float64, g.NumThreads)
 	numDistZero := uint64(0)
 	numDistOne := uint64(0)
@@ -64,6 +64,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 	log.Info().Msg("Visited: " + utils.V(visited) + ", Percent: " + utils.F("%.3f", float64(visited)/float64(g.NodeVertexCount())*100.0))
 	log.Info().Msg("MaxValue (longest shortest path): " + utils.V(utils.MaxSlice(maxValue)))
 	log.Info().Msg("Num with distances of: 0: " + utils.V(numDistZero) + ", 1: " + utils.V(numDistOne) + ", 2: " + utils.V(numDistTwo) + ", 3: " + utils.V(numDistThree) + ", 4: " + utils.V(numDistFour))
+	log.Info().Msg("Number of Deletions: " + utils.V(alg.DelCounter) + ", Number of Additions: " + utils.V(alg.AddCounter))
 }
 
 // Compares the results of the algorithm to the oracle.

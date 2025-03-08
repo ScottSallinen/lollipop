@@ -25,7 +25,8 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		visitCount := 0
 		for i := uint32(0); i < uint32(len(gt.Vertices)); i++ {
 			vertex := &gt.Vertices[i]
-			ourValue := gt.VertexProperty(i).Distance
+			ourProp := gt.VertexProperty(i)
+			ourValue := ourProp.Distance
 			if ourValue < EmptyVal {
 				maxValue[tidx] = utils.Max(maxValue[tidx], (ourValue))
 				visitCount++
@@ -42,10 +43,32 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 				// we were never visited.
 			} else {
 				for eidx := range vertex.OutEdges {
-					targetProp := g.NodeVertexProperty(vertex.OutEdges[eidx].Didx).Distance
+					targetProp := g.NodeVertexProperty(vertex.OutEdges[eidx].Didx)
+					targetDistance := targetProp.Distance
 					// Should not be worse than what we could provide.
-					if targetProp > (ourValue + vertex.OutEdges[eidx].Property.Weight) {
-						log.Warn().Msg("Unexpected neighbour From(" + g.NodeVertexRawID(threadOffset|i).String() + "->" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + ") weight: " + utils.V(targetProp) + ", vs our weight: " + utils.V(ourValue) + " with edge weight: " + utils.V(vertex.OutEdges[eidx].Property.Weight) + "Edge timestamp: " + utils.V(vertex.OutEdges[eidx].Property.Ts) + " Delete Mark: " + utils.V(vertex.OutEdges[eidx].Pos&(1<<31)))
+					if targetDistance > (ourValue + vertex.OutEdges[eidx].Property.Weight) {
+						incomingStr := "["
+						for pred, v := range targetProp.IncomingVertices {
+							if !v {
+								log.Warn().Msg("Incoming vertex " + g.NodeVertexRawID(pred).String() + " of " + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + " does not have us as a predecessor.")
+							}
+							incomingStr += g.NodeVertexRawID(pred).String() + ","
+						}
+						incomingStr += "]"
+						notifHistory := "["
+						for _, notif := range targetProp.InboxHistory {
+							notifHistory += "{" + notif.Type.toString() + " From " + g.NodeVertexRawID(notif.Sender).String() + " at " + utils.V(notif.Ts) + "},"
+						}
+						notifHistory += "]"
+						outboxHistory := "["
+						for _, notif := range ourProp.OutboxHistory {
+							outboxHistory += "{" + notif.Note.Type.toString() + " To " + g.NodeVertexRawID(notif.Target).String() + " at " + utils.V(notif.Note.Ts) + "},"
+						}
+						if targetProp.PredecessorVertex == EmptyVertex {
+							log.Panic().Msg("Incorrect Distance(" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + ":" + utils.V(targetDistance) + " from EmptyVertex) (Incoming: " + incomingStr + ") = Shorter path from " + g.NodeVertexRawID(threadOffset|i).String() + "(" + utils.V(ourValue) + ")--w=" + utils.V(vertex.OutEdges[eidx].Property.Weight) + "-->" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + " Edge timestamp: " + utils.V(vertex.OutEdges[eidx].Property.Ts) + " LastNotif: " + notifHistory + " - Outbox: " + outboxHistory)
+						} else {
+							log.Panic().Msg("Incorrect Distance(" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + ":" + utils.V(targetDistance) + " from " + g.NodeVertexRawID(targetProp.PredecessorVertex).String() + ") (Incoming: " + incomingStr + ") = Shorter path from " + g.NodeVertexRawID(threadOffset|i).String() + "(" + utils.V(ourValue) + ")--w=" + utils.V(vertex.OutEdges[eidx].Property.Weight) + "-->" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + " Edge timestamp: " + utils.V(vertex.OutEdges[eidx].Property.Ts) + " LastNotif: " + notifHistory + " - Outbox: " + outboxHistory)
+						}
 					}
 				}
 			}
@@ -68,6 +91,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 // Compares the results of the algorithm to the oracle.
 func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
 	// Default compare function is fine; diffs should all be zero (algorithm is deterministic).
+	log.Info().Msg("Comparing to oracle.")
 	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Distance })
 }
 

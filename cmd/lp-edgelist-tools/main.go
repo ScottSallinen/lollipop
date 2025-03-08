@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"math/rand"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -143,7 +144,7 @@ func main() {
 
 	log.Info().Msg("Writing lines: " + utils.V(len(lineList)))
 
-	f := utils.OpenFile(*gPtr + suffix)
+	f, _ := os.OpenFile(*gPtr+suffix, os.O_CREATE|os.O_WRONLY, 0644)
 
 	defer f.Close()
 	for line := range lineList {

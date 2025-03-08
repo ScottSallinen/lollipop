@@ -1,6 +1,6 @@
 package main
 
-func main() {
+func main2() {
 	n := 50   // Number of nodes
 	m := 1000 // Number of edges
 
