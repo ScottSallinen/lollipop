@@ -77,7 +77,7 @@ func (gr *GlobalRelabel) SyncGlobalRelabel(g *Graph, pr *PushRelabel) {
 	gr.t0 = time.Now()
 	gr.CurrentPhase = DRAIN_MSG
 	gr.BlockLift.Store(true)
-	if g.Options.Dynamic {
+	if g.Options.Dynamic { // Perhaps just don't trigger GR at all when topology changes are not blocked?
 		g.Broadcast(graph.BLOCK_TOP_ASYNC)
 	}
 }
