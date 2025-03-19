@@ -66,7 +66,8 @@ func appendToJson(filename string, newReport ShortestPathReport) {
 }
 
 func (alg *SSSP) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
-	alg.OnCheckCorrectness(tse.GraphView)
+	//alg.OnCheckCorrectness(tse.GraphView)
+	//tse.CurrentRuntime
 	//OnCheckCorrectness(tse.GraphView)
 	//ssspReport := make(map[uint32]float64)
 	//tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {

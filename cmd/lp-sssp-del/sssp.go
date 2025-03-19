@@ -164,6 +164,7 @@ func (alg *SSSP) OnSuperStepConverged(g *Graph) (sent uint64) {
 	switch alg.Phase {
 	case Normal:
 		//alg.OnCheckCorrectness(g)
+
 		sent = 0
 	case SetAllToInfinity:
 		sent += setAllToInfinityFinished(g)
@@ -242,7 +243,7 @@ func onSetToInfinity(g *Graph, gt *GraphThread, src *Vertex, prop *VertexPropert
 }
 
 func onDistanceQuery(g *Graph, gt *GraphThread, src *Vertex, prop *VertexProperty, n graph.Notification[Note], m Mail) (sent uint64) {
-	//log.Debug().Msg("onDistanceQuery: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
+	// log.Debug().Msg("onDistanceQuery: " + g.NodeVertexRawID(n.Target).String() + " from " + g.NodeVertexRawID(n.Note.Sender).String())
 	for _, edge := range src.OutEdges {
 		if edge.Didx == n.Note.Sender {
 			mailbox, senderIdx := g.NodeVertexMailbox(n.Note.Sender)
@@ -285,7 +286,7 @@ func (alg *SSSP) OnUpdateVertex(g *Graph, gt *GraphThread, src *Vertex, prop *Ve
 	case EMPTY:
 		return 0
 	default:
-		log.Warn().Msg(string("Unexpected notification type: " + n.Note.Type.toString() + " " + strconv.Itoa(int(n.Note.Type))))
+		log.Warn().Msg("Unexpected notification type: " + n.Note.Type.toString() + " " + strconv.Itoa(int(n.Note.Type)))
 	}
 	return sent
 }

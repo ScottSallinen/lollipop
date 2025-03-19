@@ -93,12 +93,13 @@ func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, 
 	// Default compare function is fine; diffs should all be zero (algorithm is deterministic).
 	log.Info().Msg("Comparing to oracle.")
 	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Distance })
+
 }
 
 // Launch point. Parses command line arguments, and launches the graph execution.
 func main() {
 	_ = os.Remove("/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
-	random := false
+	random := true
 	if random {
 		testSSSP()
 		//V, E := 50, 500
