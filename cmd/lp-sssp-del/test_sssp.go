@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/ScottSallinen/lollipop/graph"
 	"io"
 	"os"
+
+	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/rs/zerolog/log"
 )
 
 type TestCase struct {
@@ -92,12 +94,14 @@ func ssspAlgorithm(filename string) {
 }
 
 func runTestCase(test TestCase, inputPath, expectedPath, actualPath string) {
+	log.Info().Msg(fmt.Sprintf("Running test case: %v", test.Name))
+
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
 	// Set custom args
-	os.Args = []string{"", "-g", inputPath, "-d", "-de", fmt.Sprintf("%v", test.QueryInterval), "-debug", "1"}
+	os.Args = []string{"", "-g", inputPath, "-c", "-d", "-de", fmt.Sprintf("%v", test.QueryInterval), "-debug", "1"}
 
 	// Write test input file
 	err := writeTestInput(inputPath, test.Events)
@@ -184,7 +188,7 @@ func testSSSP() {
 	testCases := []TestCase{
 		{
 			Name:          "basic_add_delete",
-			QueryInterval: 1,
+			QueryInterval: 100,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -198,7 +202,7 @@ func testSSSP() {
 		},
 		{
 			Name:          "disconnected_to_connected",
-			QueryInterval: 1,
+			QueryInterval: 100,
 			Events: []string{
 				"1 4",
 				"4 5",
@@ -212,7 +216,7 @@ func testSSSP() {
 		},
 		{
 			Name:          "graph_becomes_disconnected",
-			QueryInterval: 1,
+			QueryInterval: 100,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -226,7 +230,7 @@ func testSSSP() {
 		},
 		{
 			Name:          "cycle_formation_breaking",
-			QueryInterval: 1,
+			QueryInterval: 100,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -242,7 +246,7 @@ func testSSSP() {
 		},
 		{
 			Name:          "path_shortening_and_lengthening",
-			QueryInterval: 1,
+			QueryInterval: 100,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -258,7 +262,7 @@ func testSSSP() {
 		},
 		{
 			Name:          "large_sparse_graph",
-			QueryInterval: 1,
+			QueryInterval: 100,
 			Events: []string{
 				"1 10",
 				"10 20",
@@ -276,23 +280,43 @@ func testSSSP() {
 		},
 		{
 			Name:          "frequent_add_delete",
-			QueryInterval: 1,
+			QueryInterval: 100,
 			Events: []string{
 				"1 2",
 				"D 1 2",
 				"1 2",
 				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
+				"D 1 2",
+				"1 2",
 			},
-			Expected: []ShortestPathReport{
-				{Timestamp: 0, DistanceMap: map[uint32]float64{1: 0, 2: 1}},
-				{Timestamp: 1, DistanceMap: map[uint32]float64{1: 0, 2: EmptyVal}},
-				{Timestamp: 2, DistanceMap: map[uint32]float64{1: 0, 2: 1}},
-				{Timestamp: 3, DistanceMap: map[uint32]float64{1: 0, 2: EmptyVal}},
-			},
+			Expected: []ShortestPathReport{},
 		},
 		{
 			Name:          "cycle_add_delete",
-			QueryInterval: 1,
+			QueryInterval: 100,
 			Events: []string{
 				"1 2",
 				"2 3",
@@ -318,7 +342,127 @@ func testSSSP() {
 				{Timestamp: 9, DistanceMap: map[uint32]float64{1: 0, 2: 1, 3: 2, 4: 3, 5: 4}},
 			},
 		},
+		{
+			Name:          "delete_among_multiple_shortest_paths",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",
+				"1 3",
+				"2 4",
+				"3 4",
+				"D 1 3", // Removing one of the two equally short edges.
+			},
+			Expected: []ShortestPathReport{},
+		},
+		{
+			Name:          "delete_redundant_cycle_edge",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",
+				"2 3",
+				"3 4",
+				"4 1",  // Completes a cycle.
+				"2 4",  // Adds a redundant, shorter path from 2 to 4.
+				"D 2 4", // Deletes the redundant edge.
+			},
+			Expected: []ShortestPathReport{},
+		},
+		{
+			Name:          "delete_redundant_cycle_edge_add_again",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",
+				"2 3",
+				"3 4",
+				"4 1",  // Completes a cycle.
+				"2 4",  // Adds a redundant, shorter path from 2 to 4.
+				"D 2 4", // Deletes the redundant edge.
+				"D 1 2",
+				"1 3",
+				"1 4",
+			},
+			Expected: []ShortestPathReport{},
+		},
+		{
+			Name:          "batch_deletions_cascading",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",
+				"1 3",
+				"2 4",
+				"2 5",
+				"3 6",
+				"3 7",
+				"D 1 2", // Remove branch from node 2.
+				"D 3 6", // Remove one leaf from branch 3.
+				"D 1 3", // Remove branch from node 3.
+			},
+			Expected: []ShortestPathReport{},
+		},
+		{
+			Name:          "hub_deletion_star_topology",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",
+				"1 3",
+				"1 4",
+				"1 5",
+				"D 1 3", // Delete one connection from the hub.
+				"D 1 4", // Delete another connection.
+			},
+			Expected: []ShortestPathReport{},
+		},
+		{
+			Name:          "interleaved_add_delete_multi_edge",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",   // Add edge.
+				"2 3",   // Extend the graph.
+				"D 1 2", // Delete one instance (if multi-edge supported, edge remains).
+				"1 3",
+			},
+			Expected: []ShortestPathReport{},
+		},
+		{
+			Name:          "swapped_deletion_and_alternative_path",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",  // Add direct edge from 1 to 2.
+				"2 3",  // Add edge from 2 to 3.
+				"1 4",  // Alternative path: add edge from 1 to 4.
+				"4 2",  // Alternative path: add edge from 4 to 2.
+				"D 1 2", // Delete critical edge 1->2 (arrives after alternative path edges).
+				"3 2",  
+				"1 2",
+			},
+			Expected: []ShortestPathReport{},
+		},
+		{
+			Name:          "swapped_consecutive_deletions_in_cycle",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",   // Add edge from 1 to 2.
+				"2 3",   // Add edge from 2 to 3.
+				"3 1",   // Add edge from 3 to 1, forming a cycle.
+				"D 3 1", // Delete edge from 3 to 1 first.
+				"D 2 3", // Then delete edge from 2 to 3.
+			},
+			Expected: []ShortestPathReport{},
+		},
+		{
+			Name:          "swapped_deletion_of_critical_edge_with_delay",
+			QueryInterval: 100,
+			Events: []string{
+				"1 2",   // Add edge from 1 to 2 (critical path to 4).
+				"1 3",   // Add alternative edge from 1 to 3.
+				"2 4",   // Add edge from 2 to 4.
+				"3 4",   // Add edge from 3 to 4 (alternative path).
+				"D 1 2", // Delete critical edge from 1 to 2 (arrives after alternative path is added).
+			},
+			Expected: []ShortestPathReport{},
+		},
 	}
+
 
 	var dataPath = "/Users/pjavanrood/Documents/NetSys/lollipop/data"
 	for _, test := range testCases {

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/ScottSallinen/lollipop/graph"
@@ -19,8 +22,13 @@ type VPMsg struct {
 
 type EPMsg struct {
 	graph.WithWeight
-	graph.NoTimestamp
+	graph.WithTimestamp
 	graph.NoRaw
+}
+
+func (ep *EPMsg) ParseProperty(fields []string, _ int32, tPos int32) {
+	ts, _ := strconv.Atoi(fields[tPos])
+	ep.Ts = uint64(ts)
 }
 
 type MailMsg struct{}
@@ -86,7 +94,8 @@ func (*SSSPM) OnEdgeAdd(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], gt *grap
 // Compatibility stuff below.
 
 func (*SSSPM) OnEdgeDel(*graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], *graph.GraphThread[VPMsg, EPMsg, MailMsg, NoteMsg], *graph.Vertex[VPMsg, EPMsg], *VPMsg, uint32, []graph.Edge[EPMsg], MailMsg) (sent uint64) {
-	panic("Incremental only algorithm")
+	// panic("Incremental only algorithm")
+	return 0
 }
 
 func (*SSSPM) OnCheckCorrectness(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg]) {
@@ -145,6 +154,36 @@ func (*SSSPM) OnCheckCorrectness(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg])
 	log.Info().Msg("Num with distances of: 0: " + utils.V(numDistZero) + ", 1: " + utils.V(numDistOne) + ", 2: " + utils.V(numDistTwo) + ", 3: " + utils.V(numDistThree) + ", 4: " + utils.V(numDistFour))
 }
 
-func (*SSSPM) OnOracleCompare(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], oracle *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg]) {
+func (alg *SSSPM) OnOracleCompare(g *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg], oracle *graph.Graph[VPMsg, EPMsg, MailMsg, NoteMsg]) {
+	// Check the correctness of the oracle.
 	graph.OracleGenericCompareValues(g, oracle, func(vp VPMsg) float64 { return vp.Value })
+	log.Info().Msg("Checking correctness of oracle.")
+	alg.OnCheckCorrectness(oracle)
+
+	eventIndex := uint64(0)
+	for t := 0; t < int(g.NumThreads); t++ {
+		eventIndex = utils.Max(eventIndex, g.GraphThreads[t].AtEvent)
+	}
+
+	_, err := os.Stat(OracleFilename)
+	fileExisted := !os.IsNotExist(err)
+
+	file, err := os.OpenFile(OracleFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Error().Msg("Error opening/creating file:" + err.Error())
+		return
+	}
+	defer file.Close()
+	
+	var line string
+	if !fileExisted {
+		line = "AtEventIndex,AbsoluteElapsed,Elapsed\n"
+		if _, err := file.WriteString(line); err != nil {
+			log.Error().Msg("Error writing to file:" + err.Error())
+		}
+	}
+	line = fmt.Sprintf("%d,%d,%d\n", eventIndex, oracle.AlgTimer.AbsoluteElapsed().Nanoseconds(), oracle.AlgTimer.Elapsed().Nanoseconds())
+	if _, err := file.WriteString(line); err != nil {
+		log.Error().Msg("Error writing to file:" + err.Error())
+	}
 }

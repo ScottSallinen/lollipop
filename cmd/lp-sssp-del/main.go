@@ -13,7 +13,7 @@ import (
 
 // Performs some sanity checks for correctness.
 func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
-	log.Debug().Msg("Checking correctness.")
+	log.Info().Msg("Checking correctness.")
 	maxValue := make([]float64, g.NumThreads)
 
 	distanceCountMap := map[float64]uint32{}
@@ -54,20 +54,20 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 							}
 							incomingStr += g.NodeVertexRawID(pred).String() + ","
 						}
-						incomingStr += "]"
-						notifHistory := "["
-						for _, notif := range targetProp.InboxHistory {
-							notifHistory += "{" + notif.Type.toString() + " From " + g.NodeVertexRawID(notif.Sender).String() + " at " + utils.V(notif.Ts) + "},"
-						}
-						notifHistory += "]"
-						outboxHistory := "["
-						for _, notif := range ourProp.OutboxHistory {
-							outboxHistory += "{" + notif.Note.Type.toString() + " To " + g.NodeVertexRawID(notif.Target).String() + " at " + utils.V(notif.Note.Ts) + "},"
-						}
+						// incomingStr += "]"
+						// notifHistory := "["
+						// for _, notif := range targetProp.InboxHistory {
+						// 	notifHistory += "{" + notif.Type.toString() + " From " + g.NodeVertexRawID(notif.Sender).String() + " at " + utils.V(notif.Ts) + "},"
+						// }
+						// notifHistory += "]"
+						// outboxHistory := "["
+						// for _, notif := range ourProp.OutboxHistory {
+						// 	outboxHistory += "{" + notif.Note.Type.toString() + " To " + g.NodeVertexRawID(notif.Target).String() + " at " + utils.V(notif.Note.Ts) + "},"
+						// }
 						if targetProp.PredecessorVertex == EmptyVertex {
-							log.Panic().Msg("Incorrect Distance(" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + ":" + utils.V(targetDistance) + " from EmptyVertex) (Incoming: " + incomingStr + ") = Shorter path from " + g.NodeVertexRawID(threadOffset|i).String() + "(" + utils.V(ourValue) + ")--w=" + utils.V(vertex.OutEdges[eidx].Property.Weight) + "-->" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + " Edge timestamp: " + utils.V(vertex.OutEdges[eidx].Property.Ts) + " LastNotif: " + notifHistory + " - Outbox: " + outboxHistory)
+							log.Panic().Msg("Incorrect Distance(" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + ":" + utils.V(targetDistance) + " from EmptyVertex) (Incoming: " + incomingStr + ") = Shorter path from " + g.NodeVertexRawID(threadOffset|i).String() + "(" + utils.V(ourValue) + ")--w=" + utils.V(vertex.OutEdges[eidx].Property.Weight) + "-->" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + " Edge timestamp: " + utils.V(vertex.OutEdges[eidx].Property.Ts))
 						} else {
-							log.Panic().Msg("Incorrect Distance(" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + ":" + utils.V(targetDistance) + " from " + g.NodeVertexRawID(targetProp.PredecessorVertex).String() + ") (Incoming: " + incomingStr + ") = Shorter path from " + g.NodeVertexRawID(threadOffset|i).String() + "(" + utils.V(ourValue) + ")--w=" + utils.V(vertex.OutEdges[eidx].Property.Weight) + "-->" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + " Edge timestamp: " + utils.V(vertex.OutEdges[eidx].Property.Ts) + " LastNotif: " + notifHistory + " - Outbox: " + outboxHistory)
+							log.Panic().Msg("Incorrect Distance(" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + ":" + utils.V(targetDistance) + " from " + g.NodeVertexRawID(targetProp.PredecessorVertex).String() + ") (Incoming: " + incomingStr + ") = Shorter path from " + g.NodeVertexRawID(threadOffset|i).String() + "(" + utils.V(ourValue) + ")--w=" + utils.V(vertex.OutEdges[eidx].Property.Weight) + "-->" + g.NodeVertexRawID(vertex.OutEdges[eidx].Didx).String() + " Edge timestamp: " + utils.V(vertex.OutEdges[eidx].Property.Ts))
 						}
 					}
 				}
@@ -75,6 +75,7 @@ func (*SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 		}
 		return visitCount
 	})
+	log.Info().Msg("Correctness check [PASSED]")
 	log.Info().Msg("Visited: " + utils.V(visited) + ", Percent: " + utils.F("%.3f", float64(visited)/float64(g.NodeVertexCount())*100.0))
 	log.Info().Msg("MaxValue (longest shortest path): " + utils.V(utils.MaxSlice(maxValue)))
 	var keys []float64
@@ -93,21 +94,23 @@ func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, 
 	// Default compare function is fine; diffs should all be zero (algorithm is deterministic).
 	log.Info().Msg("Comparing to oracle.")
 	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Distance })
-
 }
 
 // Launch point. Parses command line arguments, and launches the graph execution.
 func main() {
 	_ = os.Remove("/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
-	random := true
+	random := false
 	if random {
 		testSSSP()
-		//V, E := 50, 500
+		//V, E := 100, 900
 		//testRandom(V, E, 1, 0.7, "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/test_input.txt", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/expected_output.json", "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/actual_output.json")
 	} else {
+
 		sourceInit := flag.String("i", "1", "Source init vertex (raw id).")
 		graphOptions := graph.FlagsToOptions()
 		//graphOptions.DebugLevel = 1
+		OutputFilename += "_w_" + utils.V(graphOptions.InsertDeleteOnExpire) + "_dt_" + utils.V(graphOptions.TimeSeriesInterval) + ".csv"
+		os.Remove(OutputFilename)
 		alg, g := Run(graphOptions, sourceInit)
 		graph.Launch(alg, g)
 	}

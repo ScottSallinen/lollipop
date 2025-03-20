@@ -8,10 +8,7 @@ import (
 	"github.com/ScottSallinen/lollipop/utils"
 )
 
-type SSSP struct {
-	DelCounter float64
-	AddCounter float64
-}
+type SSSP struct { }
 
 const EMPTY_VAL = math.MaxFloat64
 
@@ -74,7 +71,6 @@ func (alg *SSSP) OnUpdateVertex(g *graph.Graph[VertexProperty, EdgeProperty, Mai
 // The view here is **post** addition (the edges are already appended to the edge list)
 // Note: eidxStart is the first position of new edges in the OutEdges array. (Edges may contain multiple edges with the same destination)
 func (alg *SSSP) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], gt *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], src *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty, sidx uint32, eidxStart int, m Mail) (sent uint64) {
-	utils.AtomicAddFloat64(&alg.AddCounter, 1)
 	// Do nothing if we had targeted all edges, otherwise target just the new edges.
 	if sent = alg.OnUpdateVertex(g, gt, src, prop, graph.Notification[Note]{Target: sidx}, m); sent != 0 {
 		return sent
@@ -94,6 +90,5 @@ func (alg *SSSP) OnEdgeAdd(g *graph.Graph[VertexProperty, EdgeProperty, Mail, No
 
 // Not used in this algorithm.
 func (alg *SSSP) OnEdgeDel(*graph.Graph[VertexProperty, EdgeProperty, Mail, Note], *graph.GraphThread[VertexProperty, EdgeProperty, Mail, Note], *graph.Vertex[VertexProperty, EdgeProperty], *VertexProperty, uint32, []graph.Edge[EdgeProperty], Mail) (sent uint64) {
-	utils.AtomicAddFloat64(&alg.DelCounter, 1)
 	return 0
 }

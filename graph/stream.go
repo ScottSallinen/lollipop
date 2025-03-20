@@ -113,33 +113,10 @@ func (g *Graph[V, E, M, N]) Remitter(order *utils.GrowableRingBuff[uint32]) (rem
 			totalRetriedThreads += retried
 		}
 		targetIdx := event.SrcRaw.Within(THREADS)
-		//log.Debug().Msg(fmt.Sprintf("event in remitter %v src: %v - dst: %v", event.EventType(), event.SrcRaw, event.DstRaw))
-
-		//if event.EventType() == DEL {
-		//	// Wait for alg to converge
-		//	//log.Debug().Msg("Remitter waiting for Algorithm BEFORE Del")
-		//	g.Broadcast(EPOCH)
-		//	g.AwaitAck()
-		//	g.ResetTerminationState()
-		//	g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
-		//	//log.Debug().Msg("Remitter is adding Del event")
-		//}
-
 		if pos, ok = g.GraphThreads[targetIdx].TopologyQueue.PutFast(event); !ok {
 			totalPutFails += g.GraphThreads[targetIdx].TopologyQueue.PutSlow(event, pos)
 		}
-
-		//if event.EventType() == DEL {
-		//	//log.Debug().Msg("Remitter waiting for Algorithm AFTER Del")
-		//	g.Broadcast(EPOCH)
-		//	g.AwaitAck()
-		//	g.ResetTerminationState()
-		//	g.Broadcast(RESUME) // Have view of the graph, threads can continue now.
-		//	//log.Debug().Msg("Remitter is RESUMING after Del event")
-		//}
-
 		remitted++
-
 		// Check to interrupt to ask a query if we've reached the next target
 		if queryByEventCount && remitted >= nextTarget {
 			nextTarget += g.Options.TimeSeriesInterval

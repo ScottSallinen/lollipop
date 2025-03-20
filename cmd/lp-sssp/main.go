@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
@@ -64,13 +66,45 @@ func (alg *SSSP) OnCheckCorrectness(g *graph.Graph[VertexProperty, EdgeProperty,
 	log.Info().Msg("Visited: " + utils.V(visited) + ", Percent: " + utils.F("%.3f", float64(visited)/float64(g.NodeVertexCount())*100.0))
 	log.Info().Msg("MaxValue (longest shortest path): " + utils.V(utils.MaxSlice(maxValue)))
 	log.Info().Msg("Num with distances of: 0: " + utils.V(numDistZero) + ", 1: " + utils.V(numDistOne) + ", 2: " + utils.V(numDistTwo) + ", 3: " + utils.V(numDistThree) + ", 4: " + utils.V(numDistFour))
-	log.Info().Msg("Number of Deletions: " + utils.V(alg.DelCounter) + ", Number of Additions: " + utils.V(alg.AddCounter))
 }
 
+var OutputFilename = "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp/tse_stats"
+var OracleFilename = "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp/tse_oracle_stats"
+
+
 // Compares the results of the algorithm to the oracle.
-func (*SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
-	// Default compare function is fine; diffs should all be zero (algorithm is deterministic).
+func (alg *SSSP) OnOracleCompare(g *graph.Graph[VertexProperty, EdgeProperty, Mail, Note], oracle *graph.Graph[VertexProperty, EdgeProperty, Mail, Note]) {
+	// Check the correctness of the oracle.
 	graph.OracleGenericCompareValues(g, oracle, func(vp VertexProperty) float64 { return vp.Value })
+	log.Info().Msg("Checking correctness of oracle.")
+	alg.OnCheckCorrectness(oracle)
+
+	eventIndex := uint64(0)
+	for t := 0; t < int(g.NumThreads); t++ {
+		eventIndex = utils.Max(eventIndex, g.GraphThreads[t].AtEvent)
+	}
+
+	_, err := os.Stat(OracleFilename)
+	fileExisted := !os.IsNotExist(err)
+
+	file, err := os.OpenFile(OracleFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Error().Msg("Error opening/creating file:" + err.Error())
+		return
+	}
+	defer file.Close()
+	
+	var line string
+	if !fileExisted {
+		line = "AtEventIndex,AbsoluteElapsed,Elapsed\n"
+		if _, err := file.WriteString(line); err != nil {
+			log.Error().Msg("Error writing to file:" + err.Error())
+		}
+	}
+	line = fmt.Sprintf("%d,%d,%d\n", eventIndex, oracle.AlgTimer.AbsoluteElapsed().Nanoseconds(), oracle.AlgTimer.Elapsed().Nanoseconds())
+	if _, err := file.WriteString(line); err != nil {
+		log.Error().Msg("Error writing to file:" + err.Error())
+	}
 }
 
 // Launch point. Parses command line arguments, and launches the graph execution.
@@ -78,7 +112,10 @@ func main() {
 	sourceInit := flag.String("i", "1", "Source init vertex (raw id).")
 	useMsgPassing := flag.Bool("msg", false, "Use message passing. This is slow! Only for a reference implementation of message passing.")
 	graphOptions := graph.FlagsToOptions()
-
+	OutputFilename += "_w_" + utils.V(graphOptions.InsertDeleteOnExpire) + "_dt_" + utils.V(graphOptions.TimeSeriesInterval) + ".csv"
+	OracleFilename += "_w_" + utils.V(graphOptions.InsertDeleteOnExpire) + "_dt_" + utils.V(graphOptions.TimeSeriesInterval) + ".csv"
+	os.Remove(OutputFilename)
+	os.Remove(OracleFilename)
 	if !(*useMsgPassing) {
 		initMail := map[graph.RawType]Mail{}
 		initMail[graph.AsRawTypeString(*sourceInit)] = 0.0

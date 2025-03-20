@@ -48,27 +48,32 @@ func main() {
 
 	inputFileName := os.Args[1]
 	outputFileName := os.Args[2]
-	deltaSeconds := 10 * 24 * 60 * 60
-	deleteProbability := 0.5
-	allowDuplicateEdge := false
+	deltaDays, _ := strconv.Atoi(os.Args[3])
+	deltaSeconds := deltaDays * 24 * 60 * 60
+	deleteProbability := 0.0
+	if len(os.Args) > 4 {
+		deleteProbability, _ = strconv.ParseFloat(os.Args[4], 64)
+	}
 	inputFile := ReadFile(inputFileName)
 
-	mergedAdds, e := MergeAdds(inputFile, deltaSeconds, allowDuplicateEdge)
+	mergedAdds, e := MergeAdds(inputFile, deltaSeconds, false)
 	if e != nil {
 		_ = fmt.Errorf("Error merging adds: %v\n", e)
 		return
 	}
+	if deleteProbability == 0 {
+		WriteToFile(outputFileName, mergedAdds)
+		return
+	}
 
-	_, e = InjectDeletes(mergedAdds, deltaSeconds, deleteProbability)
+	injectedDeletes, e := InjectDeletes(mergedAdds, deltaSeconds, deleteProbability)
 
 	if e != nil {
 		_ = fmt.Errorf("Error injecting deletes: %v\n", e)
 		return
 	}
 
-	WriteToFile(outputFileName, mergedAdds)
-
-	//WriteToFile(outputFileName, injectedDeletes)
+	WriteToFile(outputFileName, injectedDeletes)
 }
 
 func InjectDeletes(inputLines []string, deltaSeconds int, deleteProbability float64) ([]string, error) {

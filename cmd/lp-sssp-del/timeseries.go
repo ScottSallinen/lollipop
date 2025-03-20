@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ScottSallinen/lollipop/graph"
+	"github.com/rs/zerolog/log"
 	"io"
 	"os"
 	//"strconv"
@@ -65,10 +66,33 @@ func appendToJson(filename string, newReport ShortestPathReport) {
 	}
 }
 
+var OutputFilename = "/Users/pjavanrood/Documents/NetSys/lollipop/cmd/lp-sssp-del/tse_stats_del"
+
 func (alg *SSSP) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
-	//alg.OnCheckCorrectness(tse.GraphView)
-	//tse.CurrentRuntime
-	//OnCheckCorrectness(tse.GraphView)
+	alg.OnCheckCorrectness(tse.GraphView)
+
+	_, err := os.Stat(OutputFilename)
+	fileExisted := !os.IsNotExist(err)
+
+	file, err := os.OpenFile(OutputFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Error().Msg("Error opening/creating file:" + err.Error())
+		return
+	}
+	defer file.Close()
+
+	var line string
+	if !fileExisted {
+		line = fmt.Sprintf("Name,AtEventIndex,EdgeCount,EdgeDelete,Latency,AlgTimeSinceLast,CurrentRuntime\n")
+		if _, err := file.WriteString(line); err != nil {
+			log.Error().Msg("Error writing to file:" + err.Error())
+		}
+	}
+	line = fmt.Sprintf("%d,%d,%d,%d,%d,%d,%d\n", tse.Name.Nanosecond(), tse.AtEventIndex, tse.EdgeCount, tse.EdgeDeletes, tse.Latency.Nanoseconds(), tse.AlgTimeSinceLast.Nanoseconds(), tse.CurrentRuntime.Nanoseconds())
+	if _, err := file.WriteString(line); err != nil {
+		log.Error().Msg("Error writing to file:" + err.Error())
+	}
+
 	//ssspReport := make(map[uint32]float64)
 	//tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
 	//	//fmt.Println(tse.GraphView.NodeVertexRawID(v), prop.Predecessor.TotalDistance)
@@ -80,15 +104,3 @@ func (alg *SSSP) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, Edg
 	//		DistanceMap: ssspReport,
 	//	})
 }
-
-//import (
-//	"fmt"
-//	"github.com/ScottSallinen/lollipop/graph"
-//	//"strconv"
-//)
-//
-//func (*SSSP) OnApplyTimeSeries(tse graph.TimeseriesEntry[VertexProperty, EdgeProperty, Mail, Note]) {
-//	tse.GraphView.NodeForEachVertex(func(i, v uint32, vertex *graph.Vertex[VertexProperty, EdgeProperty], prop *VertexProperty) {
-//		fmt.Printf("Vertex %v - Pred %v - Distance: %v\n", tse.GraphView.NodeVertexRawID(v), prop.PredecessorVertex, prop.Distance)
-//	})
-//}
